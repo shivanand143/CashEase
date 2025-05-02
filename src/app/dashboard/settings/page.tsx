@@ -9,7 +9,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { updateProfile, updateEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore'; // Import serverTimestamp
 import { db, auth } from '@/lib/firebase/config';
 
 import { Button } from '@/components/ui/button';
@@ -49,7 +49,7 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 // --- Email Update Schema ---
 const emailSchema = z.object({
    newEmail: z.string().email({ message: 'Invalid email address' }),
-   currentPasswordForEmail: z.string().min(6, { message: 'Current password is required' }),
+   currentPasswordForEmail: z.string().min(1, { message: 'Current password is required' }), // Changed min to 1
 });
 type EmailFormValues = z.infer<typeof emailSchema>;
 
@@ -106,10 +106,10 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login?message=Please login to view settings');
-    } else if (userProfile) {
+    } else if (user && userProfile) { // Ensure both user and userProfile exist
       // Pre-fill forms once userProfile is loaded
-      profileForm.reset({ displayName: userProfile.displayName ?? '' });
-      emailForm.reset({newEmail: user?.email ?? '', currentPasswordForEmail: ''}); // Set current email
+      profileForm.reset({ displayName: userProfile.displayName ?? user.displayName ?? '' }); // Use auth display name as fallback
+      emailForm.reset({ newEmail: user.email ?? '', currentPasswordForEmail: ''}); // Set current email from user object
     }
   }, [user, userProfile, authLoading, router, profileForm, emailForm]);
 
@@ -120,17 +120,41 @@ export default function SettingsPage() {
      if (!user || !userProfile) return;
      setProfileLoading(true);
      setProfileError(null);
+
+      // Create object with only changed fields
+      const updates: Record<string, any> = {};
+      if (data.displayName && data.displayName !== userProfile.displayName) {
+          updates.displayName = data.displayName;
+      }
+      // Add other updatable profile fields here (e.g., photoURL)
+      // if (data.photoURL && data.photoURL !== userProfile.photoURL) {
+      //     updates.photoURL = data.photoURL;
+      // }
+
+      // Check if there are any actual updates to perform
+      if (Object.keys(updates).length === 0) {
+          toast({ title: 'No Changes', description: 'No profile information was modified.' });
+          setProfileLoading(false);
+          return;
+      }
+
+
      try {
-       // Update Firebase Auth Profile
-       if (data.displayName && data.displayName !== user.displayName) {
-          await updateProfile(user, { displayName: data.displayName });
+       // Update Firebase Auth Profile (only if displayName changed)
+       if (updates.displayName && updates.displayName !== user.displayName) {
+          await updateProfile(user, { displayName: updates.displayName });
        }
+       // Add auth profile updates for other fields like photoURL if needed
+       // if (updates.photoURL && updates.photoURL !== user.photoURL) {
+       //    await updateProfile(user, { photoURL: updates.photoURL });
+       // }
+
 
        // Update Firestore Profile Document
        const userDocRef = doc(db, 'users', user.uid);
        await updateDoc(userDocRef, {
-         displayName: data.displayName,
-         updatedAt: serverTimestamp(),
+         ...updates, // Spread the changes
+         updatedAt: serverTimestamp(), // Always update the timestamp
        });
 
        toast({
@@ -140,7 +164,7 @@ export default function SettingsPage() {
      } catch (err: any) {
        console.error("Profile update failed:", err);
        setProfileError(err.message || "Failed to update profile.");
-        toast({ variant: "destructive", title: 'Update Failed', description: err.message });
+        toast({ variant: "destructive", title: 'Update Failed', description: err.message || "Failed to update profile." });
      } finally {
        setProfileLoading(false);
      }
@@ -149,37 +173,53 @@ export default function SettingsPage() {
    // Re-authenticate user before sensitive operations (email/password change)
    const reauthenticate = async (password: string) => {
        if (!user || !user.email) {
-           throw new Error("User not properly authenticated.");
+           throw new Error("User not properly authenticated or email missing.");
        }
        const credential = EmailAuthProvider.credential(user.email, password);
        await reauthenticateWithCredential(user, credential);
+       // console.log("Re-authentication successful"); // For debugging
    };
 
 
    const onEmailSubmit = async (data: EmailFormValues) => {
        if (!user) return;
+        // Basic check if email is actually different
+       if (data.newEmail === user.email) {
+           setEmailError("The new email address is the same as the current one.");
+           emailForm.setError("newEmail", { type: "manual", message: "Please enter a different email address." });
+           return;
+       }
+
        setEmailLoading(true);
        setEmailError(null);
        try {
+           // console.log("Attempting to re-authenticate for email change..."); // Debugging
            // 1. Re-authenticate
            await reauthenticate(data.currentPasswordForEmail);
+           // console.log("Re-authentication success, attempting email update..."); // Debugging
+
 
            // 2. Update email in Firebase Auth
            await updateEmail(user, data.newEmail);
+           // console.log("Firebase Auth email updated successfully."); // Debugging
+
 
            // 3. Update email in Firestore (optional, but recommended if you store it)
            const userDocRef = doc(db, 'users', user.uid);
            await updateDoc(userDocRef, {
                email: data.newEmail, // Ensure your UserProfile type includes email
-               updatedAt: serverTimestamp(),
+               updatedAt: serverTimestamp(), // Update timestamp
            });
+           // console.log("Firestore email updated successfully."); // Debugging
+
 
            toast({
                title: 'Email Updated',
                description: `Your email has been updated to ${data.newEmail}. You might need to re-login.`,
            });
            setIsEmailDialogOpen(false); // Close dialog on success
-           emailForm.reset(); // Clear form
+           emailForm.reset({ newEmail: data.newEmail, currentPasswordForEmail: '' }); // Clear password, keep new email shown
+
 
            // Consider forcing a re-login for security
            // await signOut();
@@ -187,23 +227,36 @@ export default function SettingsPage() {
 
 
        } catch (err: any) {
-           console.error("Email update failed:", err);
-           let message = "Failed to update email.";
-            if (err.code === 'auth/wrong-password') {
-               message = 'Incorrect current password.';
-               emailForm.setError("currentPasswordForEmail", { type: "manual", message });
-           } else if (err.code === 'auth/email-already-in-use') {
-               message = 'This email address is already in use by another account.';
-                emailForm.setError("newEmail", { type: "manual", message });
-           } else if (err.code === 'auth/invalid-email') {
-                message = 'The new email address is not valid.';
-                emailForm.setError("newEmail", { type: "manual", message });
-           } else if (err.code === 'auth/requires-recent-login') {
-                message = 'This operation is sensitive and requires recent authentication. Please log out and log back in.';
+           console.error("Email update failed:", err); // Log the full error
+           let message = "Failed to update email. Please check your password and try again.";
+            if (err.code) { // More specific Firebase error handling
+               switch (err.code) {
+                    case 'auth/wrong-password':
+                       message = 'Incorrect current password.';
+                       emailForm.setError("currentPasswordForEmail", { type: "manual", message });
+                       break;
+                    case 'auth/email-already-in-use':
+                       message = 'This email address is already in use by another account.';
+                       emailForm.setError("newEmail", { type: "manual", message });
+                       break;
+                    case 'auth/invalid-email':
+                       message = 'The new email address is not valid.';
+                       emailForm.setError("newEmail", { type: "manual", message });
+                       break;
+                    case 'auth/requires-recent-login':
+                       message = 'This action requires recent authentication. Please log out and log back in before changing your email.';
+                       break;
+                    case 'auth/user-token-expired':
+                       message = 'Your login session has expired. Please log out and log back in.';
+                       break;
+                   case 'auth/too-many-requests':
+                       message = 'Too many attempts. Please try again later.';
+                       break;
+                    default:
+                       message = `An error occurred (${err.code}). Please try again.`;
+               }
            }
             setEmailError(message); // Show error within the dialog
-            // Optionally show a toast as well
-            // toast({ variant: "destructive", title: 'Update Failed', description: message });
        } finally {
            setEmailLoading(false);
        }
@@ -214,11 +267,15 @@ export default function SettingsPage() {
         setPasswordLoading(true);
         setPasswordError(null);
         try {
+            // console.log("Attempting re-authentication for password change..."); // Debugging
             // 1. Re-authenticate
             await reauthenticate(data.currentPassword);
+            // console.log("Re-authentication success, attempting password update..."); // Debugging
 
             // 2. Update password in Firebase Auth
             await updatePassword(user, data.newPassword);
+            // console.log("Password updated successfully."); // Debugging
+
 
             toast({
                 title: 'Password Updated',
@@ -229,17 +286,31 @@ export default function SettingsPage() {
 
 
         } catch (err: any) {
-            console.error("Password update failed:", err);
-            let message = "Failed to update password.";
-             if (err.code === 'auth/wrong-password') {
-                message = 'Incorrect current password.';
-                passwordForm.setError("currentPassword", { type: "manual", message });
-            } else if (err.code === 'auth/weak-password') {
-                 message = 'The new password is too weak.';
-                 passwordForm.setError("newPassword", { type: "manual", message });
-            } else if (err.code === 'auth/requires-recent-login') {
-                 message = 'This operation is sensitive and requires recent authentication. Please log out and log back in.';
-            }
+            console.error("Password update failed:", err); // Log the full error
+            let message = "Failed to update password. Please check your current password.";
+             if (err.code) { // More specific Firebase error handling
+                switch (err.code) {
+                    case 'auth/wrong-password':
+                        message = 'Incorrect current password.';
+                        passwordForm.setError("currentPassword", { type: "manual", message });
+                        break;
+                    case 'auth/weak-password':
+                         message = 'The new password is too weak. Please choose a stronger password.';
+                         passwordForm.setError("newPassword", { type: "manual", message });
+                         break;
+                    case 'auth/requires-recent-login':
+                         message = 'This action requires recent authentication. Please log out and log back in before changing your password.';
+                         break;
+                    case 'auth/user-token-expired':
+                        message = 'Your login session has expired. Please log out and log back in.';
+                        break;
+                    case 'auth/too-many-requests':
+                        message = 'Too many attempts. Please try again later.';
+                        break;
+                    default:
+                       message = `An error occurred (${err.code}). Please try again.`;
+                }
+             }
              setPasswordError(message); // Show error in dialog
         } finally {
             setPasswordLoading(false);
@@ -275,13 +346,15 @@ export default function SettingsPage() {
               <Input
                 id="displayName"
                 {...profileForm.register('displayName')}
-                disabled={profileLoading}
+                disabled={profileLoading || !userProfile} // Disable if profile not loaded
                  aria-invalid={profileForm.formState.errors.displayName ? "true" : "false"}
+                 placeholder={user?.displayName ?? "Enter your display name"}
+                 autoComplete="name"
               />
                {profileForm.formState.errors.displayName && <p className="text-sm text-destructive">{profileForm.formState.errors.displayName.message}</p>}
             </div>
              {/* Add other profile fields here */}
-             <Button type="submit" disabled={profileLoading}>
+             <Button type="submit" disabled={profileLoading || !userProfile}>
                  {profileLoading ? 'Saving...' : 'Save Profile'}
              </Button>
           </form>
@@ -301,17 +374,17 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <Label>Current Email</Label>
                   <div className="flex items-center justify-between">
-                     <p className="text-sm text-muted-foreground">{user?.email ?? 'No email associated'}</p>
+                     <p className="text-sm text-muted-foreground truncate pr-4">{user?.email ?? 'Loading email...'}</p>
                       {/* Email Change Dialog Trigger */}
                        <Dialog open={isEmailDialogOpen} onOpenChange={setIsEmailDialogOpen}>
                           <DialogTrigger asChild>
-                             <Button variant="outline" size="sm">Change Email</Button>
+                             <Button variant="outline" size="sm" disabled={!user}>Change Email</Button>
                           </DialogTrigger>
                           <DialogContent>
                              <DialogHeader>
                                 <DialogTitle>Change Email Address</DialogTitle>
                                 <DialogDescription>
-                                   Enter your current password and your new email address. You may need to verify your new email.
+                                   Enter your current password and your new email address. You may need to verify your new email. This requires a recent login.
                                 </DialogDescription>
                              </DialogHeader>
                               {emailError && (
@@ -324,12 +397,26 @@ export default function SettingsPage() {
                               <form onSubmit={emailForm.handleSubmit(onEmailSubmit)} className="space-y-4 pt-4">
                                   <div className="space-y-1">
                                        <Label htmlFor="currentPasswordForEmail">Current Password</Label>
-                                       <Input id="currentPasswordForEmail" type="password" {...emailForm.register('currentPasswordForEmail')} disabled={emailLoading} />
+                                       <Input
+                                           id="currentPasswordForEmail"
+                                           type="password"
+                                           {...emailForm.register('currentPasswordForEmail')}
+                                           disabled={emailLoading}
+                                           autoComplete="current-password"
+                                           required
+                                        />
                                        {emailForm.formState.errors.currentPasswordForEmail && <p className="text-sm text-destructive">{emailForm.formState.errors.currentPasswordForEmail.message}</p>}
                                   </div>
                                    <div className="space-y-1">
                                         <Label htmlFor="newEmail">New Email</Label>
-                                        <Input id="newEmail" type="email" {...emailForm.register('newEmail')} disabled={emailLoading} />
+                                        <Input
+                                            id="newEmail"
+                                            type="email"
+                                            {...emailForm.register('newEmail')}
+                                            disabled={emailLoading}
+                                            autoComplete="email"
+                                            required
+                                        />
                                         {emailForm.formState.errors.newEmail && <p className="text-sm text-destructive">{emailForm.formState.errors.newEmail.message}</p>}
                                    </div>
                                    <DialogFooter>
@@ -356,13 +443,13 @@ export default function SettingsPage() {
                         {/* Password Change Dialog Trigger */}
                          <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
                            <DialogTrigger asChild>
-                              <Button variant="outline" size="sm">Change Password</Button>
+                              <Button variant="outline" size="sm" disabled={!user}>Change Password</Button>
                            </DialogTrigger>
                            <DialogContent>
                               <DialogHeader>
                                  <DialogTitle>Change Password</DialogTitle>
                                  <DialogDescription>
-                                    Enter your current password and set a new password.
+                                    Enter your current password and set a new password. This requires a recent login.
                                  </DialogDescription>
                               </DialogHeader>
                               {passwordError && (
@@ -375,17 +462,38 @@ export default function SettingsPage() {
                               <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-4 pt-4">
                                   <div className="space-y-1">
                                       <Label htmlFor="currentPassword">Current Password</Label>
-                                      <Input id="currentPassword" type="password" {...passwordForm.register('currentPassword')} disabled={passwordLoading} />
+                                      <Input
+                                          id="currentPassword"
+                                          type="password"
+                                          {...passwordForm.register('currentPassword')}
+                                          disabled={passwordLoading}
+                                          autoComplete="current-password"
+                                          required
+                                      />
                                        {passwordForm.formState.errors.currentPassword && <p className="text-sm text-destructive">{passwordForm.formState.errors.currentPassword.message}</p>}
                                   </div>
                                   <div className="space-y-1">
                                       <Label htmlFor="newPassword">New Password</Label>
-                                      <Input id="newPassword" type="password" {...passwordForm.register('newPassword')} disabled={passwordLoading} />
+                                      <Input
+                                          id="newPassword"
+                                          type="password"
+                                          {...passwordForm.register('newPassword')}
+                                          disabled={passwordLoading}
+                                          autoComplete="new-password"
+                                          required
+                                       />
                                        {passwordForm.formState.errors.newPassword && <p className="text-sm text-destructive">{passwordForm.formState.errors.newPassword.message}</p>}
                                   </div>
                                   <div className="space-y-1">
                                       <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                                      <Input id="confirmPassword" type="password" {...passwordForm.register('confirmPassword')} disabled={passwordLoading} />
+                                      <Input
+                                          id="confirmPassword"
+                                          type="password"
+                                          {...passwordForm.register('confirmPassword')}
+                                          disabled={passwordLoading}
+                                          autoComplete="new-password"
+                                          required
+                                      />
                                        {passwordForm.formState.errors.confirmPassword && <p className="text-sm text-destructive">{passwordForm.formState.errors.confirmPassword.message}</p>}
                                   </div>
                                    <DialogFooter>
@@ -494,7 +602,18 @@ function SettingsPageSkeleton() {
                <Skeleton className="h-4 w-3/4" />
              </CardHeader>
              <CardContent>
-                <Skeleton className="h-16 w-full" />
+                {/* Simulate form skeleton */}
+                <div className="space-y-4">
+                   <div className="space-y-2">
+                       <Skeleton className="h-4 w-24" />
+                       <Skeleton className="h-10 w-1/2" />
+                   </div>
+                    <div className="space-y-2">
+                       <Skeleton className="h-4 w-20" />
+                       <Skeleton className="h-10 w-full" />
+                   </div>
+                   <Skeleton className="h-10 w-36" />
+                </div>
              </CardContent>
            </Card>
 

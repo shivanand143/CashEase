@@ -1,8 +1,10 @@
 // src/hooks/use-auth.ts
+"use client"; // Add "use client" directive
+
 import { useState, useEffect, useContext, createContext, ReactNode } from 'react';
 import type { User } from 'firebase/auth';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
-import { doc, getDoc, onSnapshot, serverTimestamp, DocumentData } from 'firebase/firestore';
+import { doc, onSnapshot, DocumentData, Timestamp } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase/config';
 import type { UserProfile } from '@/lib/types';
 
@@ -21,98 +23,112 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // This function runs when the component mounts and sets up the listener
+    // console.log("AuthProvider mounted, setting up auth listener...");
     const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
-       // This callback runs whenever the auth state changes
+      // console.log("Auth state changed. User:", firebaseUser?.uid);
       setUser(firebaseUser);
-      let unsubscribeProfile = () => {}; // Initialize with an empty function
+      let unsubscribeProfile = () => {};
 
       if (firebaseUser) {
-        // User is signed in, fetch profile
         setLoading(true); // Start loading profile
         const userDocRef = doc(db, 'users', firebaseUser.uid);
+        // console.log("Setting up profile listener for user:", firebaseUser.uid);
 
-        // Set up a real-time listener for the user profile
         unsubscribeProfile = onSnapshot(userDocRef, (docSnap) => {
-          // This callback runs when the profile document changes
+          // console.log("Profile snapshot received. Exists:", docSnap.exists());
           if (docSnap.exists()) {
-            const data = docSnap.data() as DocumentData; // Get data object
-            // Explicitly map fields to the UserProfile type
+            const data = docSnap.data() as DocumentData;
+            // Convert Firestore Timestamp to JS Date safely
+            const createdAtDate = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : new Date();
+            const updatedAtDate = data.updatedAt instanceof Timestamp ? data.updatedAt.toDate() : createdAtDate; // Use createdAt as fallback
+
             const profileData: UserProfile = {
               uid: docSnap.id,
               email: data.email ?? null,
               displayName: data.displayName ?? null,
               photoURL: data.photoURL ?? null,
-              role: data.role ?? 'user', // Default role
+              role: data.role ?? 'user',
               cashbackBalance: data.cashbackBalance ?? 0,
               pendingCashback: data.pendingCashback ?? 0,
               lifetimeCashback: data.lifetimeCashback ?? 0,
               referralCode: data.referralCode,
               referredBy: data.referredBy,
-              createdAt: data.createdAt?.toDate() ?? new Date(), // Convert Timestamp or use current date
+              createdAt: createdAtDate,
+              updatedAt: updatedAtDate, // Added updatedAt
             };
+            // console.log("Profile data:", profileData);
             setUserProfile(profileData);
           } else {
-            // User exists in Auth but not Firestore
-            console.error("User profile not found in Firestore for UID:", firebaseUser.uid);
+            console.warn("User profile not found in Firestore for UID:", firebaseUser.uid);
             setUserProfile(null);
           }
           setLoading(false); // Profile loaded or not found
         }, (error) => {
-           // Handle errors during profile listening
-          console.error("Error fetching user profile:", error);
+          console.error("Error in profile snapshot listener:", error);
           setUserProfile(null);
-          setLoading(false); // Error occurred
+          setLoading(false);
         });
 
       } else {
         // User is signed out
+        // console.log("User signed out.");
         setUserProfile(null);
         setLoading(false);
       }
 
-      // Return the cleanup function for the profile listener
-      // This will run when the firebaseUser changes (sign in/out) *before* the next profile listener is set up
+      // Cleanup function for profile listener
       return () => {
+        // console.log("Cleaning up profile listener for user:", firebaseUser?.uid);
         unsubscribeProfile();
       };
-
+    }, (error) => {
+        // Handle errors from onAuthStateChanged itself
+        console.error("Error in onAuthStateChanged listener:", error);
+        setUser(null);
+        setUserProfile(null);
+        setLoading(false);
     });
 
-    // Return the cleanup function for the auth state listener
-    // This will run when the AuthProvider component unmounts
+    // Cleanup function for auth listener
     return () => {
+      // console.log("Cleaning up auth listener.");
       unsubscribeAuth();
     };
   }, []); // Empty dependency array ensures this effect runs only once on mount
 
   const signOut = async () => {
-    setLoading(true);
+    // console.log("Signing out...");
+    setLoading(true); // Indicate loading during sign out
     try {
       await firebaseSignOut(auth);
-      // State updates (user=null, userProfile=null, loading=false) handled by the onAuthStateChanged listener
+      // console.log("Sign out successful.");
+      // State updates are handled by onAuthStateChanged
     } catch (error) {
       console.error('Error signing out:', error);
-      setLoading(false); // Stop loading on error if sign out fails
+      setLoading(false); // Stop loading on error
     }
   };
 
-  // Prepare the value for the context provider
-  const authContextValue = { user, userProfile, loading, signOut };
+  // Define the context value directly
+  const authContextValue = {
+      user,
+      userProfile,
+      loading,
+      signOut
+  };
 
+  // Provide the authentication context to children components
+  // Ensure correct JSX syntax
   return (
-    // Provide the authentication context to children components
     <AuthContext.Provider value={authContextValue}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-// Custom hook to easily consume the authentication context
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    // Ensure the hook is used within the provider tree
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;

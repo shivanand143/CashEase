@@ -9,7 +9,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore'; // Import Timestamp
 
 
 import { Button } from '@/components/ui/button';
@@ -62,26 +62,29 @@ export default function SignupPage() {
      // 2. Update Firebase Auth profile (optional but good practice)
      await updateProfile(user, {
        displayName: data.displayName,
+       // Optionally set photoURL here if you collect it
      });
 
      // 3. Create user profile document in Firestore
      const userDocRef = doc(db, 'users', user.uid);
-     const newUserProfile: Omit<UserProfile, 'uid'> = {
+
+     // Prepare the data for Firestore, explicitly defining fields
+     const newUserProfileData = {
        email: user.email,
        displayName: data.displayName,
+       photoURL: user.photoURL ?? null, // Use photoURL from auth profile if available
        role: 'user', // Default role
        cashbackBalance: 0,
        pendingCashback: 0,
        lifetimeCashback: 0,
-       createdAt: new Date(), // Use client-side date for consistency or serverTimestamp()
-       // referralCode: generateReferralCode(), // TODO: Implement referral code generation if needed
+       createdAt: serverTimestamp(), // Use server timestamp
+       updatedAt: serverTimestamp(), // Also set updatedAt on creation
+       referralCode: undefined, // Explicitly undefined if not generated yet
+       referredBy: undefined, // Explicitly undefined
      };
 
      // Use setDoc to create the document with the specific UID
-     await setDoc(userDocRef, {
-        ...newUserProfile,
-        createdAt: serverTimestamp() // Use server timestamp for creation time
-     });
+     await setDoc(userDocRef, newUserProfileData);
 
      toast({
        title: 'Signup Successful',
@@ -103,6 +106,11 @@ export default function SignupPage() {
          case 'auth/weak-password':
            errorMessage = 'Password is too weak. Please choose a stronger password (at least 6 characters).';
            break;
+         case 'auth/operation-not-allowed':
+             errorMessage = 'Email/password accounts are not enabled. Please contact support.';
+             break;
+         default:
+              errorMessage = `An error occurred (${err.code}). Please try again.`;
        }
      }
      setError(errorMessage);
@@ -142,6 +150,7 @@ export default function SignupPage() {
                 {...register('displayName')}
                 disabled={loading}
                  aria-invalid={errors.displayName ? "true" : "false"}
+                 autoComplete="name"
               />
                {errors.displayName && <p className="text-sm text-destructive">{errors.displayName.message}</p>}
             </div>
@@ -154,6 +163,7 @@ export default function SignupPage() {
                 {...register('email')}
                 disabled={loading}
                  aria-invalid={errors.email ? "true" : "false"}
+                 autoComplete="email"
               />
                {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
             </div>
@@ -166,6 +176,7 @@ export default function SignupPage() {
                 {...register('password')}
                 disabled={loading}
                  aria-invalid={errors.password ? "true" : "false"}
+                 autoComplete="new-password"
               />
                {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
             </div>

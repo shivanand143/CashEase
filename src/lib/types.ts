@@ -12,6 +12,7 @@ export interface UserProfile {
   referralCode?: string; // Optional referral code
   referredBy?: string; // UID of the user who referred this user
   createdAt: Date;
+  updatedAt?: Date; // Added optional updatedAt
 }
 
 export interface Store {
@@ -30,9 +31,9 @@ export interface Store {
 export interface Coupon {
   id: string; // Firestore document ID
   storeId: string; // Reference to the Store document ID
-  code: string; // The coupon code (if applicable)
+  code?: string | null; // Make code optional/nullable
   description: string; // Details about the coupon offer
-  link: string; // Direct link to the offer/coupon page (can be affiliate link)
+  link?: string | null; // Direct link to the offer/coupon page (can be affiliate link), optional
   expiryDate?: Date | null; // Optional expiry date
   isFeatured: boolean; // Highlight this coupon
   isActive: boolean;
@@ -44,6 +45,7 @@ export interface ClickLog {
   id: string; // Firestore document ID
   userId: string; // User who clicked
   storeId: string; // Store that was clicked
+  couponId?: string; // Optional: Coupon associated with the click
   timestamp: Date; // Time of the click
   userAgent?: string; // Browser/device info
   ipAddress?: string; // User's IP address (handle privacy implications)
@@ -75,10 +77,20 @@ export interface PayoutRequest {
   userId: string; // User requesting payout
   amount: number; // Amount requested
   status: PayoutStatus;
-  requestedAt: Date;
+  requestedAt: Date; // Use Date directly
   processedAt?: Date | null; // Date the request was approved/rejected/processed
   paymentMethod: string; // e.g., "PayPal", "Bank Transfer"
   paymentDetails: Record<string, any>; // e.g., { paypalEmail: 'user@example.com' }
   adminNotes?: string; // Notes from the admin processing the request
   transactionIds: string[]; // List of Transaction IDs included in this payout
+}
+
+// Fix for logClick type error - ClickData needs to be defined
+export interface ClickData {
+    userId: string;
+    storeId: string;
+    couponId?: string;
+    timestamp: any; // Using 'any' for serverTimestamp compatibility
+    // userAgent?: string; // Optional fields
+    // ipAddress?: string; // Optional fields
 }
