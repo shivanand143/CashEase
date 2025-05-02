@@ -6,42 +6,50 @@ import { useState, useEffect, useContext, createContext, ReactNode, useMemo, use
 import type { User } from 'firebase/auth';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { doc, onSnapshot, DocumentData, Timestamp } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase/config';
+import { auth, db, firebaseInitializationError } from '@/lib/firebase/config'; // Import error state
 import type { UserProfile } from '@/lib/types';
 
-
 // Check if Firebase services are available (handle potential initialization failure in config.ts)
-const isFirebaseAvailable = !!auth && !!db;
+const isFirebaseAvailable = !!auth && !!db && !firebaseInitializationError;
 
 interface AuthContextType {
   user: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
   signOut: () => Promise<void>;
-  authError?: string | null; // Make authError optional in the context type
+  authError?: string | null; // Error related to auth state or profile loading
+  initializationError?: string | null; // Error during Firebase init
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [authError, setAuthError] = useState<string | null>(null); // State to hold auth errors
+  const [authError, setAuthError] = useState<string | null>(null); // Auth/profile specific errors
 
   useEffect(() => {
-    console.log("AuthProvider mounted, checking Firebase availability...");
+    console.log("AuthProvider mounted. Firebase Initialization Error:", firebaseInitializationError);
 
-    if (!isFirebaseAvailable) {
-        const errorMsg = "Firebase is not configured or failed to initialize. Skipping auth listeners.";
-        console.warn(errorMsg); // Use warn instead of error to avoid breaking the app entirely if firebase is optional
-        setAuthError(errorMsg);
+    if (firebaseInitializationError) {
+        console.warn("Firebase initialization failed. Skipping auth listeners.");
+        setAuthError(null); // Clear previous auth errors if any
         setLoading(false);
         return;
     }
-    console.log("Firebase is available, setting up auth listener...");
 
+    if (!isFirebaseAvailable) {
+        // This case should theoretically be covered by firebaseInitializationError check,
+        // but kept as a safeguard.
+        const errorMsg = "Firebase services (auth/db) are not available. Skipping auth listeners.";
+        console.warn(errorMsg);
+        setAuthError(null);
+        setLoading(false);
+        return;
+    }
+
+    console.log("Firebase is available, setting up auth listener...");
 
     let unsubscribeProfile: () => void = () => {}; // Initialize with a no-op function
 
@@ -77,15 +85,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               referralCode: data.referralCode,
               referredBy: data.referredBy,
               createdAt: createdAtDate,
-              updatedAt: updatedAtDate, // Added updatedAt
+              updatedAt: updatedAtDate,
             };
-            // console.log("Profile data:", profileData);
             setUserProfile(profileData);
-            setAuthError(null); // Clear any previous error
+            setAuthError(null); // Clear any previous auth/profile error
           } else {
             console.warn("User profile not found in Firestore for UID:", firebaseUser.uid);
             setUserProfile(null);
-             setAuthError("User profile not found."); // Indicate profile issue
+            setAuthError("User profile not found."); // Indicate profile issue
           }
           setLoading(false); // Profile loaded or not found
         }, (error) => {
@@ -100,7 +107,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.log("User signed out.");
         setUserProfile(null);
         setLoading(false);
-        setAuthError(null); // Clear error on sign out
+        setAuthError(null); // Clear auth/profile error on sign out
       }
     }, (error) => {
         // Handle errors from onAuthStateChanged itself
@@ -123,8 +130,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signOut = useCallback(async () => {
      if (!isFirebaseAvailable) {
-       console.error("Cannot sign out, Firebase auth is not initialized.");
-        setAuthError("Firebase not available. Cannot sign out.");
+       console.error("Cannot sign out, Firebase auth is not initialized or available.");
+       setAuthError("Firebase not available. Cannot sign out.");
        return;
      }
     console.log("Signing out...");
@@ -136,14 +143,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.error('Error signing out:', error);
       const errorMsg = `Sign out error: ${error instanceof Error ? error.message : String(error)}`;
-       setAuthError(errorMsg);
-       // Even on error, onAuthStateChanged might fire or might not.
-       // If it doesn't fire, we need to ensure loading stops eventually.
-       // However, setting it false here might race with the listener.
-       // It's safer to rely on the listener, but add a fallback timeout if needed.
-       // setLoading(false); // Temporarily removed, rely on listener
+      setAuthError(errorMsg);
+    } finally {
+       // Ensure loading state is reset even if listener doesn't fire immediately after error
+       setLoading(false);
     }
-  }, []); // isFirebaseAvailable is constant after mount, no need to include
+  }, []); // isFirebaseAvailable is effectively constant after mount
 
   // Memoize the context value to prevent unnecessary re-renders
   const authContextValue = useMemo(() => ({
@@ -151,7 +156,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       userProfile,
       loading,
       signOut,
-      authError // Include authError in context if needed elsewhere
+      authError, // Auth/profile errors
+      initializationError: firebaseInitializationError // Pass init error down
   }), [user, userProfile, loading, signOut, authError]);
 
   // Provide the authentication context to children components
