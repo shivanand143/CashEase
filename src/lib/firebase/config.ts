@@ -33,14 +33,13 @@ const requiredEnvVars = Object.entries(firebaseConfig)
     .filter(([, value]) => !value)
     .map(([key]) => key);
 
-
 let app;
 let auth: any = null; // Initialize as null
 let db: any = null; // Initialize as null
 let firebaseInitializationError: string | null = null;
 
 if (requiredEnvVars.length > 0) {
-    firebaseInitializationError = `Missing Firebase environment variables: ${requiredEnvVars.join(', ')}. Please check your .env.local or environment configuration.`;
+    firebaseInitializationError = `Missing Firebase environment variables: ${requiredEnvVars.join(', ')}. Please check your .env.local or environment configuration. Create a '.env.local' file in the root directory and add the required variables. See .env.local.example for a template.`;
     console.warn(firebaseInitializationError); // Use warn to avoid breaking server-side rendering completely if Firebase is optional downstream
 } else {
     try {
