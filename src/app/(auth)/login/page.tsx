@@ -24,7 +24,10 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase/config';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, LogIn } from 'lucide-react';
+import { AlertCircle, LogIn, ChromeIcon } from 'lucide-react'; // Use a generic Chrome icon or create a Google SVG
+import { Separator } from '@/components/ui/separator'; // Import Separator
+import { useAuth } from '@/hooks/use-auth'; // Import useAuth for Google Sign-In
+
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address' }),
@@ -36,7 +39,9 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
+  const { signInWithGoogle } = useAuth(); // Get signInWithGoogle function
+  const [loadingEmail, setLoadingEmail] = useState(false); // Loading state for email/password login
+  const [loadingGoogle, setLoadingGoogle] = useState(false); // Loading state for Google login
   const [error, setError] = useState<string | null>(null);
 
   const {
@@ -48,7 +53,7 @@ export default function LoginPage() {
   });
 
   const onSubmit = async (data: LoginFormValues) => {
-    setLoading(true);
+    setLoadingEmail(true);
     setError(null);
     try {
       await signInWithEmailAndPassword(auth, data.email, data.password);
@@ -74,6 +79,9 @@ export default function LoginPage() {
            case 'auth/too-many-requests':
              errorMessage = 'Too many login attempts. Please try again later.';
              break;
+           case 'auth/user-disabled':
+               errorMessage = 'Your account has been disabled. Please contact support.';
+               break;
          }
        }
        setError(errorMessage);
@@ -83,16 +91,35 @@ export default function LoginPage() {
          description: errorMessage,
        });
     } finally {
-      setLoading(false);
+      setLoadingEmail(false);
     }
   };
+
+   const handleGoogleSignIn = async () => {
+      setLoadingGoogle(true);
+      setError(null);
+      try {
+          await signInWithGoogle();
+          // No need for toast here, it's handled in useAuth
+          router.push('/dashboard'); // Redirect on success
+      } catch (err: any) {
+          // Error handling is mostly done within useAuth, but we can set local error state if needed
+          console.error("Google Sign-In failed (from page):", err);
+          setError(err.message || "Failed to sign in with Google.");
+          // Toast is likely already shown by useAuth
+      } finally {
+          setLoadingGoogle(false);
+      }
+   };
+
+  const isLoading = loadingEmail || loadingGoogle; // General loading state
 
   return (
     <div className="flex justify-center items-center min-h-[calc(100vh-10rem)]">
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader className="space-y-1 text-center">
           <CardTitle className="text-2xl font-bold">Welcome Back!</CardTitle>
-          <CardDescription>Enter your email and password to access your account</CardDescription>
+          <CardDescription>Enter your email and password or use Google</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
            {error && (
@@ -110,8 +137,9 @@ export default function LoginPage() {
                 type="email"
                 placeholder="m@example.com"
                 {...register('email')}
-                disabled={loading}
+                disabled={isLoading}
                 aria-invalid={errors.email ? "true" : "false"}
+                 autoComplete="email"
               />
               {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
             </div>
@@ -127,15 +155,32 @@ export default function LoginPage() {
                 id="password"
                 type="password"
                 {...register('password')}
-                disabled={loading}
+                disabled={isLoading}
                 aria-invalid={errors.password ? "true" : "false"}
+                 autoComplete="current-password"
               />
               {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Logging in...' : <> <LogIn className="mr-2 h-4 w-4" /> Login </>}
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {loadingEmail ? 'Logging in...' : <> <LogIn className="mr-2 h-4 w-4" /> Login </>}
             </Button>
           </form>
+
+           {/* Separator and Google Login */}
+           <div className="relative my-4">
+             <div className="absolute inset-0 flex items-center">
+               <span className="w-full border-t" />
+             </div>
+             <div className="relative flex justify-center text-xs uppercase">
+               <span className="bg-background px-2 text-muted-foreground">
+                 Or continue with
+               </span>
+             </div>
+           </div>
+           <Button variant="outline" className="w-full" onClick={handleGoogleSignIn} disabled={isLoading}>
+             {loadingGoogle ? 'Signing in...' : <> <ChromeIcon className="mr-2 h-4 w-4" /> Continue with Google </>}
+           </Button>
+
         </CardContent>
         <CardFooter className="flex flex-col space-y-2 text-center text-sm">
           <p>
@@ -144,11 +189,6 @@ export default function LoginPage() {
               Sign Up
             </Link>
           </p>
-           {/* Optional: Add Social Login Buttons */}
-           {/* <Separator className="my-4" />
-           <Button variant="outline" className="w-full" disabled={loading}>
-             <svg className="mr-2 h-4 w-4" /> Continue with Google
-           </Button> */}
         </CardFooter>
       </Card>
     </div>

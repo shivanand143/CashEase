@@ -23,7 +23,7 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar-alt"; // Using alternative sidebar for structure
-import { LayoutDashboard, History, Send, Settings, LogOut, User, Home } from 'lucide-react';
+import { LayoutDashboard, History, Send, Settings, LogOut, User, Home, Gift } from 'lucide-react'; // Added Gift icon
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 
@@ -100,6 +100,18 @@ export default function DashboardLayout({
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
+                     <SidebarMenuItem>
+                       <SidebarMenuButton
+                         asChild
+                         isActive={isActive('/dashboard/referrals')}
+                         tooltip="Referrals"
+                       >
+                         <Link href="/dashboard/referrals">
+                            <Gift /> {/* Added Referrals Link */}
+                            <span>Referrals</span>
+                         </Link>
+                       </SidebarMenuButton>
+                     </SidebarMenuItem>
                     <SidebarMenuItem>
                       <SidebarMenuButton
                         asChild
@@ -118,7 +130,7 @@ export default function DashboardLayout({
                         <SidebarMenuItem>
                            <SidebarMenuButton
                              asChild
-                             isActive={isActive('/admin')}
+                             isActive={pathname.startsWith('/admin')} // Highlight if in any admin section
                              tooltip="Admin Panel"
                            >
                              <Link href="/admin">

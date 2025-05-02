@@ -1,4 +1,8 @@
 // src/lib/types.ts
+import type { User as FirebaseUser } from 'firebase/auth'; // Import Firebase User type
+
+// Export Firebase User type along with existing types
+export type User = FirebaseUser;
 
 export interface UserProfile {
   uid: string;
@@ -9,8 +13,8 @@ export interface UserProfile {
   cashbackBalance: number; // Current available cashback balance
   pendingCashback: number; // Cashback waiting for confirmation
   lifetimeCashback: number; // Total cashback earned
-  referralCode?: string; // Optional referral code
-  referredBy?: string; // UID of the user who referred this user
+  referralCode?: string | null; // Optional referral code - allow null
+  referredBy?: string | null; // UID of the user who referred this user - allow null
   createdAt: Date;
   updatedAt?: Date; // Added optional updatedAt
 }
