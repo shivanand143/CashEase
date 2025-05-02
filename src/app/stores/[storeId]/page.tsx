@@ -1,0 +1,282 @@
+// src/app/stores/[storeId]/page.tsx
+"use client";
+
+import * as React from 'react';
+import { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import Image from 'next/image';
+import Link from 'next/link';
+import { doc, getDoc, collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { db } from '@/lib/firebase/config';
+import type { Store, Coupon } from '@/lib/types';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { AlertCircle, ArrowLeft, Tag, ShoppingBag } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Separator } from '@/components/ui/separator';
+import { useToast } from "@/hooks/use-toast";
+import { logClick } from '@/lib/tracking'; // Import the tracking function
+import { useAuth } from '@/hooks/use-auth'; // Import useAuth to get user ID
+
+export default function StoreDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const { toast } = useToast();
+  const storeId = params.storeId as string;
+  const { user } = useAuth(); // Get the current user
+
+  const [store, setStore] = useState<Store | null>(null);
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [loadingStore, setLoadingStore] = useState(true);
+  const [loadingCoupons, setLoadingCoupons] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchStoreData = async () => {
+      if (!storeId) return;
+      setLoadingStore(true);
+      setLoadingCoupons(true);
+      setError(null);
+
+      try {
+        // Fetch Store Details
+        const storeDocRef = doc(db, 'stores', storeId);
+        const storeDocSnap = await getDoc(storeDocRef);
+
+        if (storeDocSnap.exists()) {
+          const storeData = {
+            id: storeDocSnap.id,
+            ...storeDocSnap.data(),
+             createdAt: storeDocSnap.data().createdAt?.toDate ? storeDocSnap.data().createdAt.toDate() : new Date(),
+             updatedAt: storeDocSnap.data().updatedAt?.toDate ? storeDocSnap.data().updatedAt.toDate() : new Date(),
+          } as Store;
+           setStore(storeData);
+
+           // Fetch Active Coupons for this Store
+           const couponsCollection = collection(db, 'coupons');
+           const q = query(
+             couponsCollection,
+             where('storeId', '==', storeId),
+             where('isActive', '==', true),
+             orderBy('isFeatured', 'desc'), // Show featured first
+             orderBy('createdAt', 'desc')
+           );
+           const couponsSnapshot = await getDocs(q);
+           const couponsData = couponsSnapshot.docs.map(doc => ({
+             id: doc.id,
+             ...doc.data(),
+             expiryDate: doc.data().expiryDate?.toDate ? doc.data().expiryDate.toDate() : null,
+             createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : new Date(),
+             updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate() : new Date(),
+           })) as Coupon[];
+           setCoupons(couponsData);
+
+        } else {
+          setError("Store not found.");
+        }
+      } catch (err) {
+        console.error("Error fetching store data:", err);
+        setError("Failed to load store details. Please try again later.");
+      } finally {
+        setLoadingStore(false);
+        setLoadingCoupons(false);
+      }
+    };
+
+    fetchStoreData();
+  }, [storeId]);
+
+   const handleStoreClick = async (clickedStore: Store) => {
+       if (user) {
+           try {
+               await logClick(user.uid, clickedStore.id);
+               window.open(clickedStore.affiliateLink, '_blank', 'noopener,noreferrer');
+           } catch (clickError) {
+               console.error("Error logging click:", clickError);
+               window.open(clickedStore.affiliateLink, '_blank', 'noopener,noreferrer');
+           }
+       } else {
+           window.open(clickedStore.affiliateLink, '_blank', 'noopener,noreferrer');
+           // Consider prompting login here as well
+       }
+   };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      toast({
+        title: "Copied!",
+        description: "Coupon code copied to clipboard.",
+      });
+    }).catch(err => {
+      console.error('Failed to copy: ', err);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Could not copy code.",
+      });
+    });
+  };
+
+   const handleCouponClick = async (coupon: Coupon) => {
+       if (user && store) {
+           try {
+               // Log a click associated with the store when a coupon is used
+               await logClick(user.uid, store.id, coupon.id);
+               if (coupon.code) {
+                  copyToClipboard(coupon.code);
+               }
+                // Redirect based on coupon link, fallback to store link
+               window.open(coupon.link || store.affiliateLink, '_blank', 'noopener,noreferrer');
+           } catch (clickError) {
+               console.error("Error logging coupon click:", clickError);
+               if (coupon.code) {
+                 copyToClipboard(coupon.code);
+               }
+               window.open(coupon.link || (store?.affiliateLink ?? '#'), '_blank', 'noopener,noreferrer');
+           }
+       } else {
+           // Non-logged-in user or store not loaded yet
+            if (coupon.code) {
+               copyToClipboard(coupon.code);
+            }
+            window.open(coupon.link || (store?.affiliateLink ?? '#'), '_blank', 'noopener,noreferrer');
+            // Consider prompting login here
+       }
+   };
+
+  if (loadingStore) {
+    return (
+      <div className="space-y-8">
+        <Skeleton className="h-8 w-32" />
+        <div className="grid md:grid-cols-3 gap-8">
+          <div className="md:col-span-1 space-y-4">
+            <Skeleton className="w-full h-48" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-6 w-3/4" />
+            <Skeleton className="h-20 w-full" />
+          </div>
+          <div className="md:col-span-2 space-y-6">
+             <Skeleton className="h-8 w-48" />
+             <Skeleton className="h-24 w-full" />
+             <Skeleton className="h-24 w-full" />
+             <Skeleton className="h-24 w-full" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-4">
+         <Button variant="outline" onClick={() => router.back()} size="sm">
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Stores
+         </Button>
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  if (!store) {
+    return ( // Should technically be covered by error state, but added for robustness
+        <div className="space-y-4">
+             <Button variant="outline" onClick={() => router.back()} size="sm">
+                 <ArrowLeft className="mr-2 h-4 w-4" /> Back to Stores
+             </Button>
+            <p>Store not found.</p>
+        </div>
+    );
+  }
+
+
+  return (
+    <div className="space-y-8">
+       <Button variant="outline" onClick={() => router.back()} size="sm" className="mb-4">
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Stores
+       </Button>
+
+       <div className="grid md:grid-cols-3 gap-8 items-start">
+        {/* Store Info Column */}
+        <div className="md:col-span-1 space-y-4 sticky top-20">
+           <Card className="shadow-md">
+              <CardHeader className="items-center text-center p-4 bg-muted/30">
+                 <Image
+                   data-ai-hint={`${store.name} logo large`}
+                   src={store.logoUrl || `https://picsum.photos/seed/${store.id}/200/100`}
+                   alt={`${store.name} Logo`}
+                   width={160}
+                   height={80}
+                   className="object-contain mb-2 h-[80px]"
+                   onError={(e) => { e.currentTarget.src = 'https://picsum.photos/seed/placeholder/200/100'; e.currentTarget.alt = 'Placeholder Logo'; }}
+                 />
+                <CardTitle className="text-2xl">{store.name}</CardTitle>
+                <CardDescription className="text-primary font-semibold text-lg">{store.cashbackRate}</CardDescription>
+              </CardHeader>
+              <CardContent className="p-4 space-y-3">
+                 {store.description && <p className="text-sm text-muted-foreground">{store.description}</p>}
+                 {store.categories?.length > 0 && (
+                    <div className="text-sm">
+                        <span className="font-medium">Categories:</span> {store.categories.join(', ')}
+                    </div>
+                 )}
+                 {/* Add other store details if needed */}
+              </CardContent>
+              <CardFooter className="p-4">
+                  <Button size="lg" className="w-full" onClick={() => handleStoreClick(store)}>
+                      <ShoppingBag className="mr-2 h-5 w-5" /> Shop Now & Earn Cashback
+                  </Button>
+              </CardFooter>
+           </Card>
+        </div>
+
+        {/* Coupons Column */}
+        <div className="md:col-span-2 space-y-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+              <Tag className="w-6 h-6 text-secondary" />
+              Available Coupons & Deals for {store.name}
+          </h2>
+          <Separator />
+
+          {loadingCoupons ? (
+            <div className="space-y-4">
+               <Skeleton className="h-24 w-full" />
+               <Skeleton className="h-24 w-full" />
+            </div>
+          ) : coupons.length > 0 ? (
+            coupons.map((coupon) => (
+              <Card key={coupon.id} className="shadow-sm hover:shadow-md transition-shadow flex flex-col sm:flex-row items-start sm:items-center">
+                <CardContent className="p-4 flex-grow space-y-1">
+                   <p className="font-semibold text-md">{coupon.description}</p>
+                   {coupon.expiryDate && (
+                      <p className="text-xs text-muted-foreground">
+                         Expires: {coupon.expiryDate.toLocaleDateString()}
+                      </p>
+                   )}
+                </CardContent>
+                <CardFooter className="p-4 border-t sm:border-t-0 sm:border-l w-full sm:w-auto shrink-0">
+                  {coupon.code ? (
+                    <Button variant="outline" className="w-full sm:w-auto border-dashed border-accent text-accent hover:bg-accent/10 hover:text-accent" onClick={() => handleCouponClick(coupon)}>
+                      <span className="mr-2">{coupon.code}</span>
+                      <span>Copy Code</span>
+                    </Button>
+                  ) : (
+                    <Button className="w-full sm:w-auto bg-secondary hover:bg-secondary/90" onClick={() => handleCouponClick(coupon)}>
+                      Get Deal
+                    </Button>
+                  )}
+                </CardFooter>
+              </Card>
+            ))
+          ) : (
+            <p className="text-muted-foreground py-4">No active coupons found for this store right now. Check back later!</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
