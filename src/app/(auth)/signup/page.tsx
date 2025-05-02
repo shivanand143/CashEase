@@ -69,7 +69,9 @@ export default function SignupPage() {
      const userDocRef = doc(db, 'users', user.uid);
 
      // Prepare the data for Firestore, explicitly defining fields
-     const newUserProfileData = {
+     // Omit fields that are undefined instead of setting them explicitly to undefined
+     const newUserProfileData: Partial<UserProfile> & { createdAt: any, updatedAt: any } = {
+       uid: user.uid, // Add uid to the profile data
        email: user.email,
        displayName: data.displayName,
        photoURL: user.photoURL ?? null, // Use photoURL from auth profile if available
@@ -79,9 +81,9 @@ export default function SignupPage() {
        lifetimeCashback: 0,
        createdAt: serverTimestamp(), // Use server timestamp
        updatedAt: serverTimestamp(), // Also set updatedAt on creation
-       referralCode: undefined, // Explicitly undefined if not generated yet
-       referredBy: undefined, // Explicitly undefined
+       // referralCode and referredBy are omitted if not provided
      };
+
 
      // Use setDoc to create the document with the specific UID
      await setDoc(userDocRef, newUserProfileData);
@@ -110,7 +112,12 @@ export default function SignupPage() {
              errorMessage = 'Email/password accounts are not enabled. Please contact support.';
              break;
          default:
-              errorMessage = `An error occurred (${err.code}). Please try again.`;
+              // Check for Firestore specific errors like invalid data
+              if (err.message?.includes('invalid data') && err.message?.includes('Unsupported field value: undefined')) {
+                  errorMessage = 'Internal error during profile creation. Please try again or contact support.';
+              } else {
+                  errorMessage = `An error occurred (${err.code || 'unknown'}). Please try again.`;
+              }
        }
      }
      setError(errorMessage);
