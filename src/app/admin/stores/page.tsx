@@ -33,6 +33,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger, // Import AlertDialogTrigger
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast";
 import AdminGuard from '@/components/guards/admin-guard'; // Ensure page is protected
