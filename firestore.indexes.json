@@ -33,7 +33,7 @@
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
       ]
-    },
+     },
      {
           "collectionGroup": "transactions",
           "queryScope": "COLLECTION",
@@ -77,19 +77,21 @@
       ]
     },
      {
-      "collectionGroup": "users",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "email", "order": "ASCENDING" }
-      ]
-     },
-     {
        "collectionGroup": "users",
        "queryScope": "COLLECTION",
        "fields": [
          { "fieldPath": "referralCode", "order": "ASCENDING" }
        ]
-     }
+     },
+     {
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "categories", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
+    }
   ],
   "fieldOverrides": []
 }
