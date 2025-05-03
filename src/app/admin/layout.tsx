@@ -17,7 +17,7 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar-alt"; // Using the same alternative sidebar
-import { LayoutDashboard, Users, Store, Tag, Send, ShieldCheck, Home, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Store, Tag, Send, ShieldCheck, Home, LogOut, ListOrdered } from 'lucide-react'; // Added ListOrdered
 import { useAuth } from '@/hooks/use-auth';
 import AdminGuard from '@/components/guards/admin-guard'; // Import the guard
 
@@ -88,6 +88,18 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
                            </Link>
                          </SidebarMenuButton>
                        </SidebarMenuItem>
+                        <SidebarMenuItem>
+                          <SidebarMenuButton
+                            asChild
+                            isActive={isActive('/admin/transactions')}
+                            tooltip="Transactions"
+                          >
+                            <Link href="/admin/transactions">
+                               <ListOrdered />
+                               <span>Transactions</span>
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
                       <SidebarMenuItem>
                          <SidebarMenuButton
                            asChild

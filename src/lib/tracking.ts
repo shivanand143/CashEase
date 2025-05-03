@@ -1,7 +1,7 @@
 // src/lib/tracking.ts
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import type { ClickData } from '@/lib/types'; // Import the defined ClickData type
+import type { TrackClickData } from '@/lib/types'; // Use the correct interface
 
 /**
  * Logs a user click event to Firestore.
@@ -13,6 +13,10 @@ import type { ClickData } from '@/lib/types'; // Import the defined ClickData ty
  * @throws Throws an error if logging fails.
  */
 export async function logClick(userId: string, storeId: string, couponId?: string): Promise<void> {
+  if (!db) {
+    console.error("Firestore DB is not available for logging click.");
+    return; // Cannot log if DB is not initialized
+  }
   if (!userId || !storeId) {
     console.warn('User ID and Store ID are required for click tracking.');
     return; // Silently ignore if required IDs are missing
@@ -21,16 +25,15 @@ export async function logClick(userId: string, storeId: string, couponId?: strin
   try {
     const clicksCollection = collection(db, 'clicks');
 
-    // Use the imported ClickData interface
-    const clickData: ClickData = {
+    // Use the imported TrackClickData interface
+    const clickData: TrackClickData = {
       userId: userId,
       storeId: storeId,
       timestamp: serverTimestamp(), // Use server timestamp for accuracy
       // Conditionally add couponId if it exists
       ...(couponId && { couponId: couponId }),
-      // Optional: Add userAgent and IP address (handle privacy carefully)
-      // userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined, // Only available client-side
-      // ipAddress: '...', // Need to get this server-side or via a function if required
+      // Optional: Add userAgent (only on client)
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
     };
 
     await addDoc(clicksCollection, clickData);
