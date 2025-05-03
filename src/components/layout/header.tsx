@@ -15,6 +15,8 @@ import {
 import {
   Sheet,
   SheetContent,
+  SheetHeader, // Import SheetHeader
+  SheetTitle, // Import SheetTitle
   SheetTrigger,
   SheetClose,
 } from "@/components/ui/sheet"; // Import Sheet components for mobile menu
@@ -165,99 +167,104 @@ export default function Header() {
                           <span className="sr-only">Toggle Menu</span>
                       </Button>
                   </SheetTrigger>
-                  <SheetContent side="right" className="w-full max-w-xs p-4">
-                      <div className="flex flex-col h-full">
-                         {/* Mobile Menu Header */}
-                          <div className="mb-6 flex items-center justify-between">
-                             <Link href="/" className="flex items-center space-x-2">
-                               <IndianRupee className="h-6 w-6 text-primary" />
-                               <span className="font-bold text-xl">CashEase</span>
-                             </Link>
-                              <SheetClose asChild>
-                                <Button variant="ghost" size="icon">
-                                   <X className="h-5 w-5" />
-                                   <span className="sr-only">Close Menu</span>
-                                 </Button>
-                              </SheetClose>
-                          </div>
+                  <SheetContent side="right" className="w-full max-w-xs p-4 flex flex-col">
+                      {/* Add SheetHeader and SheetTitle for accessibility */}
+                      <SheetHeader className="sr-only"> {/* Use sr-only if you want to visually hide it */}
+                          <SheetTitle>Main Menu</SheetTitle>
+                      </SheetHeader>
 
-                          {/* Mobile Navigation Links */}
-                          <nav className="flex flex-col space-y-2 mb-6">
-                              {navLinks.map((link) => (
-                                  <SheetClose key={link.href} asChild>
-                                      <Link
-                                          href={link.href}
-                                          className={cn(
-                                              "flex items-center gap-3 rounded-md px-3 py-2 text-base font-medium transition-colors hover:bg-muted",
-                                              isActive(link.href) ? "bg-muted text-primary" : "text-foreground"
-                                          )}
-                                      >
-                                           {link.icon && <link.icon className="h-5 w-5" />}
-                                          {link.label}
-                                      </Link>
-                                  </SheetClose>
-                              ))}
-                          </nav>
+                      {/* Mobile Menu Header */}
+                       <div className="mb-6 flex items-center justify-between">
+                          <Link href="/" className="flex items-center space-x-2">
+                            <IndianRupee className="h-6 w-6 text-primary" />
+                            <span className="font-bold text-xl">CashEase</span>
+                          </Link>
+                           <SheetClose asChild>
+                             <Button variant="ghost" size="icon">
+                                <X className="h-5 w-5" />
+                                <span className="sr-only">Close Menu</span>
+                              </Button>
+                           </SheetClose>
+                       </div>
 
-                           <Separator className="mb-6"/>
+                       <div className="flex-grow flex flex-col">
+                           {/* Mobile Navigation Links */}
+                           <nav className="flex flex-col space-y-2 mb-6">
+                               {navLinks.map((link) => (
+                                   <SheetClose key={link.href} asChild>
+                                       <Link
+                                           href={link.href}
+                                           className={cn(
+                                               "flex items-center gap-3 rounded-md px-3 py-2 text-base font-medium transition-colors hover:bg-muted",
+                                               isActive(link.href) ? "bg-muted text-primary" : "text-foreground"
+                                           )}
+                                       >
+                                            {link.icon && <link.icon className="h-5 w-5" />}
+                                           {link.label}
+                                       </Link>
+                                   </SheetClose>
+                               ))}
+                           </nav>
 
-                          {/* Mobile User/Auth Actions */}
-                           <div className="mt-auto flex flex-col space-y-2">
-                               {loading ? (
-                                   <Skeleton className="h-10 w-full rounded-md" />
-                               ) : user ? (
-                                   <>
-                                       {userMenuItems.map((item) => (
-                                           <SheetClose key={item.href} asChild>
-                                              <Link
-                                                  href={item.href}
-                                                  className={cn(
-                                                     "flex items-center gap-3 rounded-md px-3 py-2 text-base font-medium transition-colors hover:bg-muted",
-                                                     isActive(item.href) ? "bg-muted text-primary" : "text-foreground"
-                                                   )}
-                                               >
-                                                  <item.icon className="h-5 w-5" />
-                                                  {item.label}
-                                              </Link>
-                                           </SheetClose>
-                                       ))}
-                                        {userProfile?.role === 'admin' && (
-                                            <SheetClose asChild>
-                                                <Link
-                                                    href={adminMenuItem.href}
-                                                     className={cn(
+                            <Separator className="mb-6"/>
+
+                           {/* Mobile User/Auth Actions */}
+                            <div className="mt-auto flex flex-col space-y-2">
+                                {loading ? (
+                                    <Skeleton className="h-10 w-full rounded-md" />
+                                ) : user ? (
+                                    <>
+                                        {userMenuItems.map((item) => (
+                                            <SheetClose key={item.href} asChild>
+                                               <Link
+                                                   href={item.href}
+                                                   className={cn(
                                                       "flex items-center gap-3 rounded-md px-3 py-2 text-base font-medium transition-colors hover:bg-muted",
-                                                      isActive(adminMenuItem.href) ? "bg-muted text-primary" : "text-foreground"
+                                                      isActive(item.href) ? "bg-muted text-primary" : "text-foreground"
                                                     )}
                                                 >
-                                                    <adminMenuItem.icon className="h-5 w-5" />
-                                                    {adminMenuItem.label}
-                                                </Link>
+                                                   <item.icon className="h-5 w-5" />
+                                                   {item.label}
+                                               </Link>
                                             </SheetClose>
-                                        )}
-                                       <Separator className="my-2"/>
-                                       <Button variant="ghost" onClick={signOut} className="w-full justify-start px-3 py-2 text-base font-medium">
-                                           <LogOut className="mr-3 h-5 w-5" /> Logout
-                                       </Button>
-                                   </>
-                               ) : (
-                                   <>
-                                       <SheetClose asChild>
-                                          <Button variant="ghost" asChild className="w-full justify-start px-3 py-2 text-base font-medium">
-                                              <Link href="/login">
-                                                 <LogIn className="mr-3 h-5 w-5" /> Login
-                                              </Link>
-                                          </Button>
-                                       </SheetClose>
-                                       <SheetClose asChild>
-                                          <Button asChild className="w-full justify-center px-3 py-2 text-base font-medium">
-                                             <Link href="/signup">Sign Up</Link>
-                                          </Button>
-                                       </SheetClose>
-                                   </>
-                               )}
-                           </div>
-                      </div>
+                                        ))}
+                                         {userProfile?.role === 'admin' && (
+                                             <SheetClose asChild>
+                                                 <Link
+                                                     href={adminMenuItem.href}
+                                                      className={cn(
+                                                       "flex items-center gap-3 rounded-md px-3 py-2 text-base font-medium transition-colors hover:bg-muted",
+                                                       isActive(adminMenuItem.href) ? "bg-muted text-primary" : "text-foreground"
+                                                     )}
+                                                 >
+                                                     <adminMenuItem.icon className="h-5 w-5" />
+                                                     {adminMenuItem.label}
+                                                 </Link>
+                                             </SheetClose>
+                                         )}
+                                        <Separator className="my-2"/>
+                                        <Button variant="ghost" onClick={signOut} className="w-full justify-start px-3 py-2 text-base font-medium">
+                                            <LogOut className="mr-3 h-5 w-5" /> Logout
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <SheetClose asChild>
+                                           <Button variant="ghost" asChild className="w-full justify-start px-3 py-2 text-base font-medium">
+                                               <Link href="/login">
+                                                  <LogIn className="mr-3 h-5 w-5" /> Login
+                                               </Link>
+                                           </Button>
+                                        </SheetClose>
+                                        <SheetClose asChild>
+                                           <Button asChild className="w-full justify-center px-3 py-2 text-base font-medium">
+                                              <Link href="/signup">Sign Up</Link>
+                                           </Button>
+                                        </SheetClose>
+                                    </>
+                                )}
+                            </div>
+                       </div>
                   </SheetContent>
               </Sheet>
           </div>
@@ -266,5 +273,3 @@ export default function Header() {
     </header>
   );
 }
-
-    
