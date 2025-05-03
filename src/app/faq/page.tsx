@@ -2,7 +2,9 @@
 "use client";
 
 import * as React from 'react';
+import Link from 'next/link'; // Import Link
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Button } from '@/components/ui/button'; // Import Button
 import { HelpCircle } from 'lucide-react';
 
 // FAQ Data - Replace with your actual FAQ content
