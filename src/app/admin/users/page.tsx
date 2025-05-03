@@ -5,7 +5,7 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { collection, getDocs, query, orderBy, doc, updateDoc, serverTimestamp } from 'firebase/firestore'; // Added doc, updateDoc, serverTimestamp
 import { db } from '@/lib/firebase/config';
-import type { UserProfile } from '@/lib/types';
+import type { UserProfile, User } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -34,12 +34,14 @@ import {
 } from "@/components/ui/alert-dialog"; // Import AlertDialog
 import { useToast } from "@/hooks/use-toast"; // Import useToast
 import AdminGuard from '@/components/guards/admin-guard'; // Ensure page is protected
+import { useAuth } from '@/hooks/use-auth'; // Import the useAuth hook
 
 function AdminUsersPageContent() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast(); // Initialize toast
+  const { createOrUpdateUserProfile } = useAuth(); // Get the function from the hook
   const [userToConfirm, setUserToConfirm] = useState<UserProfile | null>(null); // For confirmation dialog
   const [actionToConfirm, setActionToConfirm] = useState<'make_admin' | 'disable' | 'enable' | null>(null);
 
@@ -72,33 +74,37 @@ function AdminUsersPageContent() {
   }, []);
 
 
-  const handleUpdateUserRole = async (userId: string, newRole: 'admin' | 'user') => {
+  const handleUpdateUserRole = async (userId: string, displayName: string | null, email: string | null, newRole: 'admin' | 'user') => {
     console.log(`Attempting to change role for user ID: ${userId} to ${newRole}`);
-    const userDocRef = doc(db, 'users', userId);
+    // Construct a partial User object sufficient for createOrUpdateUserProfile
+    const userToUpdate = {
+        uid: userId,
+        email: email ?? undefined, // Use undefined if null
+        displayName: displayName ?? undefined, // Use undefined if null
+        role: newRole
+    } as User & { role: 'admin' | 'user' }; // Cast to include the role
+
     try {
-      await updateDoc(userDocRef, {
-        role: newRole,
-        updatedAt: serverTimestamp(),
-      });
-      toast({
-        title: "Role Updated",
-        description: `User role successfully changed to ${newRole}.`,
-      });
-      fetchUsers(); // Refresh the user list
+       await createOrUpdateUserProfile(userToUpdate, null); // Call the function from the hook
+       toast({
+           title: "Role Updated",
+           description: `User role successfully changed to ${newRole}.`,
+       });
+       fetchUsers(); // Refresh the user list
     } catch (err) {
-      console.error("Error updating user role:", err);
-      toast({
-        variant: "destructive",
-        title: "Update Failed",
-        description: `Could not update user role. Error: ${err instanceof Error ? err.message : String(err)}`,
-      });
-      setError(`Failed to update role for user ${userId}.`);
+        console.error("Error updating user role:", err);
+        toast({
+            variant: "destructive",
+            title: "Update Failed",
+            description: `Could not update user role. Error: ${err instanceof Error ? err.message : String(err)}`,
+        });
+        setError(`Failed to update role for user ${userId}.`);
     } finally {
-       // Reset confirmation state
-       setUserToConfirm(null);
-       setActionToConfirm(null);
+        // Reset confirmation state
+        setUserToConfirm(null);
+        setActionToConfirm(null);
     }
-  };
+ };
 
   const handleToggleUserStatus = async (userId: string, currentStatus: boolean) => {
      const newStatus = !currentStatus; // Toggle the status
@@ -106,14 +112,9 @@ function AdminUsersPageContent() {
      console.log(`Attempting to ${actionText} user ID: ${userId}`);
      const userDocRef = doc(db, 'users', userId);
      try {
-         // Check if the user profile type includes an 'isActive' or similar field.
-         // If not, add it to the UserProfile type in src/lib/types.ts
-         // Example: isActive?: boolean;
+         // Check if the user profile type includes an 'isDisabled' or similar field.
          await updateDoc(userDocRef, {
-             // Assuming a field like 'isDisabled' or 'isActive' exists
-             // Adjust the field name based on your UserProfile type
              isDisabled: !newStatus, // Example: set isDisabled to true if newStatus is false (disabled)
-             // or isActive: newStatus, // Alternative: set isActive to the new status
              updatedAt: serverTimestamp(),
          });
          toast({
@@ -152,7 +153,8 @@ function AdminUsersPageContent() {
 
        switch (actionToConfirm) {
            case 'make_admin':
-               handleUpdateUserRole(userToConfirm.uid, 'admin');
+                // Pass necessary user info for role update
+               handleUpdateUserRole(userToConfirm.uid, userToConfirm.displayName, userToConfirm.email, 'admin');
                break;
            case 'disable':
                // Assuming 'isDisabled' field exists. Default to 'false' if not present.
@@ -210,7 +212,7 @@ function AdminUsersPageContent() {
                            {user.role}
                         </Badge>
                      </TableCell>
-                     <TableCell className="hidden lg:table-cell">{format(user.createdAt, 'PP')}</TableCell>
+                     <TableCell className="hidden lg:table-cell">{format(user.createdAt instanceof Date ? user.createdAt : (user.createdAt as any)?.toDate() ?? new Date(0), 'PP')}</TableCell>
                      <TableCell className="hidden md:table-cell text-center">
                          <Badge variant={isDisabled ? 'outline' : 'default'}>
                            {isDisabled ? 'Disabled' : 'Active'}
