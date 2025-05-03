@@ -1,126 +1,93 @@
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if the user is an admin
-    function isAdmin() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    // Helper function to check if user is authenticated
+    // Helper function to check if a user is authenticated
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Helper function to check if user owns the document
+    // Helper function to check if the requesting user is the owner of the document
     function isOwner(userId) {
-      return request.auth.uid == userId;
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Helper function to check if the requesting user is an admin
+    function isAdmin() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     // Users Collection
     match /users/{userId} {
       // Allow users to read their own profile
-      // Allow admins to read any profile
-      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
-
-      // Allow users to create their own profile (on signup)
-      allow create: if isAuthenticated() && isOwner(userId);
-
-      // Allow users to update their own profile (e.g., displayName, payment details)
-      // Allow admins to update any profile (e.g., role, balance adjustments)
-      // Prevent users from changing their own role or balances directly
-      allow update: if isAuthenticated() &&
-                     (isOwner(userId) && request.resource.data.role == resource.data.role && request.resource.data.cashbackBalance == resource.data.cashbackBalance && request.resource.data.pendingCashback == resource.data.pendingCashback && request.resource.data.lifetimeCashback == resource.data.lifetimeCashback) ||
-                     isAdmin();
-
-      // Generally disallow direct deletion of user profiles
-      allow delete: if false; // Or: if isAdmin();
+      allow read: if isOwner(userId) || isAdmin();
+      // Allow users to create their own profile on signup
+      // Allow users to update their own profile (displayName, photoURL, paymentDetails, updatedAt)
+      // Allow admins to update any user profile (e.g., role)
+      allow write: if isOwner(userId) || isAdmin();
+       // Specifically allow create for anyone authenticated (signup)
+       allow create: if isAuthenticated();
+       // Specifically allow update for owner or admin
+       allow update: if isOwner(userId) || isAdmin();
+        // Disallow delete for now
+       allow delete: if false;
     }
-    // Allow admins to list users
-    match /users {
-       allow list: if isAuthenticated() && isAdmin();
-    }
-
 
     // Stores Collection
     match /stores/{storeId} {
-      // Allow anyone to read active store details
-      allow read: if resource.data.isActive == true || (isAuthenticated() && isAdmin());
-
-      // Only admins can create, update, or delete stores
-      allow write: if isAuthenticated() && isAdmin();
-    }
-    // Allow anyone to list active stores
-    match /stores {
-        allow list: if true; // Allow listing for filtering active stores client-side, or restrict further
+      // Allow anyone to read store information
+      allow read: if true;
+      // Only allow admins to create, update, or delete stores
+      allow write: if isAdmin();
     }
 
     // Coupons Collection
     match /coupons/{couponId} {
-      // Allow anyone to read active coupon details
-      allow read: if resource.data.isActive == true || (isAuthenticated() && isAdmin());
-
-      // Only admins can create, update, or delete coupons
-      allow write: if isAuthenticated() && isAdmin();
+      // Allow anyone to read coupon information
+      allow read: if true;
+      // Only allow admins to create, update, or delete coupons
+      allow write: if isAdmin();
     }
-     // Allow anyone to list active coupons
-     match /coupons {
-         allow list: if true; // Allow listing for filtering active coupons client-side
-     }
-
 
     // Clicks Collection
     match /clicks/{clickId} {
-      // Allow users to create their own click logs
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-
-      // Restrict reads/updates/deletes, maybe allow admins later if needed
-      allow read, update, delete: if false; // Or: if isAuthenticated() && isAdmin();
-    }
-    // Restrict listing clicks by default
-    match /clicks {
-        allow list: if false; // Or: if isAuthenticated() && isAdmin();
+      // Allow authenticated users to create click logs
+      allow create: if isAuthenticated();
+      // Only allow admins or potentially the user who created it to read (adjust if needed)
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      // Disallow updates/deletes generally
+      allow update, delete: if false;
     }
 
-    // Transactions Collection
+    // Transactions Collection (Assume these are created by backend/admin function)
     match /transactions/{transactionId} {
-       // Allow users to read their own transactions
-       // Allow admins to read any transaction
-      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
-
-      // Transactions should typically be created server-side or by admins
-      allow create: if isAuthenticated() && isAdmin(); // Or use a Cloud Function
-      // Allow admins to update status (e.g., confirm, reject)
-      allow update: if isAuthenticated() && isAdmin();
-      // Disallow direct deletion
+      // Allow users to read their own transactions
+      // Allow admins to read all transactions
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      // Typically, transactions are created/updated by a secure backend process
+      // Only allow admins to modify transactions directly (use with caution)
+      allow write: if isAdmin();
+       // Allow create only for admins (or backend function)
+      allow create: if isAdmin();
+       // Allow update only for admins (or backend function)
+      allow update: if isAdmin();
+      // Disallow delete for data integrity
       allow delete: if false;
     }
-     // Allow admins to list all transactions, allow users to list their own
-     match /transactions {
-         allow list: if isAuthenticated() && (request.query.limit <= 20 || isAdmin()); // Allow limited listing for user history, or full listing for admin
-     }
 
-
-    // PayoutRequests Collection
+    // Payout Requests Collection
     match /payoutRequests/{requestId} {
       // Allow users to create their own payout requests
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-
       // Allow users to read their own requests
-      // Allow admins to read any request
-      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
-
-      // Only admins can update (approve/reject) requests
-      allow update: if isAuthenticated() && isAdmin();
-
-      // Disallow direct deletion
+      // Allow admins to read all requests
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      // Only allow admins to update the status/notes of payout requests
+      allow update: if isAdmin();
+      // Disallow delete for now
       allow delete: if false;
     }
-     // Allow admins to list payout requests
-     match /payoutRequests {
-         allow list: if isAuthenticated() && isAdmin();
-     }
-
   }
 }

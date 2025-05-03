@@ -70,7 +70,7 @@ export default function SettingsPage() {
   // IMPORTANT: Replace 'YOUR_ADMIN_USER_ID_PLACEHOLDER' with the actual UID of the user you want to be the initial admin.
   // This is ONLY for initial setup and is NOT secure for production.
   // In production, use a backend function or secure method to manage roles.
-  const adminSetupUid = 'YOUR_ADMIN_USER_ID_PLACEHOLDER'; // <<<--- REPLACE THIS
+  const adminSetupUid = '4v1fcqAFtPTmCIndN9IhoiYLkBz1'; // <<<--- REPLACE THIS
 
   const { user, userProfile, loading: authLoading, signOut, createOrUpdateUserProfile } = useAuth();
   const router = useRouter();
