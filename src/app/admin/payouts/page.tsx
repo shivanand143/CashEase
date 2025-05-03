@@ -369,7 +369,7 @@ function PayoutsTableSkeleton() {
     return (
        <Table>
          <TableHeader>
-           <TableRow>{/* Remove whitespace between elements */}
+           <TableRow>
               <TableHead><Skeleton className="h-5 w-32" /></TableHead>
               <TableHead className="hidden md:table-cell"><Skeleton className="h-5 w-36" /></TableHead>
               <TableHead className="text-right"><Skeleton className="h-5 w-24 ml-auto" /></TableHead>
@@ -380,7 +380,7 @@ function PayoutsTableSkeleton() {
          </TableHeader>
          <TableBody>
            {[...Array(3)].map((_, i) => (
-             <TableRow key={i}>{/* Remove whitespace between elements */}
+             <TableRow key={i}>
                 <TableCell>
                    <Skeleton className="h-4 w-24 mb-1" />
                    <Skeleton className="h-3 w-36" />

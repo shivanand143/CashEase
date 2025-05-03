@@ -273,7 +273,7 @@ function CouponsTableSkeleton() {
    return (
       <Table>
         <TableHeader>
-          <TableRow>{/* Remove whitespace between elements */}
+          <TableRow>
              <TableHead><Skeleton className="h-5 w-24" /></TableHead>
              <TableHead><Skeleton className="h-5 w-48" /></TableHead>
              <TableHead className="hidden md:table-cell"><Skeleton className="h-5 w-20" /></TableHead>
@@ -285,7 +285,7 @@ function CouponsTableSkeleton() {
         </TableHeader>
         <TableBody>
           {[...Array(5)].map((_, i) => (
-            <TableRow key={i}>{/* Remove whitespace between elements */}
+            <TableRow key={i}>
                <TableCell><Skeleton className="h-4 w-28" /></TableCell>
                <TableCell><Skeleton className="h-4 w-56" /></TableCell>
                <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-24" /></TableCell>

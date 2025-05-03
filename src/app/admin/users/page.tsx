@@ -296,24 +296,24 @@ function UsersTableSkeleton() {
    return (
       <Table>
         <TableHeader>
-          <TableRow>{/* Remove whitespace between elements */}
+          <TableRow>
              <TableHead><Skeleton className="h-4 w-24" /></TableHead>
              <TableHead><Skeleton className="h-4 w-40" /></TableHead>
              <TableHead className="hidden md:table-cell"><Skeleton className="h-4 w-16" /></TableHead>
              <TableHead className="hidden lg:table-cell"><Skeleton className="h-4 w-20" /></TableHead>
-             <TableHead className="hidden md:table-cell text-center"><Skeleton className="h-4 w-16 mx-auto" /></TableHead> {/* Added Status Skeleton */}
+             <TableHead className="hidden md:table-cell text-center"><Skeleton className="h-4 w-16 mx-auto" /></TableHead>
              <TableHead className="text-right"><Skeleton className="h-4 w-16 ml-auto" /></TableHead>
              <TableHead className="text-center"><Skeleton className="h-4 w-16 mx-auto" /></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {[...Array(5)].map((_, i) => (
-            <TableRow key={i}>{/* Remove whitespace between elements */}
+            <TableRow key={i}>
                <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                <TableCell><Skeleton className="h-4 w-48" /></TableCell>
                <TableCell className="hidden md:table-cell"><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
                <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-24" /></TableCell>
-               <TableCell className="hidden md:table-cell text-center"><Skeleton className="h-5 w-20 mx-auto rounded-full" /></TableCell> {/* Added Status Skeleton */}
+               <TableCell className="hidden md:table-cell text-center"><Skeleton className="h-5 w-20 mx-auto rounded-full" /></TableCell>
                <TableCell className="text-right"><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
                <TableCell className="text-center"><Skeleton className="h-8 w-8 rounded-full mx-auto" /></TableCell>
             </TableRow>
