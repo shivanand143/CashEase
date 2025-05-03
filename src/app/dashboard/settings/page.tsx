@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { updateProfile, updateEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
+import { updateProfile, updateEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider, type User } from 'firebase/auth'; // Import User type
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore'; // Import serverTimestamp
 import { db, auth } from '@/lib/firebase/config';
 
@@ -25,7 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, User, KeyRound, AtSign } from 'lucide-react';
+import { AlertCircle, User as UserIcon, KeyRound, AtSign, ShieldCheck } from 'lucide-react'; // Renamed User to UserIcon
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -38,6 +38,7 @@ import {
   DialogTrigger,
   DialogClose
 } from "@/components/ui/dialog";
+
 
 // --- Profile Update Schema ---
 const profileSchema = z.object({
@@ -66,7 +67,12 @@ type PasswordFormValues = z.infer<typeof passwordSchema>;
 
 
 export default function SettingsPage() {
-  const { user, userProfile, loading: authLoading, signOut } = useAuth();
+  // IMPORTANT: Replace 'YOUR_ADMIN_USER_ID_PLACEHOLDER' with the actual UID of the user you want to be the initial admin.
+  // This is ONLY for initial setup and is NOT secure for production.
+  // In production, use a backend function or secure method to manage roles.
+  const adminSetupUid = 'YOUR_ADMIN_USER_ID_PLACEHOLDER'; // <<<--- REPLACE THIS
+
+  const { user, userProfile, loading: authLoading, signOut, createOrUpdateUserProfile } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -78,6 +84,7 @@ export default function SettingsPage() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [adminLoading, setAdminLoading] = useState(false);
 
   const profileForm = useForm<ProfileFormValues>({
      resolver: zodResolver(profileSchema),
@@ -317,6 +324,45 @@ export default function SettingsPage() {
         }
    };
 
+   const handleMakeAdmin = async () => {
+      if (!user || !userProfile) {
+          toast({ variant: "destructive", title: "Error", description: "User not logged in." });
+          return;
+      }
+
+      // !! SECURITY WARNING !!
+      // This client-side check is NOT secure for production.
+      // Anyone can inspect the code and find the adminSetupUid.
+      // Use this ONLY for initial local setup.
+      if (user.uid !== adminSetupUid) {
+          toast({ variant: "destructive", title: "Unauthorized", description: "You are not authorized for this action." });
+          return;
+      }
+
+      if (userProfile.role === 'admin') {
+           toast({ title: "Already Admin", description: "This user is already an admin." });
+           return;
+      }
+
+      setAdminLoading(true);
+      try {
+          // Re-use createOrUpdateUserProfile to set the role
+          // We need to pass the existing user object and modify the role
+          const updatedUser = { ...user, role: "admin" } as User & { role: 'admin' }; // Cast to include role
+          await createOrUpdateUserProfile(updatedUser, null); // Pass null for referral code
+          toast({
+              title: 'Admin Role Granted',
+              description: `User ${userProfile.displayName || user.email} is now an admin.`,
+          });
+          // The userProfile state will update automatically via the onSnapshot listener in useAuth
+      } catch (err: any) {
+          console.error("Failed to make user admin:", err);
+          toast({ variant: "destructive", title: 'Update Failed', description: err.message || "Failed to grant admin role." });
+      } finally {
+          setAdminLoading(false);
+      }
+   };
+
 
   if (authLoading || (!user && !authLoading)) {
     return <SettingsPageSkeleton />;
@@ -358,6 +404,7 @@ export default function SettingsPage() {
                  {profileLoading ? 'Saving...' : 'Save Profile'}
              </Button>
           </form>
+
         </CardContent>
       </Card>
 
@@ -511,6 +558,31 @@ export default function SettingsPage() {
                  </div>
            </CardContent>
        </Card>
+
+        {/* --- Initial Admin Setup --- */}
+        {/* Only show this section if the logged-in user's UID matches the hardcoded adminSetupUid */}
+        {user?.uid === adminSetupUid && userProfile?.role !== 'admin' && (
+           <Card>
+               <CardHeader>
+                   <CardTitle>Admin Setup</CardTitle>
+                   <CardDescription>Grant admin privileges to this account (only for initial setup).</CardDescription>
+               </CardHeader>
+               <CardContent>
+                   <Button
+                       onClick={handleMakeAdmin}
+                       disabled={adminLoading}
+                       variant="destructive"
+                    >
+                       <ShieldCheck className="mr-2 h-4 w-4" /> {adminLoading ? 'Processing...' : 'Make Me Admin'}
+                   </Button>
+               </CardContent>
+               <CardFooter>
+                  <p className="text-xs text-muted-foreground">
+                      Warning: This grants full admin access. Use only for the intended administrator account.
+                  </p>
+               </CardFooter>
+           </Card>
+        )}
 
 
         {/* --- Payment Settings --- */}
