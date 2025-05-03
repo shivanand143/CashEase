@@ -33,7 +33,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast";
 import AdminGuard from '@/components/guards/admin-guard'; // Ensure page is protected
@@ -264,26 +263,26 @@ function StoresTableSkeleton() {
     return (
        <Table>
          <TableHeader>
-           <TableRow>
+           <TableRow>{/* Remove whitespace between elements */}
               <TableHead className="w-[80px]"><Skeleton className="h-5 w-16" /></TableHead>
               <TableHead><Skeleton className="h-5 w-32" /></TableHead>
               <TableHead><Skeleton className="h-5 w-24" /></TableHead>
               <TableHead className="hidden md:table-cell"><Skeleton className="h-5 w-40" /></TableHead>
               <TableHead className="hidden lg:table-cell"><Skeleton className="h-5 w-48" /></TableHead>
               <TableHead className="text-center"><Skeleton className="h-5 w-16 mx-auto" /></TableHead>
-               <TableHead className="text-center"><Skeleton className="h-5 w-16 mx-auto" /></TableHead>
+              <TableHead className="text-center"><Skeleton className="h-5 w-16 mx-auto" /></TableHead>
            </TableRow>
          </TableHeader>
          <TableBody>
            {[...Array(5)].map((_, i) => (
-             <TableRow key={i}>
+             <TableRow key={i}>{/* Remove whitespace between elements */}
                 <TableCell><Skeleton className="h-[30px] w-[60px] rounded-sm" /></TableCell>
                 <TableCell><Skeleton className="h-4 w-36" /></TableCell>
                 <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                 <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-48" /></TableCell>
-                 <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-56" /></TableCell>
+                <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-56" /></TableCell>
                 <TableCell className="text-center"><Skeleton className="h-5 w-20 mx-auto rounded-full" /></TableCell>
-                 <TableCell className="text-center"><Skeleton className="h-8 w-8 rounded-full mx-auto" /></TableCell>
+                <TableCell className="text-center"><Skeleton className="h-8 w-8 rounded-full mx-auto" /></TableCell>
              </TableRow>
            ))}
          </TableBody>

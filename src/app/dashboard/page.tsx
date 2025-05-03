@@ -311,7 +311,7 @@ function RecentActivitySkeleton() {
    return (
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow>{/* Remove whitespace between elements */}
              <TableHead><Skeleton className="h-4 w-20" /></TableHead>
              <TableHead><Skeleton className="h-4 w-24" /></TableHead>
              <TableHead className="text-right"><Skeleton className="h-4 w-16 ml-auto" /></TableHead>
@@ -320,7 +320,7 @@ function RecentActivitySkeleton() {
         </TableHeader>
         <TableBody>
           {[...Array(3)].map((_, i) => (
-            <TableRow key={i}>
+            <TableRow key={i}>{/* Remove whitespace between elements */}
                <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                <TableCell className="text-right"><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
