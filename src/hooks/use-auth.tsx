@@ -10,7 +10,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup, // Import signInWithPopup
 } from 'firebase/auth';
-import { doc, onSnapshot, DocumentData, Timestamp, setDoc, serverTimestamp, getDoc, collection, addDoc } from 'firebase/firestore'; // Import setDoc and serverTimestamp
+import { doc, onSnapshot, DocumentData, Timestamp, setDoc, serverTimestamp, getDoc, collection, query, where, limit, getDocs } from 'firebase/firestore'; // Import setDoc and serverTimestamp, query, where, limit, getDocs
 import { auth, db, firebaseInitializationError } from '@/lib/firebase/config'; // Import error state
 import type { UserProfile } from '@/lib/types';
 import { useToast } from "@/hooks/use-toast"; // Import useToast
@@ -47,8 +47,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
    };
 
   // Function to create/update profile in Firestore (including referral logic)
-  const createOrUpdateUserProfile = async (userToUpdate: User, referredByCode?: string | null) => {
-    if (!userToUpdate) return;
+  const createOrUpdateUserProfile = useCallback(async (userToUpdate: User, referredByCode?: string | null) => {
+    if (!userToUpdate || !db) {
+        console.error("User or Firestore DB instance is null, cannot create/update profile.");
+        return;
+    }
     const userDocRef = doc(db, 'users', userToUpdate.uid);
     console.log(`Attempting to create/update profile for user: ${userToUpdate.uid}`);
 
@@ -87,27 +90,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
 
       // Prepare the data, prioritizing existing values for certain fields if needed
-      const userProfileData: Partial<UserProfile> & { createdAt?: any, updatedAt: any } = {
+      const userProfileData: UserProfile = {
         uid: userToUpdate.uid,
         email: userToUpdate.email ?? existingData.email ?? null,
-        displayName: userToUpdate.displayName ?? existingData.displayName ?? null,
+        displayName: userToUpdate.displayName ?? existingData.displayName ?? 'User', // Default display name
         photoURL: userToUpdate.photoURL ?? existingData.photoURL ?? null,
-        role: existingData.role ?? 'user', // Keep existing role or default to 'user'
+        role: existingData.role ?? 'user', // Default to 'user' role
         cashbackBalance: existingData.cashbackBalance ?? 0,
         pendingCashback: existingData.pendingCashback ?? 0,
         lifetimeCashback: existingData.lifetimeCashback ?? 0,
-        // Only set createdAt if document doesn't exist
-        ...( isNewUser && { createdAt: serverTimestamp() } ),
-        updatedAt: serverTimestamp(), // Always update updatedAt
-         // Generate referral code only if it doesn't exist
-         referralCode: existingData.referralCode ?? generateReferralCode(),
+        // Generate referral code only if it doesn't exist
+        referralCode: existingData.referralCode ?? generateReferralCode(),
          // Set referredBy only if it's a new user and a valid referrer was found
          referredBy: isNewUser && referredByUid ? referredByUid : (existingData.referredBy ?? null),
+         // Set createdAt only if it's a new user, otherwise keep existing or set current Date as fallback
+         createdAt: existingData.createdAt instanceof Timestamp
+                    ? existingData.createdAt.toDate()
+                    : existingData.createdAt instanceof Date
+                    ? existingData.createdAt
+                    : new Date(), // Fallback for new or improperly stored dates
+         updatedAt: serverTimestamp(), // Always update updatedAt on write
       };
 
       // Use setDoc with merge: true to create or update
       await setDoc(userDocRef, userProfileData, { merge: true });
-      console.log(`User profile successfully created/updated for ${userToUpdate.uid}`);
+      console.log(`User profile successfully created/updated for ${userToUpdate.uid}:`, userProfileData);
 
        // If a referrer was found and this is a new user, potentially credit the referrer
        if (isNewUser && referredByUid) {
@@ -127,26 +134,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // Optionally re-throw or set an error state
         throw error; // Re-throw to be caught by calling function
     }
-  };
+  }, []); // Added dependency array for useCallback
 
 
   useEffect(() => {
-    console.log("AuthProvider mounted. Firebase Initialization Error:", firebaseInitializationError);
+    console.log("AuthProvider mounted. Firebase Available:", isFirebaseAvailable, "Initialization Error:", firebaseInitializationError);
 
-    if (firebaseInitializationError) {
-        console.warn("Firebase initialization failed. Skipping auth listeners.");
-        setAuthError(null); // Clear previous auth errors if any
-        setLoading(false);
-        return;
-    }
-
-    if (!isFirebaseAvailable) {
-        const errorMsg = "Firebase services (auth/db) are not available. Skipping auth listeners.";
+    if (!isFirebaseAvailable || firebaseInitializationError) {
+        const errorMsg = firebaseInitializationError || "Firebase services (auth/db) are not available. Skipping auth listeners.";
         console.warn(errorMsg);
-        setAuthError(null);
+        setAuthError(null); // Clear previous auth errors
         setLoading(false);
-        return;
+        return; // Stop execution if Firebase is not ready
     }
+
 
     console.log("Firebase is available, setting up auth listener...");
 
@@ -168,34 +169,41 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           console.log("Profile snapshot received. Exists:", docSnap.exists());
           if (docSnap.exists()) {
             const data = docSnap.data() as DocumentData;
+             console.log("Raw profile data from Firestore:", data); // Log raw data
             // Convert Firestore Timestamp to JS Date safely
-            const createdAtDate = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : new Date();
-            const updatedAtDate = data.updatedAt instanceof Timestamp ? data.updatedAt.toDate() : createdAtDate; // Use createdAt as fallback
+            const createdAtDate = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : data.createdAt instanceof Date ? data.createdAt : new Date(); // Fallback
+            const updatedAtDate = data.updatedAt instanceof Timestamp ? data.updatedAt.toDate() : data.updatedAt instanceof Date ? data.updatedAt : createdAtDate; // Use createdAt as fallback
 
             const profileData: UserProfile = {
               uid: docSnap.id,
               email: data.email ?? null,
-              displayName: data.displayName ?? null,
-              photoURL: data.photoURL ?? null,
+              displayName: data.displayName ?? firebaseUser.displayName ?? 'User', // Prioritize Firestore, then auth, then default
+              photoURL: data.photoURL ?? firebaseUser.photoURL ?? null, // Prioritize Firestore, then auth
               role: data.role ?? 'user',
-              cashbackBalance: data.cashbackBalance ?? 0,
-              pendingCashback: data.pendingCashback ?? 0,
-              lifetimeCashback: data.lifetimeCashback ?? 0,
+              cashbackBalance: typeof data.cashbackBalance === 'number' ? data.cashbackBalance : 0,
+              pendingCashback: typeof data.pendingCashback === 'number' ? data.pendingCashback : 0,
+              lifetimeCashback: typeof data.lifetimeCashback === 'number' ? data.lifetimeCashback : 0,
               referralCode: data.referralCode ?? null, // Handle undefined/null from DB
               referredBy: data.referredBy ?? null, // Handle undefined/null from DB
               createdAt: createdAtDate,
               updatedAt: updatedAtDate,
             };
+            console.log("Processed profile data:", profileData); // Log processed data
             setUserProfile(profileData);
             setAuthError(null); // Clear any previous auth/profile error
           } else {
-            console.warn("User profile not found in Firestore for UID:", firebaseUser.uid);
+            console.warn("User profile not found in Firestore for UID:", firebaseUser.uid, "Attempting to create profile...");
              // Attempt to create profile if it doesn't exist
-             createOrUpdateUserProfile(firebaseUser).catch(err => {
-                console.error("Failed to automatically create profile for existing auth user:", err);
-                setAuthError("Failed to load or create user profile.");
-             });
-            setUserProfile(null);
+             createOrUpdateUserProfile(firebaseUser)
+               .then(() => console.log("Profile auto-creation successful after snapshot miss."))
+               .catch(err => {
+                   console.error("Failed to automatically create profile for existing auth user:", err);
+                   setAuthError("Failed to load or create user profile.");
+                   setUserProfile(null); // Ensure profile is null if creation fails
+               });
+             // Don't set profile to null immediately, let the creation attempt resolve.
+             // If creation succeeds, the next snapshot will populate the profile.
+             // If it fails, the error state is set.
           }
           setLoading(false); // Profile loaded or creation attempted
         }, (error) => {
@@ -229,13 +237,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log("Cleaning up profile listener on unmount.");
       unsubscribeProfile();
     };
-  }, []); // Empty dependency array ensures this effect runs only once on mount
+  }, [createOrUpdateUserProfile]); // Add createOrUpdateUserProfile to dependencies
 
 
   const signInWithGoogle = useCallback(async () => {
-      if (!isFirebaseAvailable) {
-        console.error("Cannot sign in with Google, Firebase auth is not initialized or available.");
-        setAuthError("Firebase not available. Cannot sign in.");
+      if (!isFirebaseAvailable || !auth) {
+        const errorMsg = "Cannot sign in with Google, Firebase auth is not initialized or available.";
+        console.error(errorMsg);
+        setAuthError(errorMsg);
         toast({ variant: "destructive", title: "Error", description: "Authentication service not available." });
         return;
       }
@@ -247,6 +256,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (typeof window !== 'undefined') {
             const urlParams = new URLSearchParams(window.location.search);
             referredByCode = urlParams.get('ref');
+            console.log("Referral code from URL:", referredByCode);
         }
 
 
@@ -286,12 +296,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } finally {
         // setLoading(false); // Loading state is managed by onAuthStateChanged listener
       }
-  }, [toast]); // Added toast to dependency array
+  }, [toast, createOrUpdateUserProfile]); // Added toast and createOrUpdateUserProfile
 
   const signOut = useCallback(async () => {
-     if (!isFirebaseAvailable) {
-       console.error("Cannot sign out, Firebase auth is not initialized or available.");
-       setAuthError("Firebase not available. Cannot sign out.");
+     if (!isFirebaseAvailable || !auth) {
+       const errorMsg = "Cannot sign out, Firebase auth is not initialized or available.";
+       console.error(errorMsg);
+       setAuthError(errorMsg);
        return;
      }
     console.log("Signing out...");
@@ -301,7 +312,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log("Sign out successful via hook call.");
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
       // State updates (user=null, profile=null, loading=false) are handled by onAuthStateChanged
-    } catch (error) { // Correct catch block syntax
+    } catch (error: any) { // Catch any error
       console.error('Error signing out:', error);
       const errorMsg = `Sign out error: ${error instanceof Error ? error.message : String(error)}`;
       setAuthError(errorMsg);

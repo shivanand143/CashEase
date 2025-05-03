@@ -4,7 +4,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation'; // Import useSearchParams
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -29,7 +29,7 @@ import type { UserProfile, User } from '@/lib/types'; // Assuming User type is e
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, UserPlus, ChromeIcon } from 'lucide-react'; // Use a generic Chrome icon or create a Google SVG
 import { Separator } from '@/components/ui/separator'; // Import Separator
-import { useAuth } from '@/hooks/use-auth'; // Import useAuth for Google Sign-In
+import { useAuth } from '@/hooks/use-auth'; // Import useAuth for Google Sign-In and profile creation logic
 
 
 const signupSchema = z.object({
@@ -42,8 +42,10 @@ type SignupFormValues = z.infer<typeof signupSchema>;
 
 export default function SignupPage() {
   const router = useRouter();
+   const searchParams = useSearchParams(); // Get search params
   const { toast } = useToast();
-  const { signInWithGoogle } = useAuth(); // Get signInWithGoogle function
+  // Use the profile creation logic from the hook
+  const { signInWithGoogle, createOrUpdateUserProfile } = useAuth();
   const [loadingEmail, setLoadingEmail] = useState(false);
   const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,64 +58,25 @@ export default function SignupPage() {
     resolver: zodResolver(signupSchema),
   });
 
- // Function to create/update profile in Firestore (moved from useAuth for reuse here, consider refactoring later)
- const createOrUpdateUserProfile = async (userToUpdate: User) => {
-   if (!userToUpdate) return;
-   const userDocRef = doc(db, 'users', userToUpdate.uid);
-   console.log(`Attempting to create/update profile for user: ${userToUpdate.uid} during manual signup`);
-
-   try {
-     const docSnap = await getDoc(userDocRef);
-     let existingData: Partial<UserProfile> = {};
-     if (docSnap.exists()) {
-       existingData = docSnap.data() as Partial<UserProfile>;
-       console.log("Existing profile data found:", existingData);
-     } else {
-        console.log("No existing profile found, creating new one.");
-     }
-
-     // Ensure all optional fields are handled, preferring existing data if available
-     const newUserProfileData: Omit<UserProfile, 'createdAt' | 'updatedAt'> & { createdAt?: any, updatedAt: any } = {
-       uid: userToUpdate.uid,
-       email: userToUpdate.email,
-       displayName: userToUpdate.displayName, // Use name from Auth profile first
-       photoURL: userToUpdate.photoURL ?? null, // Use photo from Auth profile first
-       role: existingData.role ?? 'user',
-       cashbackBalance: existingData.cashbackBalance ?? 0,
-       pendingCashback: existingData.pendingCashback ?? 0,
-       lifetimeCashback: existingData.lifetimeCashback ?? 0,
-       referralCode: existingData.referralCode ?? null, // Use null if undefined
-       referredBy: existingData.referredBy ?? null, // Use null if undefined
-       // Only set createdAt if document doesn't exist
-       ...( !docSnap.exists() && { createdAt: serverTimestamp() } ),
-       updatedAt: serverTimestamp(),
-     };
-
-     // Use setDoc with merge: true to create or update
-     await setDoc(userDocRef, newUserProfileData, { merge: true });
-     console.log(`User profile successfully created/updated for ${userToUpdate.uid}`);
-
-   } catch (error) {
-     console.error(`Error creating/updating user profile for ${userToUpdate.uid}:`, error);
-     // Handle error appropriately (e.g., show toast, log)
-      throw new Error("Failed to save user profile information."); // Re-throw to be caught by onSubmit
-   }
- };
-
 
  const onSubmit = async (data: SignupFormValues) => {
    setLoadingEmail(true);
    setError(null);
+   const referralCode = searchParams.get('ref'); // Get referral code from URL
+   console.log("Attempting manual signup. Referral code:", referralCode);
+
    try {
      // 1. Create user in Firebase Authentication
      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
      const user = userCredential.user;
+      console.log("User created in Firebase Auth:", user.uid);
 
      // 2. Update Firebase Auth profile (optional but good practice)
      await updateProfile(user, {
        displayName: data.displayName,
        // Optionally set photoURL here if you collect it
      });
+      console.log("Firebase Auth profile updated with display name:", data.displayName);
 
      // Ensure user object is refreshed to include displayName for profile creation
      // It might not be immediately available, so we pass it directly if needed.
@@ -122,8 +85,9 @@ export default function SignupPage() {
         displayName: data.displayName, // Ensure displayName from form is used
      } as User; // Cast needed as user doesn't initially have all properties
 
-     // 3. Create user profile document in Firestore using the helper function
-     await createOrUpdateUserProfile(userWithProfileData);
+     // 3. Create user profile document in Firestore using the function from useAuth
+     await createOrUpdateUserProfile(userWithProfileData, referralCode); // Pass referral code
+      console.log("Firestore profile created/updated via useAuth function.");
 
      toast({
        title: 'Signup Successful',
@@ -149,7 +113,7 @@ export default function SignupPage() {
              errorMessage = 'Email/password accounts are not enabled. Please contact support.';
              break;
          default:
-              // Check for Firestore specific errors
+              // Check for Firestore specific errors (though createOrUpdateUserProfile might throw its own)
                if (err.message?.includes('Failed to save user profile information.')) {
                   errorMessage = 'Account created, but failed to save profile details. Please contact support.';
                } else {
@@ -172,7 +136,7 @@ export default function SignupPage() {
      setLoadingGoogle(true);
      setError(null);
      try {
-         await signInWithGoogle();
+         await signInWithGoogle(); // This now handles profile creation/update internally
          // No need for toast here, it's handled in useAuth
          router.push('/dashboard'); // Redirect on success
      } catch (err: any) {

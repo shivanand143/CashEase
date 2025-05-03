@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import type { Transaction } from '@/lib/types';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'; // Added CardFooter
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -35,7 +35,8 @@ export default function DashboardPage() {
   }, [user, authLoading, router]);
 
   useEffect(() => {
-    if (user) {
+    // Fetch transactions only if user exists and db is available
+    if (user && db) {
       const fetchTransactions = async () => {
         setLoadingTransactions(true);
         setError(null);
@@ -67,11 +68,14 @@ export default function DashboardPage() {
       };
       fetchTransactions();
     } else {
-      // If user is not logged in (or logs out), clear transactions and stop loading
+      // If user is not logged in (or logs out) or db is unavailable, clear transactions and stop loading
       setTransactions([]);
       setLoadingTransactions(false);
+      if (!db) {
+          setError("Database connection not available.");
+      }
     }
-  }, [user]);
+  }, [user]); // Dependency on user only
 
   const getStatusBadgeVariant = (status: Transaction['status']): "default" | "secondary" | "outline" | "destructive" => {
     switch (status) {
@@ -83,21 +87,28 @@ export default function DashboardPage() {
     }
   };
 
-  const canRequestPayout = userProfile && userProfile.cashbackBalance >= MIN_PAYOUT_THRESHOLD;
+  // Determine payout eligibility only if userProfile is loaded
+  const canRequestPayout = userProfile ? userProfile.cashbackBalance >= MIN_PAYOUT_THRESHOLD : false;
+  const availableBalance = userProfile?.cashbackBalance ?? 0;
+  const pendingBalance = userProfile?.pendingCashback ?? 0;
+  const lifetimeBalance = userProfile?.lifetimeCashback ?? 0;
+  const balanceDifference = userProfile ? (MIN_PAYOUT_THRESHOLD - userProfile.cashbackBalance) : MIN_PAYOUT_THRESHOLD;
+
 
   if (authLoading) {
-    return <DashboardSkeleton />; // Show skeleton while auth is loading
+    return <DashboardSkeleton />; // Show skeleton while auth or profile is loading
   }
 
-  if (!user || !userProfile) {
+  if (!user) {
      // This case should ideally be handled by the redirect, but added as a fallback
-     return <p>Loading user data or redirecting...</p>;
+     // Render minimal state or redirect indicator
+     return <p>Redirecting to login...</p>;
   }
 
 
   return (
     <div className="space-y-8">
-      <h1 className="text-3xl font-bold">Dashboard</h1>
+      <h1 className="text-3xl font-bold">Welcome, {userProfile?.displayName ?? user.email}!</h1>
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
@@ -107,7 +118,8 @@ export default function DashboardPage() {
             <IndianRupee className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₹{userProfile.cashbackBalance.toFixed(2)}</div>
+             {/* Show skeleton if userProfile isn't loaded yet */}
+             {!userProfile ? <Skeleton className="h-8 w-1/3 mb-1" /> : <div className="text-2xl font-bold">₹{availableBalance.toFixed(2)}</div>}
             <p className="text-xs text-muted-foreground">Ready for payout</p>
           </CardContent>
         </Card>
@@ -117,7 +129,7 @@ export default function DashboardPage() {
             <History className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₹{userProfile.pendingCashback.toFixed(2)}</div>
+             {!userProfile ? <Skeleton className="h-8 w-1/3 mb-1" /> : <div className="text-2xl font-bold">₹{pendingBalance.toFixed(2)}</div>}
             <p className="text-xs text-muted-foreground">Waiting for confirmation</p>
           </CardContent>
         </Card>
@@ -127,7 +139,7 @@ export default function DashboardPage() {
             <IndianRupee className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₹{userProfile.lifetimeCashback.toFixed(2)}</div>
+            {!userProfile ? <Skeleton className="h-8 w-1/3 mb-1" /> : <div className="text-2xl font-bold">₹{lifetimeBalance.toFixed(2)}</div>}
             <p className="text-xs text-muted-foreground">Total cashback earned</p>
           </CardContent>
         </Card>
@@ -142,17 +154,22 @@ export default function DashboardPage() {
            </CardDescription>
          </CardHeader>
          <CardContent>
-           <p className="mb-4">Your current available balance is <span className="font-bold">₹{userProfile.cashbackBalance.toFixed(2)}</span>.</p>
-           <Button asChild disabled={!canRequestPayout}>
+            {!userProfile ? (
+                <Skeleton className="h-4 w-1/2 mb-4" />
+            ) : (
+                 <p className="mb-4">Your current available balance is <span className="font-bold">₹{availableBalance.toFixed(2)}</span>.</p>
+             )}
+           <Button asChild disabled={!canRequestPayout || !userProfile}>
               <Link href="/dashboard/payout">
                   <Send className="mr-2 h-4 w-4" /> Request Payout
               </Link>
            </Button>
-           {!canRequestPayout && (
+            {userProfile && !canRequestPayout && (
               <p className="text-sm text-muted-foreground mt-2">
-                 You need ₹{ (MIN_PAYOUT_THRESHOLD - userProfile.cashbackBalance).toFixed(2) } more to request a payout.
+                 You need ₹{ balanceDifference.toFixed(2) } more to request a payout.
               </p>
             )}
+             {!userProfile && <Skeleton className="h-4 w-1/3 mt-2" />} {/* Skeleton for the needed amount text */}
          </CardContent>
           <CardFooter className="text-xs text-muted-foreground">
              Payouts are typically processed within 5-7 business days. Ensure your <Link href="/dashboard/settings" className="underline hover:text-primary">payment details</Link> are up-to-date.
@@ -190,7 +207,8 @@ export default function DashboardPage() {
                 {transactions.map((tx) => (
                   <TableRow key={tx.id}>
                     <TableCell>{format(tx.transactionDate, 'PP')}</TableCell>
-                    <TableCell>{tx.storeId}</TableCell> {/* TODO: Fetch store name */}
+                    {/* TODO: Fetch store name based on tx.storeId */}
+                    <TableCell>{tx.storeId ? tx.storeId.substring(0, 10) + '...' : 'N/A'}</TableCell>
                     <TableCell className="text-right font-medium">₹{tx.cashbackAmount.toFixed(2)}</TableCell>
                      <TableCell className="text-center">
                        <Badge variant={getStatusBadgeVariant(tx.status)} className="capitalize">
@@ -264,7 +282,11 @@ function DashboardSkeleton() {
              <CardContent>
                <Skeleton className="h-4 w-1/2 mb-4" />
                <Skeleton className="h-10 w-36" />
+               <Skeleton className="h-4 w-1/3 mt-2" /> {/* Skeleton for needed amount text */}
              </CardContent>
+              <CardFooter>
+                 <Skeleton className="h-3 w-full" />
+              </CardFooter>
         </Card>
 
 
@@ -277,6 +299,9 @@ function DashboardSkeleton() {
          <CardContent>
            <RecentActivitySkeleton />
          </CardContent>
+         <CardFooter className="justify-end">
+            <Skeleton className="h-6 w-32" />
+         </CardFooter>
        </Card>
      </div>
   )
@@ -306,4 +331,3 @@ function RecentActivitySkeleton() {
       </Table>
    )
 }
-
