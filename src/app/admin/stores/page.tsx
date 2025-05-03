@@ -5,15 +5,15 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { collection, getDocs, query, orderBy, deleteDoc, doc, addDoc, updateDoc, serverTimestamp, where, getCountFromServer } from 'firebase/firestore'; // Added addDoc, updateDoc, serverTimestamp, where, getCountFromServer
+import { collection, getDocs, query, orderBy, deleteDoc, doc, addDoc, updateDoc, serverTimestamp, where, getCountFromServer, writeBatch } from 'firebase/firestore'; // Added writeBatch
 import { db } from '@/lib/firebase/config';
-import type { Store } from '@/lib/types';
+import type { Store, CashbackType } from '@/lib/types'; // Import CashbackType
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
-import { AlertCircle, Store as StoreIcon, MoreHorizontal, PlusCircle, ExternalLink, Trash2 } from 'lucide-react';
+import { AlertCircle, Store as StoreIcon, MoreHorizontal, PlusCircle, ExternalLink, Trash2, DatabaseZap } from 'lucide-react'; // Added DatabaseZap
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -39,6 +39,48 @@ import { useToast } from "@/hooks/use-toast";
 import AdminGuard from '@/components/guards/admin-guard'; // Ensure page is protected
 import StoreForm from '@/components/admin/store-form'; // Import the StoreForm component
 
+// Mock data for seeding (if needed)
+const initialStoresData = [
+  { name: 'Amazon', logoUrl: 'https://picsum.photos/seed/amazon/100/50', cashbackRate: 'Up to 3%', dataAiHint: "amazon logo", affiliateLink: 'https://amazon.in?tag=cashease-21' },
+  { name: 'Flipkart', logoUrl: 'https://picsum.photos/seed/flipkart/100/50', cashbackRate: 'Up to 2%', dataAiHint: "flipkart logo", affiliateLink: 'https://flipkart.com?affid=cashease' },
+  { name: 'Myntra', logoUrl: 'https://picsum.photos/seed/myntra/100/50', cashbackRate: '1.5% Cashback', dataAiHint: "myntra logo", affiliateLink: 'https://myntra.com?ref=cashease' },
+  { name: 'Ajio', logoUrl: 'https://picsum.photos/seed/ajio/100/50', cashbackRate: 'Up to 4%', dataAiHint: "ajio logo", affiliateLink: 'https://ajio.com?cjevent=cashease' },
+  { name: 'BigBasket', logoUrl: 'https://picsum.photos/seed/bigbasket/100/50', cashbackRate: 'Flat ₹50', dataAiHint: "bigbasket logo", affiliateLink: 'https://bigbasket.com?bbref=cashease' },
+  { name: 'MakeMyTrip', logoUrl: 'https://picsum.photos/seed/makemytrip/100/50', cashbackRate: 'Up to ₹1000', dataAiHint: "makemytrip logo", affiliateLink: 'https://makemytrip.com?partner=cashease' },
+];
+
+function parseCashback(rateString: string): { type: CashbackType, value: number } {
+    let type: CashbackType = 'percentage'; // Default
+    let value = 0;
+
+    const fixedMatch = rateString.match(/(?:Flat|Upto)\s*₹(\d+(\.\d+)?)/i);
+    if (fixedMatch) {
+      type = 'fixed';
+      value = parseFloat(fixedMatch[1]);
+      return { type, value };
+    }
+
+    const percentageMatch = rateString.match(/(\d+(\.\d+)?)\%/);
+     if (percentageMatch) {
+       type = 'percentage';
+       value = parseFloat(percentageMatch[1]);
+       return { type, value };
+     }
+
+    console.warn(`Could not parse cashback rate: "${rateString}". Using default 0%.`);
+    return { type: 'percentage', value: 0 }; // Return default if parsing fails
+}
+
+function inferCategories(storeName: string): string[] {
+    const lowerName = storeName.toLowerCase();
+    if (lowerName.includes('amazon') || lowerName.includes('flipkart')) return ['Electronics', 'Fashion', 'Home', 'Books'];
+    if (lowerName.includes('myntra') || lowerName.includes('ajio')) return ['Fashion', 'Accessories'];
+    if (lowerName.includes('bigbasket')) return ['Grocery', 'Essentials'];
+    if (lowerName.includes('makemytrip')) return ['Travel', 'Flights', 'Hotels'];
+    // Add more category inference rules here
+    return ['General']; // Default category
+}
+
 function AdminStoresPageContent() {
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,25 +88,38 @@ function AdminStoresPageContent() {
   const { toast } = useToast();
   const [isFormOpen, setIsFormOpen] = useState(false); // State for Add/Edit modal/drawer
   const [selectedStore, setSelectedStore] = useState<Store | null>(null); // State for editing
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [storesExist, setStoresExist] = useState(true); // Assume stores exist initially
 
   const fetchStores = async () => {
       setLoading(true);
       setError(null);
       try {
         const storesCollection = collection(db, 'stores');
-        // Order by name
-        const q = query(storesCollection, orderBy('name', 'asc'));
-        const querySnapshot = await getDocs(q);
-        const storesData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : new Date(),
-          updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate() : new Date(),
-        })) as Store[];
-        setStores(storesData);
+        // Check if stores exist first
+        const countSnapshot = await getCountFromServer(query(storesCollection, limit(1)));
+        const hasStores = countSnapshot.data().count > 0;
+        setStoresExist(hasStores);
+
+        if (hasStores) {
+           // Order by name if stores exist
+           const q = query(storesCollection, orderBy('name', 'asc'));
+           const querySnapshot = await getDocs(q);
+           const storesData = querySnapshot.docs.map(doc => ({
+             id: doc.id,
+             ...doc.data(),
+             createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : new Date(),
+             updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate() : new Date(),
+           })) as Store[];
+           setStores(storesData);
+        } else {
+           setStores([]); // No stores found
+        }
+
       } catch (err) {
         console.error("Error fetching stores:", err);
         setError("Failed to load stores. Please try again later.");
+        setStoresExist(true); // Reset assumption on error
       } finally {
         setLoading(false);
       }
@@ -73,6 +128,59 @@ function AdminStoresPageContent() {
   useEffect(() => {
     fetchStores();
   }, []);
+
+  const handleSeedStores = async () => {
+      setIsSeeding(true);
+      setError(null);
+      console.log("Seeding initial store data...");
+
+      try {
+          // Use a batch write for atomicity
+          const batch = writeBatch(db);
+          const storesCollection = collection(db, 'stores');
+
+          initialStoresData.forEach(storeData => {
+              const docRef = doc(storesCollection); // Auto-generate ID
+              const { type, value } = parseCashback(storeData.cashbackRate);
+              const categories = inferCategories(storeData.name);
+
+              const newStore: Omit<Store, 'id' | 'createdAt' | 'updatedAt'> = {
+                  name: storeData.name,
+                  logoUrl: storeData.logoUrl,
+                  affiliateLink: storeData.affiliateLink,
+                  cashbackRate: storeData.cashbackRate,
+                  cashbackRateValue: value,
+                  cashbackType: type,
+                  description: `${storeData.name} offers and deals`, // Example description
+                  categories: categories,
+                  isActive: true,
+                   isFeatured: Math.random() < 0.3, // Randomly feature some stores
+              };
+              batch.set(docRef, {
+                  ...newStore,
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+              });
+          });
+
+          await batch.commit();
+          toast({
+              title: "Stores Seeded",
+              description: `${initialStoresData.length} stores added to the database.`,
+          });
+          await fetchStores(); // Refresh the list after seeding
+      } catch (err) {
+          console.error("Error seeding stores:", err);
+          setError("Failed to seed initial store data. Please check console.");
+          toast({
+              variant: "destructive",
+              title: "Seeding Failed",
+              description: "Could not add initial stores. See console for details.",
+          });
+      } finally {
+          setIsSeeding(false);
+      }
+  };
 
 
   const handleEdit = (store: Store) => {
@@ -140,9 +248,16 @@ function AdminStoresPageContent() {
                </CardTitle>
                <CardDescription>Add, edit, or remove stores offering cashback.</CardDescription>
             </div>
-            <Button onClick={handleAddNew}>
-                <PlusCircle className="mr-2 h-4 w-4" /> Add New Store
-            </Button>
+             <div className="flex items-center gap-2">
+                {!storesExist && !loading && (
+                   <Button onClick={handleSeedStores} disabled={isSeeding} variant="secondary">
+                      <DatabaseZap className="mr-2 h-4 w-4" /> {isSeeding ? 'Seeding...' : 'Seed Initial Stores'}
+                   </Button>
+                )}
+                 <Button onClick={handleAddNew} disabled={isSeeding}>
+                     <PlusCircle className="mr-2 h-4 w-4" /> Add New Store
+                 </Button>
+            </div>
          </CardHeader>
          <CardContent>
            {error && (
@@ -185,7 +300,7 @@ function AdminStoresPageContent() {
                      <TableCell className="text-primary font-semibold">{store.cashbackRate}</TableCell>
                      <TableCell className="hidden md:table-cell text-xs">{store.categories.join(', ')}</TableCell>
                       <TableCell className="hidden lg:table-cell">
-                         <a href={store.affiliateLink} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate flex items-center gap-1">
+                         <a href={store.affiliateLink} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate flex items-center gap-1" title={store.affiliateLink}>
                              {store.affiliateLink.length > 40 ? store.affiliateLink.substring(0, 40) + '...' : store.affiliateLink}
                              <ExternalLink className="w-3 h-3 shrink-0"/>
                          </a>
@@ -240,7 +355,12 @@ function AdminStoresPageContent() {
                </TableBody>
              </Table>
            ) : (
-             <p className="text-center text-muted-foreground py-8">No stores found. Add your first store!</p>
+             <div className="text-center text-muted-foreground py-8 flex flex-col items-center gap-4">
+                 <p>No stores found in the database.</p>
+                 <Button onClick={handleSeedStores} disabled={isSeeding}>
+                     <DatabaseZap className="mr-2 h-4 w-4" /> {isSeeding ? 'Seeding...' : 'Seed Initial Stores'}
+                 </Button>
+             </div>
            )}
            {/* TODO: Add Pagination */}
          </CardContent>

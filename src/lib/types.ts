@@ -14,7 +14,7 @@ export interface UserProfile {
   cashbackBalance: number; // Current available cashback balance (confirmed, not paid out)
   pendingCashback: number; // Cashback waiting for confirmation
   lifetimeCashback: number; // Total confirmed cashback earned (including paid out)
-  referralCode?: string | null; // Optional referral code - allow null
+  referralCode: string | null; // Make mandatory for Firestore write, but allow null display
   referredBy?: string | null; // UID of the user who referred this user - allow null
   isDisabled?: boolean; // Optional: Flag to disable user account
   createdAt: Date | FirestoreTimestamp; // Allow both Date and Timestamp initially
@@ -29,11 +29,12 @@ export interface Store {
   logoUrl?: string | null; // URL to the store's logo, optional
   affiliateLink: string; // Base affiliate link (may need appending parameters)
   cashbackRate: string; // Display text for cashback rate (e.g., "Up to 5%", "Flat ₹10")
-  cashbackRateValue: number; // Numeric value for calculation (e.g., 0.05 for 5%, 10 for ₹10)
+  cashbackRateValue: number; // Numeric value for calculation (e.g., 5 for 5%, 10 for ₹10)
   cashbackType: CashbackType; // 'percentage' or 'fixed'
   description?: string; // Optional description or terms
   categories: string[]; // e.g., ["Fashion", "Electronics"]
   isActive: boolean; // Whether the store is currently active
+  isFeatured?: boolean; // Optional: Highlight this store on homepage
   createdAt: Date | FirestoreTimestamp;
   updatedAt: Date | FirestoreTimestamp;
 }
