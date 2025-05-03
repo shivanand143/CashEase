@@ -3,7 +3,7 @@
 
 import * as React from 'react';
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, where, orderBy, doc, updateDoc, writeBatch, getDoc } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, doc, updateDoc, writeBatch, getDoc, serverTimestamp } from 'firebase/firestore'; // Added serverTimestamp
 import { db } from '@/lib/firebase/config';
 import type { PayoutRequest, UserProfile, Transaction } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -136,7 +136,7 @@ function AdminPayoutsPageContent() {
 
           toast({
               title: "Payout Approved",
-              description: `Payout request for ${payout.userDisplayName} ($${payout.amount.toFixed(2)}) marked as approved. Remember to process the payment.`,
+              description: `Payout request for ${payout.userDisplayName} (₹${payout.amount.toFixed(2)}) marked as approved. Remember to process the payment.`,
           });
            fetchPayouts(); // Refresh the list
       } catch (err) {
@@ -199,7 +199,7 @@ function AdminPayoutsPageContent() {
            batch.update(userDocRef, {
                cashbackBalance: payoutToReject.amount // Restore the balance
            });
-            console.log(`Restored $${payoutToReject.amount.toFixed(2)} to user ${payoutToReject.userId}'s balance.`);
+            console.log(`Restored ₹${payoutToReject.amount.toFixed(2)} to user ${payoutToReject.userId}'s balance.`);
 
 
            // 4. Commit the batch
@@ -207,14 +207,14 @@ function AdminPayoutsPageContent() {
 
            toast({
                title: "Payout Rejected",
-               description: `Payout request for ${payoutToReject.userDisplayName} ($${payoutToReject.amount.toFixed(2)}) has been rejected.`,
+               description: `Payout request for ${payoutToReject.userDisplayName} (₹${payoutToReject.amount.toFixed(2)}) has been rejected.`,
                variant: "destructive"
            });
            fetchPayouts(); // Refresh the list
            setPayoutToReject(null); // Clear selected payout
            setRejectReason(''); // Clear reason
 
-      } catch (err) {
+      } catch (err: any) {
           console.error("Error rejecting payout:", err);
           toast({
               variant: "destructive",
@@ -268,7 +268,7 @@ function AdminPayoutsPageContent() {
                         <div className="text-xs text-muted-foreground">{payout.userEmail || 'No email'}</div>
                      </TableCell>
                       <TableCell className="hidden md:table-cell">{format(payout.requestedAt, 'PPp')}</TableCell>
-                     <TableCell className="text-right font-semibold text-lg">${payout.amount.toFixed(2)}</TableCell>
+                     <TableCell className="text-right font-semibold text-lg">₹{payout.amount.toFixed(2)}</TableCell>
                      <TableCell className="hidden lg:table-cell">{payout.paymentMethod}</TableCell>
                      <TableCell className="hidden xl:table-cell text-xs">
                          {/* Display payment details safely */}
@@ -333,7 +333,7 @@ function AdminPayoutsPageContent() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Reason for Rejection</AlertDialogTitle>
                 <AlertDialogDescription>
-                   Provide a reason for rejecting the payout request for {payoutToReject?.userDisplayName} (${payoutToReject?.amount.toFixed(2)}). This note will be saved for admin reference.
+                   Provide a reason for rejecting the payout request for {payoutToReject?.userDisplayName} (₹{payoutToReject?.amount.toFixed(2)}). This note will be saved for admin reference.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <div className="grid gap-2 py-4">
@@ -402,3 +402,4 @@ function PayoutsTableSkeleton() {
        </Table>
     )
  }
+

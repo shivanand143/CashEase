@@ -28,7 +28,7 @@ async function fetchAmazonProducts(keywords: string): Promise<AmazonProduct[]> {
   // const accessKey = process.env.AMAZON_PAAPI_ACCESS_KEY;
   // const secretKey = process.env.AMAZON_PAAPI_SECRET_KEY;
   // const associateTag = process.env.AMAZON_PAAPI_ASSOCIATE_TAG;
-  // const region = process.env.AMAZON_PAAPI_REGION || 'us-east-1';
+  // const region = process.env.AMAZON_PAAPI_REGION || 'us-east-1'; // Adjust region if needed (e.g., 'eu-west-1', 'us-west-2')
 
   // if (!accessKey || !secretKey || !associateTag) {
   //   console.error("Missing Amazon PA API credentials in environment variables.");
@@ -48,6 +48,8 @@ async function fetchAmazonProducts(keywords: string): Promise<AmazonProduct[]> {
   //     Keywords: keywords,
   //     Resources: ['Images.Primary.Medium', 'ItemInfo.Title', 'Offers.Listings.Price', 'CustomerReviews.Count', 'CustomerReviews.StarRating', 'DetailPageURL'],
   //     ItemCount: 10, // Limit results
+  //     PartnerTag: associateTag, // Ensure PartnerTag is included
+  //     PartnerType: 'Associates'
   //   });
 
   //   if (response.SearchResult?.Items) {
@@ -55,7 +57,7 @@ async function fetchAmazonProducts(keywords: string): Promise<AmazonProduct[]> {
   //       asin: item.ASIN ?? 'N/A',
   //       title: item.ItemInfo?.Title?.DisplayValue ?? 'No Title',
   //       imageUrl: item.Images?.Primary?.Medium?.URL,
-  //       price: item.Offers?.Listings?.[0]?.Price?.DisplayAmount,
+  //       price: item.Offers?.Listings?.[0]?.Price?.DisplayAmount, // Example: "₹1,299.00", "$19.99" etc.
   //       rating: item.CustomerReviews?.StarRating,
   //       reviewsCount: item.CustomerReviews?.Count,
   //       detailPageURL: item.DetailPageURL ?? '#', // Use the affiliate link URL
@@ -64,6 +66,11 @@ async function fetchAmazonProducts(keywords: string): Promise<AmazonProduct[]> {
   //   return []; // No items found
   // } catch (error) {
   //   console.error("Error fetching from Amazon PA API:", error);
+  //   // Handle potential errors like invalid request, throttling, etc.
+  //   if (error.Errors) {
+  //       console.error("PA API Errors:", error.Errors);
+  //       throw new Error(`Amazon API Error: ${error.Errors[0].Message}`);
+  //   }
   //   throw new Error("Failed to fetch products from Amazon.");
   // }
   // --- End Real Implementation Placeholder ---
@@ -83,7 +90,8 @@ async function fetchAmazonProducts(keywords: string): Promise<AmazonProduct[]> {
     asin: `B0EXAMPLE${i}`,
     title: `${keywords.charAt(0).toUpperCase() + keywords.slice(1)} Product ${i + 1} - Lorem Ipsum Dolor Sit Amet`,
     imageUrl: `https://picsum.photos/seed/${keywords}${i}/200/200`,
-    price: `$${(Math.random() * 100 + 10).toFixed(2)}`,
+    // Simulate INR prices
+    price: `₹${(Math.random() * 5000 + 500).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     rating: Math.round((Math.random() * 5)*2)/2, // Ratings like 3.5, 4, 4.5 etc.
     reviewsCount: Math.floor(Math.random() * 5000),
     // IMPORTANT: Replace '#' with actual affiliate links from the API response
@@ -115,3 +123,4 @@ export async function GET(request: NextRequest) {
 
 // You might add POST later if needed for more complex filtering
 // export async function POST(request: NextRequest) { ... }
+

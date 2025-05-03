@@ -104,7 +104,7 @@ function AdminUsersPageContent() {
                         </Badge>
                      </TableCell>
                      <TableCell className="hidden lg:table-cell">{format(user.createdAt, 'PP')}</TableCell>
-                    <TableCell className="text-right">${user.cashbackBalance.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">₹{user.cashbackBalance.toFixed(2)}</TableCell>
                     <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -173,3 +173,4 @@ function UsersTableSkeleton() {
       </Table>
    )
 }
+

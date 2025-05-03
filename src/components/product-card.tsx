@@ -38,6 +38,22 @@ export default function ProductCard({ product }: ProductCardProps) {
     );
   };
 
+  // Helper to attempt extracting number and format with INR symbol
+  const formatPrice = (priceString?: string): string | undefined => {
+    if (!priceString) return undefined;
+    // Remove non-numeric characters except decimal point
+    const numericString = priceString.replace(/[^\d.]/g, '');
+    const priceValue = parseFloat(numericString);
+    if (isNaN(priceValue)) {
+      // If parsing fails, return original string or some default
+      return priceString; // Or maybe 'Price unavailable'
+    }
+    // Format with INR symbol
+    return `₹${priceValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  const displayPrice = formatPrice(product.price);
+
   return (
     <Card className="flex flex-col h-full overflow-hidden hover:shadow-lg transition-shadow duration-200">
       <CardHeader className="p-0 items-center">
@@ -81,9 +97,9 @@ export default function ProductCard({ product }: ProductCardProps) {
                </>
            )}
          </div>
-         {product.price && (
+         {displayPrice && (
            <p className="text-lg font-bold text-destructive">
-             {product.price}
+             {displayPrice}
            </p>
          )}
          {/* Optionally add a short description if available */}

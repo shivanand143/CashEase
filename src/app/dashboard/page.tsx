@@ -15,11 +15,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import Link from 'next/link';
-import { DollarSign, AlertCircle, History, Send, Settings } from 'lucide-react';
+import { IndianRupee, AlertCircle, History, Send, Settings } from 'lucide-react'; // Changed DollarSign to IndianRupee
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
-// Minimum payout threshold
-const MIN_PAYOUT_THRESHOLD = 25; // Example: $25
+// Minimum payout threshold in INR
+const MIN_PAYOUT_THRESHOLD = 2000; // Example: ₹2000
 
 export default function DashboardPage() {
   const { user, userProfile, loading: authLoading, signOut } = useAuth();
@@ -75,8 +75,8 @@ export default function DashboardPage() {
 
   const getStatusBadgeVariant = (status: Transaction['status']): "default" | "secondary" | "outline" | "destructive" => {
     switch (status) {
-      case 'confirmed': return 'default'; // Using primary color (blue)
-      case 'paid': return 'secondary'; // Using secondary color (green)
+      case 'confirmed': return 'default'; // Using primary color
+      case 'paid': return 'secondary'; // Using secondary color
       case 'pending': return 'outline'; // Neutral outline
       case 'rejected': return 'destructive'; // Red
       default: return 'outline';
@@ -104,10 +104,10 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Available Cashback</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <IndianRupee className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${userProfile.cashbackBalance.toFixed(2)}</div>
+            <div className="text-2xl font-bold">₹{userProfile.cashbackBalance.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground">Ready for payout</p>
           </CardContent>
         </Card>
@@ -117,17 +117,17 @@ export default function DashboardPage() {
             <History className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${userProfile.pendingCashback.toFixed(2)}</div>
+            <div className="text-2xl font-bold">₹{userProfile.pendingCashback.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground">Waiting for confirmation</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Lifetime Earned</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <IndianRupee className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${userProfile.lifetimeCashback.toFixed(2)}</div>
+            <div className="text-2xl font-bold">₹{userProfile.lifetimeCashback.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground">Total cashback earned</p>
           </CardContent>
         </Card>
@@ -138,11 +138,11 @@ export default function DashboardPage() {
          <CardHeader>
            <CardTitle>Request Payout</CardTitle>
            <CardDescription>
-              You can request a payout once your available balance reaches ${MIN_PAYOUT_THRESHOLD}.
+              You can request a payout once your available balance reaches ₹{MIN_PAYOUT_THRESHOLD}.
            </CardDescription>
          </CardHeader>
          <CardContent>
-           <p className="mb-4">Your current available balance is <span className="font-bold">${userProfile.cashbackBalance.toFixed(2)}</span>.</p>
+           <p className="mb-4">Your current available balance is <span className="font-bold">₹{userProfile.cashbackBalance.toFixed(2)}</span>.</p>
            <Button asChild disabled={!canRequestPayout}>
               <Link href="/dashboard/payout">
                   <Send className="mr-2 h-4 w-4" /> Request Payout
@@ -150,7 +150,7 @@ export default function DashboardPage() {
            </Button>
            {!canRequestPayout && (
               <p className="text-sm text-muted-foreground mt-2">
-                 You need ${ (MIN_PAYOUT_THRESHOLD - userProfile.cashbackBalance).toFixed(2) } more to request a payout.
+                 You need ₹{ (MIN_PAYOUT_THRESHOLD - userProfile.cashbackBalance).toFixed(2) } more to request a payout.
               </p>
             )}
          </CardContent>
@@ -191,7 +191,7 @@ export default function DashboardPage() {
                   <TableRow key={tx.id}>
                     <TableCell>{format(tx.transactionDate, 'PP')}</TableCell>
                     <TableCell>{tx.storeId}</TableCell> {/* TODO: Fetch store name */}
-                    <TableCell className="text-right font-medium">${tx.cashbackAmount.toFixed(2)}</TableCell>
+                    <TableCell className="text-right font-medium">₹{tx.cashbackAmount.toFixed(2)}</TableCell>
                      <TableCell className="text-center">
                        <Badge variant={getStatusBadgeVariant(tx.status)} className="capitalize">
                          {tx.status}
@@ -306,3 +306,4 @@ function RecentActivitySkeleton() {
       </Table>
    )
 }
+

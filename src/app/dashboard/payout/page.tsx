@@ -30,7 +30,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, Send } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
-const MIN_PAYOUT_THRESHOLD = 25; // Make sure this matches the value used elsewhere
+const MIN_PAYOUT_THRESHOLD = 2000; // Payout threshold in INR (matches dashboard)
 
 const payoutSchema = z.object({
   paymentMethod: z.string().min(1, { message: 'Please select a payment method' }),
@@ -76,7 +76,7 @@ export default function PayoutPage() {
        toast({
           variant: "destructive",
           title: "Insufficient Balance",
-          description: `You need at least $${MIN_PAYOUT_THRESHOLD} to request a payout.`,
+          description: `You need at least ₹${MIN_PAYOUT_THRESHOLD} to request a payout.`,
        });
        router.push('/dashboard');
     }
@@ -121,7 +121,7 @@ export default function PayoutPage() {
        // Basic validation: Ensure the sum matches the available balance
        // Allow for minor floating point discrepancies
         if (Math.abs(sumOfTransactions - payoutAmount) > 0.01) {
-             console.error(`Mismatch: Sum of confirmed transactions ($${sumOfTransactions.toFixed(2)}) does not match available balance ($${payoutAmount.toFixed(2)}).`);
+             console.error(`Mismatch: Sum of confirmed transactions (₹${sumOfTransactions.toFixed(2)}) does not match available balance (₹${payoutAmount.toFixed(2)}).`);
              throw new Error("Balance calculation error. Please contact support.");
         }
 
@@ -161,7 +161,7 @@ export default function PayoutPage() {
 
        toast({
          title: 'Payout Request Submitted',
-         description: `Your request for $${payoutAmount.toFixed(2)} has been submitted for review.`,
+         description: `Your request for ₹${payoutAmount.toFixed(2)} has been submitted for review.`,
        });
        router.push('/dashboard'); // Redirect back to dashboard
 
@@ -195,7 +195,7 @@ export default function PayoutPage() {
                        <AlertCircle className="h-4 w-4" />
                        <AlertTitle>Insufficient Balance</AlertTitle>
                        <AlertDescription>
-                           You need at least ${MIN_PAYOUT_THRESHOLD} available cashback to request a payout. Your current balance is ${availableBalance.toFixed(2)}.
+                           You need at least ₹{MIN_PAYOUT_THRESHOLD} available cashback to request a payout. Your current balance is ₹{availableBalance.toFixed(2)}.
                        </AlertDescription>
                    </Alert>
                </CardContent>
@@ -209,7 +209,7 @@ export default function PayoutPage() {
       <CardHeader>
         <CardTitle className="text-2xl">Request Payout</CardTitle>
         <CardDescription>
-           Request a payout of your available cashback balance of <span className="font-bold text-primary">${availableBalance.toFixed(2)}</span>.
+           Request a payout of your available cashback balance of <span className="font-bold text-primary">₹{availableBalance.toFixed(2)}</span>.
            Please ensure your payment details are correct.
         </CardDescription>
       </CardHeader>
@@ -275,7 +275,7 @@ export default function PayoutPage() {
            )}
 
           <Button type="submit" className="w-full" disabled={loading || !selectedPaymentMethod}>
-            {loading ? 'Submitting Request...' : <> <Send className="mr-2 h-4 w-4" /> Submit Payout Request (${availableBalance.toFixed(2)}) </>}
+            {loading ? 'Submitting Request...' : <> <Send className="mr-2 h-4 w-4" /> Submit Payout Request (₹{availableBalance.toFixed(2)}) </>}
           </Button>
         </form>
       </CardContent>
@@ -311,3 +311,4 @@ function PayoutPageSkeleton() {
         </Card>
     );
 }
+

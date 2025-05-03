@@ -6,7 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowRight, Tag, Store as StoreIcon, ShoppingBag, Search, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowRight, Tag, Store as StoreIcon, ShoppingBag, Search, Loader2, AlertCircle, IndianRupee } from 'lucide-react'; // Added IndianRupee
 import { Input } from '@/components/ui/input'; // Import Input
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'; // Import Alert components
 import ProductCard from '@/components/product-card'; // Import the new ProductCard
@@ -35,8 +35,8 @@ const featuredStores = [
 
 const featuredCoupons = [
   { id: 'c1', storeId: '1', storeName: 'Amazon', description: '10% off Select Electronics', code: 'AMZ10', link: '#' }, // Use # or real example links
-  { id: 'c2', storeId: '4', storeName: 'Best Buy', description: '$20 off Orders over $100', code: 'BBDEAL20', link: '#' },
-  { id: 'c3', storeId: '2', storeName: 'Walmart', description: 'Free Shipping on $35+' }, // Removed link intentionally to test fallback
+  { id: 'c2', storeId: '4', storeName: 'Best Buy', description: '₹200 off Orders over ₹1000', code: 'BBDEAL200', link: '#' }, // Updated to INR
+  { id: 'c3', storeId: '2', storeName: 'Walmart', description: 'Free Shipping on ₹350+' }, // Removed link intentionally to test fallback, updated to INR
 ];
 
 export default function Home() {
@@ -348,3 +348,4 @@ export default function Home() {
     </div>
   );
 }
+

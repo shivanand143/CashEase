@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { LogIn, LogOut, User, DollarSign, ShoppingBag, LayoutDashboard, Settings } from 'lucide-react';
+import { LogIn, LogOut, User, IndianRupee, ShoppingBag, LayoutDashboard, Settings } from 'lucide-react'; // Changed DollarSign to IndianRupee
 import { useAuth } from '@/hooks/use-auth';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -32,7 +32,7 @@ export default function Header() {
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center">
         <Link href="/" className="mr-6 flex items-center space-x-2">
-          <DollarSign className="h-6 w-6 text-primary" />
+          <IndianRupee className="h-6 w-6 text-primary" /> {/* Changed Icon */}
           <span className="font-bold text-xl">CashEase</span>
         </Link>
         <nav className="flex items-center space-x-6 text-sm font-medium flex-grow">
@@ -48,6 +48,12 @@ export default function Header() {
           >
             Coupons
           </Link>
+           <Link
+             href="/amazon-deals"
+             className="transition-colors hover:text-primary"
+            >
+            Amazon Deals
+           </Link>
           {/* Add more nav links as needed */}
         </nav>
 
@@ -73,7 +79,7 @@ export default function Header() {
                     </p>
                      {userProfile && (
                       <p className="text-xs leading-none text-muted-foreground pt-1">
-                        Balance: ${userProfile.cashbackBalance.toFixed(2)}
+                        Balance: ₹{userProfile.cashbackBalance.toFixed(2)}
                       </p>
                      )}
                   </div>
@@ -123,3 +129,4 @@ export default function Header() {
     </header>
   );
 }
+

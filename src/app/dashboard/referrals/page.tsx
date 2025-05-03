@@ -121,7 +121,7 @@ export default function ReferralsPage() {
                  <CardHeader className="pb-2">
                      <CardDescription>Referral Earnings</CardDescription>
                       {/* TODO: Fetch and display actual earnings */}
-                     <CardTitle className="text-4xl">$0.00</CardTitle>
+                     <CardTitle className="text-4xl">₹0.00</CardTitle>
                   </CardHeader>
                   <CardContent>
                       <p className="text-xs text-muted-foreground">Total bonus cashback earned from referrals.</p>
@@ -214,3 +214,4 @@ function ReferralsPageSkeleton() {
      </div>
   );
 }
+

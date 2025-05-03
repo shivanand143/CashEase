@@ -175,8 +175,8 @@ export default function CashbackHistoryPage() {
                   <TableRow key={tx.id}>
                     <TableCell>{format(tx.transactionDate, 'PP')}</TableCell>
                     <TableCell>{tx.storeId}</TableCell> {/* TODO: Enhance with store name lookup */}
-                     <TableCell className="hidden md:table-cell text-right">${tx.saleAmount.toFixed(2)}</TableCell>
-                    <TableCell className="text-right font-medium">${tx.cashbackAmount.toFixed(2)}</TableCell>
+                     <TableCell className="hidden md:table-cell text-right">₹{tx.saleAmount.toFixed(2)}</TableCell>
+                    <TableCell className="text-right font-medium">₹{tx.cashbackAmount.toFixed(2)}</TableCell>
                     <TableCell className="text-center">
                       <Badge variant={getStatusBadgeVariant(tx.status)} className="capitalize">
                         {tx.status}
@@ -254,3 +254,4 @@ function HistoryTableSkeleton() {
       </Table>
    )
 }
+
