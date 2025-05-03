@@ -18,6 +18,7 @@ import { useAuth } from '@/hooks/use-auth'; // Import useAuth for click tracking
 import { logClick } from '@/lib/tracking'; // Import tracking function
 import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel"; // Import Carousel
+import Autoplay from "embla-carousel-autoplay" // Import Autoplay plugin
 import { useRouter } from 'next/navigation'; // Import useRouter for search navigation
 import { cn } from "@/lib/utils"; // Import cn utility
 
@@ -47,6 +48,14 @@ const staticCategories = [
     { name: 'Grocery', icon: '🛒', slug: 'grocery' },
     { name: 'Beauty', icon: '💄', slug: 'beauty' },
     { name: 'Home', icon: '🏠', slug: 'home' },
+];
+
+// Mock Banner Data
+const bannerData = [
+    { id: 'banner1', img: 'https://picsum.photos/seed/banner1/1200/400', alt: 'Sale Banner 1', link: '/deals/summer-sale', hint: 'summer sale electronics' },
+    { id: 'banner2', img: 'https://picsum.photos/seed/banner2/1200/400', alt: 'Fashion Deals', link: '/category/fashion', hint: 'fashion clothing discount' },
+    { id: 'banner3', img: 'https://picsum.photos/seed/banner3/1200/400', alt: 'Travel Offers', link: '/category/travel', hint: 'travel flight hotel deals' },
+    { id: 'banner4', img: 'https://picsum.photos/seed/banner4/1200/400', alt: 'New User Bonus', link: '/signup', hint: 'signup bonus offer' },
 ];
 
 interface CouponWithStore extends Coupon {
@@ -248,7 +257,7 @@ export default function Home() {
   return (
     <div className="space-y-12 md:space-y-16 lg:space-y-20">
       {/* Hero Section */}
-      <section className="text-center py-12 md:py-20 lg:py-24 bg-gradient-to-br from-primary/10 via-background to-secondary/10 rounded-lg shadow-sm overflow-hidden relative">
+      <section className="text-center pt-12 md:pt-20 lg:pt-24 pb-8 md:pb-16 lg:pb-20 bg-gradient-to-br from-primary/10 via-background to-secondary/10 rounded-lg shadow-sm overflow-hidden relative">
          {/* Optional: Add subtle background elements */}
           <div className="absolute inset-0 bg-[url('/path/to/subtle/pattern.svg')] opacity-5"></div>
          <div className="container px-4 md:px-6 relative z-10">
@@ -264,12 +273,11 @@ export default function Home() {
                <Input
                  type="search"
                  placeholder="Search Stores & Offers (e.g., Amazon, Flipkart, Mobiles...)"
-                 className="pl-12 pr-4 py-3 w-full h-14 text-lg rounded-full shadow-md focus:ring-2 focus:ring-primary focus:border-primary"
+                 className="pl-12 pr-24 py-3 w-full h-14 text-lg rounded-full shadow-md focus:ring-2 focus:ring-primary focus:border-primary" // Added pr for button space
                  value={globalSearchTerm}
                  onChange={(e) => setGlobalSearchTerm(e.target.value)}
                  aria-label="Search stores and offers"
                />
-                {/* Add search button if needed, or rely on form submit */}
                 <Button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 h-10 px-4 rounded-full">Search</Button>
              </form>
 
@@ -283,6 +291,48 @@ export default function Home() {
             </div>
         </div>
       </section>
+
+       {/* Banner Carousel Section */}
+       <section className="container px-0 md:px-6 -mt-8 md:-mt-12 lg:-mt-16 relative z-20">
+         <Carousel
+           plugins={[
+             Autoplay({
+               delay: 5000, // Change delay as needed (in milliseconds)
+               stopOnInteraction: true,
+             }),
+           ]}
+           opts={{
+             align: "start",
+             loop: true,
+           }}
+           className="w-full"
+         >
+           <CarouselContent>
+             {bannerData.map((banner) => (
+               <CarouselItem key={banner.id}>
+                 <Link href={banner.link}>
+                    <Card className="overflow-hidden rounded-lg shadow-lg border-none">
+                      <CardContent className="p-0">
+                          <Image
+                            data-ai-hint={banner.hint}
+                            src={banner.img}
+                            alt={banner.alt}
+                            width={1200}
+                            height={400}
+                            className="w-full h-auto aspect-[3/1] object-cover" // Adjust aspect ratio as needed
+                            priority={banner.id === 'banner1'} // Prioritize loading the first banner
+                          />
+                      </CardContent>
+                    </Card>
+                 </Link>
+               </CarouselItem>
+             ))}
+           </CarouselContent>
+           <CarouselPrevious className="absolute left-2 top-1/2 -translate-y-1/2 hidden sm:flex bg-background/50 hover:bg-background/80" />
+           <CarouselNext className="absolute right-2 top-1/2 -translate-y-1/2 hidden sm:flex bg-background/50 hover:bg-background/80" />
+         </Carousel>
+       </section>
+
 
       {/* Categories Section */}
       <section className="container px-4 md:px-6">
@@ -312,7 +362,7 @@ export default function Home() {
           ) : errorFeatured ? (
              <Alert variant="destructive"><AlertCircle className="h-4 w-4" /> <AlertTitle>Error</AlertTitle><AlertDescription>{errorFeatured}</AlertDescription></Alert>
           ) : featuredStores.length > 0 ? (
-             <Carousel opts={{ align: "start", loop: true }} className="w-full">
+             <Carousel opts={{ align: "start", loop: featuredStores.length > 6 }} className="w-full"> {/* Adjust loop condition based on items */}
                <CarouselContent className="-ml-4">
                  {featuredStores.map((store) => (
                    <CarouselItem key={store.id} className="pl-4 basis-1/2 sm:basis-1/3 md:basis-1/4 lg:basis-1/6">
@@ -339,8 +389,8 @@ export default function Home() {
                     </CarouselItem>
                  ))}
                </CarouselContent>
-               <CarouselPrevious className="absolute left-[-1rem] top-1/2 -translate-y-1/2 hidden sm:flex"/>
-               <CarouselNext className="absolute right-[-1rem] top-1/2 -translate-y-1/2 hidden sm:flex"/>
+               <CarouselPrevious className="absolute left-[-1rem] top-1/2 -translate-y-1/2 hidden sm:flex bg-background/50 hover:bg-background/80"/>
+               <CarouselNext className="absolute right-[-1rem] top-1/2 -translate-y-1/2 hidden sm:flex bg-background/50 hover:bg-background/80"/>
              </Carousel>
           ) : (
              <p className="text-center text-muted-foreground">No featured stores available right now.</p>
