@@ -27,9 +27,9 @@ import { useToast } from '@/hooks/use-toast';
 import { auth, db } from '@/lib/firebase/config';
 import type { UserProfile, User } from '@/lib/types'; // Assuming User type is exported from types or use firebase/auth User
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, UserPlus, ChromeIcon } from 'lucide-react'; // Use a generic Chrome icon or create a Google SVG
-import { Separator } from '@/components/ui/separator'; // Import Separator
+import { AlertCircle, UserPlus } from 'lucide-react'; // Use a generic Chrome icon or create a Google SVG
 import { useAuth } from '@/hooks/use-auth'; // Import useAuth for Google Sign-In and profile creation logic
+import { ChromeIcon } from '@/components/icons/chrome-icon'; // Import custom icon
 
 
 const signupSchema = z.object({
@@ -74,7 +74,6 @@ export default function SignupPage() {
      // 2. Update Firebase Auth profile (optional but good practice)
      await updateProfile(user, {
        displayName: data.displayName,
-       // Optionally set photoURL here if you collect it
      });
       console.log("Firebase Auth profile updated with display name:", data.displayName);
 
@@ -83,6 +82,7 @@ export default function SignupPage() {
      const userWithProfileData = {
         ...user,
         displayName: data.displayName, // Ensure displayName from form is used
+        role: 'user', // Assign default role
      } as User; // Cast needed as user doesn't initially have all properties
 
      // 3. Create user profile document in Firestore using the function from useAuth
@@ -113,8 +113,10 @@ export default function SignupPage() {
              errorMessage = 'Email/password accounts are not enabled. Please contact support.';
              break;
          default:
-              // Check for Firestore specific errors (though createOrUpdateUserProfile might throw its own)
-               if (err.message?.includes('Failed to save user profile information.')) {
+              // Check for Firestore specific errors
+               if (err.message?.includes('Missing or insufficient permissions')) {
+                  errorMessage = 'Account created, but failed to save profile details due to permissions. Please contact support.';
+               } else if (err.message?.includes('Failed to save user profile information.')) {
                   errorMessage = 'Account created, but failed to save profile details. Please contact support.';
                } else {
                    errorMessage = `An error occurred (${err.code || 'unknown'}). Please try again.`;
@@ -153,13 +155,13 @@ export default function SignupPage() {
 
 
   return (
-    <div className="flex justify-center items-center min-h-[calc(100vh-10rem)]">
-      <Card className="w-full max-w-md shadow-lg">
-        <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold">Create your Account</CardTitle>
+    <div className="flex justify-center items-center min-h-[calc(100vh-10rem)] px-4 py-8">
+      <Card className="w-full max-w-md shadow-lg border border-border rounded-lg">
+        <CardHeader className="space-y-1 text-center p-6">
+          <CardTitle className="text-2xl md:text-3xl font-bold">Create your Account</CardTitle>
           <CardDescription>Join CashEase for free and start earning cashback!</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 p-6">
           {error && (
              <Alert variant="destructive">
                <AlertCircle className="h-4 w-4" />
@@ -178,6 +180,7 @@ export default function SignupPage() {
                 disabled={isLoading}
                  aria-invalid={errors.displayName ? "true" : "false"}
                  autoComplete="name"
+                 className="h-10 text-base"
               />
                {errors.displayName && <p className="text-sm text-destructive">{errors.displayName.message}</p>}
             </div>
@@ -191,6 +194,7 @@ export default function SignupPage() {
                 disabled={isLoading}
                  aria-invalid={errors.email ? "true" : "false"}
                  autoComplete="email"
+                 className="h-10 text-base"
               />
                {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
             </div>
@@ -204,16 +208,17 @@ export default function SignupPage() {
                 disabled={isLoading}
                  aria-invalid={errors.password ? "true" : "false"}
                  autoComplete="new-password"
+                 className="h-10 text-base"
               />
                {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
             </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button type="submit" className="w-full h-10" disabled={isLoading}>
               {loadingEmail ? 'Creating Account...' : <> <UserPlus className="mr-2 h-4 w-4" /> Sign Up </>}
             </Button>
           </form>
 
            {/* Separator and Google Login */}
-           <div className="relative my-4">
+           <div className="relative my-6">
              <div className="absolute inset-0 flex items-center">
                <span className="w-full border-t" />
              </div>
@@ -223,13 +228,13 @@ export default function SignupPage() {
                </span>
              </div>
            </div>
-           <Button variant="outline" className="w-full" onClick={handleGoogleSignIn} disabled={isLoading}>
+           <Button variant="outline" className="w-full h-10" onClick={handleGoogleSignIn} disabled={isLoading}>
              {loadingGoogle ? 'Signing in...' : <> <ChromeIcon className="mr-2 h-4 w-4" /> Continue with Google </>}
            </Button>
 
 
         </CardContent>
-        <CardFooter className="flex flex-col space-y-2 text-center text-sm">
+        <CardFooter className="flex flex-col space-y-2 text-center text-sm p-6 pt-4">
            <p className="text-xs text-muted-foreground px-4">
              By clicking Sign Up or Continue with Google, you agree to our{' '}
              <Link href="/terms" className="underline hover:text-primary">Terms of Service</Link> and{' '}
@@ -246,3 +251,5 @@ export default function SignupPage() {
     </div>
   );
 }
+
+     

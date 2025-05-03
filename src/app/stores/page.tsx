@@ -9,7 +9,7 @@ import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import type { Store } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardFooter } from '@/components/ui/card'; // Removed Header/Title as they are within content now
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle, Search, ShoppingBag } from 'lucide-react';
@@ -65,41 +65,33 @@ export default function StoresPage() {
   }, [searchTerm, stores]);
 
   const handleStoreClick = async (store: Store) => {
+      const targetUrl = store.affiliateLink || '#'; // Fallback URL
       if (user) {
           try {
               // Log the click before redirecting
               await logClick(user.uid, store.id);
-              // Redirect to the affiliate link in a new tab
-              window.open(store.affiliateLink, '_blank', 'noopener,noreferrer');
           } catch (clickError) {
               console.error("Error logging click:", clickError);
-              // Still attempt to redirect even if logging fails
-              window.open(store.affiliateLink, '_blank', 'noopener,noreferrer');
           }
-      } else {
-          // If user is not logged in, just redirect
-           window.open(store.affiliateLink, '_blank', 'noopener,noreferrer');
-          // Optionally, prompt the user to log in first
-          // e.g., show a modal or redirect to login page with a return URL
-          // router.push(`/login?returnTo=${encodeURIComponent(store.affiliateLink)}`);
       }
+       window.open(targetUrl, '_blank', 'noopener,noreferrer');
   };
 
 
   return (
-    <div className="space-y-8">
-      <section className="text-center">
+    <div className="space-y-8 md:space-y-12">
+      <section className="text-center pt-8">
         <h1 className="text-3xl md:text-4xl font-bold mb-2">All Stores</h1>
         <p className="text-lg text-muted-foreground">Find cashback offers from your favorite brands.</p>
       </section>
 
       {/* Search Bar */}
-      <div className="relative">
+      <div className="relative max-w-xl mx-auto">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
         <Input
           type="search"
           placeholder="Search stores or categories..."
-          className="pl-10 w-full md:w-1/2 lg:w-1/3"
+          className="pl-10 w-full shadow-sm focus:ring-primary focus:border-primary"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           aria-label="Search stores"
@@ -108,7 +100,7 @@ export default function StoresPage() {
 
       {/* Error Message */}
       {error && (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="max-w-xl mx-auto">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
@@ -119,46 +111,45 @@ export default function StoresPage() {
       <section>
         {loading ? (
           // Skeleton Loading State
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {[...Array(8)].map((_, index) => (
-              <Card key={index}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+            {[...Array(12)].map((_, index) => (
+              <Card key={index} className="overflow-hidden">
                 <CardContent className="p-4 flex flex-col items-center justify-center h-48">
-                  <Skeleton className="h-16 w-32 mb-4" />
-                  <Skeleton className="h-4 w-24 mb-2" />
-                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-16 w-32 mb-4 bg-muted/80" />
+                  <Skeleton className="h-4 w-24 mb-2 bg-muted/80" />
+                  <Skeleton className="h-4 w-20 bg-muted/80" />
                 </CardContent>
-                <CardFooter className="p-2">
-                  <Skeleton className="h-8 w-full" />
+                <CardFooter className="p-2 bg-muted/30">
+                  <Skeleton className="h-9 w-full bg-muted/80" />
                 </CardFooter>
               </Card>
             ))}
           </div>
         ) : filteredStores.length > 0 ? (
           // Display Stores
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
             {filteredStores.map((store) => (
-              <Card key={store.id} className="flex flex-col hover:shadow-lg transition-shadow duration-200">
-                <CardContent className="p-4 flex flex-col items-center justify-center flex-grow">
-                   <Link href={`/stores/${store.id}`} className="contents" title={`View details for ${store.name}`}>
-                      <Image
-                        data-ai-hint={`${store.name} logo`}
-                        src={store.logoUrl || `https://picsum.photos/seed/${store.id}/120/60`}
-                        alt={`${store.name} Logo`}
-                        width={120}
-                        height={60}
-                        className="object-contain mb-4 h-[60px]" // Fixed height
-                        onError={(e) => { e.currentTarget.src = 'https://picsum.photos/seed/placeholder/120/60'; e.currentTarget.alt = 'Placeholder Logo'; }} // Fallback image
-                      />
-                      <p className="font-semibold text-center mb-1">{store.name}</p>
-                      <p className="text-sm text-primary font-medium text-center">{store.cashbackRate}</p>
-                   </Link>
-                </CardContent>
-                <CardFooter className="p-2 border-t">
-                  {/* Use onClick handler for tracking and redirect */}
+              <Card key={store.id} className="group flex flex-col hover:shadow-xl transition-all duration-300 ease-in-out transform hover:-translate-y-1 border border-border rounded-lg overflow-hidden">
+                 <CardContent className="p-4 flex flex-col items-center justify-center flex-grow h-48"> {/* Fixed height for content */}
+                    <Link href={`/stores/${store.id}`} className="block mb-3 flex-grow flex flex-col items-center justify-center" title={`View details for ${store.name}`}>
+                       <Image
+                         data-ai-hint={`${store.name} logo`}
+                         src={store.logoUrl || `https://picsum.photos/seed/${store.id}/120/60`}
+                         alt={`${store.name} Logo`}
+                         width={120}
+                         height={60}
+                         className="object-contain max-h-[60px] mb-4 transition-transform duration-300 group-hover:scale-105" // Max height and hover effect
+                         onError={(e) => { e.currentTarget.src = 'https://picsum.photos/seed/placeholder/120/60'; e.currentTarget.alt = 'Placeholder Logo'; }} // Fallback image
+                       />
+                       <p className="font-semibold text-center mb-1 group-hover:text-primary transition-colors">{store.name}</p>
+                       <p className="text-sm text-primary font-medium text-center">{store.cashbackRate}</p>
+                    </Link>
+                 </CardContent>
+                <CardFooter className="p-2 border-t bg-muted/30">
                    <Button
-                       variant="default"
+                       variant="ghost"
                        size="sm"
-                       className="w-full bg-secondary hover:bg-secondary/90"
+                       className="w-full text-secondary font-semibold hover:bg-secondary/10 hover:text-secondary"
                        onClick={() => handleStoreClick(store)}
                        title={`Shop at ${store.name} and earn cashback`}
                    >
@@ -171,7 +162,8 @@ export default function StoresPage() {
         ) : (
           // No Stores Found Message
           <div className="text-center py-16 text-muted-foreground">
-            <p className="text-lg">No stores found matching your search "{searchTerm}".</p>
+            <ShoppingBag className="mx-auto h-12 w-12 mb-4 text-gray-400" />
+            <p className="text-lg font-semibold">No stores found matching "{searchTerm}".</p>
             <p>Try searching for something else or browse all stores.</p>
              <Button variant="link" onClick={() => setSearchTerm('')} className="mt-4">
                Clear Search
@@ -182,3 +174,5 @@ export default function StoresPage() {
     </div>
   );
 }
+
+     

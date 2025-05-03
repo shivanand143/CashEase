@@ -24,9 +24,9 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase/config';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, LogIn, ChromeIcon } from 'lucide-react'; // Use a generic Chrome icon or create a Google SVG
-import { Separator } from '@/components/ui/separator'; // Import Separator
+import { AlertCircle, LogIn } from 'lucide-react'; // Use a generic Chrome icon or create a Google SVG
 import { useAuth } from '@/hooks/use-auth'; // Import useAuth for Google Sign-In
+import { ChromeIcon } from '@/components/icons/chrome-icon'; // Import custom icon
 
 
 const loginSchema = z.object({
@@ -115,13 +115,13 @@ export default function LoginPage() {
   const isLoading = loadingEmail || loadingGoogle; // General loading state
 
   return (
-    <div className="flex justify-center items-center min-h-[calc(100vh-10rem)]">
-      <Card className="w-full max-w-md shadow-lg">
-        <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold">Welcome Back!</CardTitle>
+    <div className="flex justify-center items-center min-h-[calc(100vh-10rem)] px-4 py-8">
+      <Card className="w-full max-w-md shadow-lg border border-border rounded-lg">
+        <CardHeader className="space-y-1 text-center p-6">
+          <CardTitle className="text-2xl md:text-3xl font-bold">Welcome Back!</CardTitle>
           <CardDescription>Enter your email and password or use Google</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 p-6">
            {error && (
              <Alert variant="destructive">
                <AlertCircle className="h-4 w-4" />
@@ -140,6 +140,7 @@ export default function LoginPage() {
                 disabled={isLoading}
                 aria-invalid={errors.email ? "true" : "false"}
                  autoComplete="email"
+                 className="h-10 text-base"
               />
               {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
             </div>
@@ -158,16 +159,17 @@ export default function LoginPage() {
                 disabled={isLoading}
                 aria-invalid={errors.password ? "true" : "false"}
                  autoComplete="current-password"
+                 className="h-10 text-base"
               />
               {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
             </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button type="submit" className="w-full h-10" disabled={isLoading}>
               {loadingEmail ? 'Logging in...' : <> <LogIn className="mr-2 h-4 w-4" /> Login </>}
             </Button>
           </form>
 
            {/* Separator and Google Login */}
-           <div className="relative my-4">
+           <div className="relative my-6">
              <div className="absolute inset-0 flex items-center">
                <span className="w-full border-t" />
              </div>
@@ -177,12 +179,12 @@ export default function LoginPage() {
                </span>
              </div>
            </div>
-           <Button variant="outline" className="w-full" onClick={handleGoogleSignIn} disabled={isLoading}>
+           <Button variant="outline" className="w-full h-10" onClick={handleGoogleSignIn} disabled={isLoading}>
              {loadingGoogle ? 'Signing in...' : <> <ChromeIcon className="mr-2 h-4 w-4" /> Continue with Google </>}
            </Button>
 
         </CardContent>
-        <CardFooter className="flex flex-col space-y-2 text-center text-sm">
+        <CardFooter className="flex flex-col space-y-2 text-center text-sm p-6 pt-4">
           <p>
             Don&apos;t have an account?{' '}
             <Link href="/signup" className="font-medium text-primary hover:underline">
@@ -194,3 +196,5 @@ export default function LoginPage() {
     </div>
   );
 }
+
+    
