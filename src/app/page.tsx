@@ -425,17 +425,17 @@ export default function Home() {
 
            {/* Loading State */}
            {isLoadingAmazon && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4"> {/* Adjusted grid for product cards */}
                  {[...Array(10)].map((_, index) => (
                      <Card key={index} className="overflow-hidden">
                          <Skeleton className="aspect-square w-full bg-muted" />
-                         <CardContent className="p-4 space-y-2">
+                         <CardContent className="p-3 space-y-1.5"> {/* Reduced padding */}
                              <Skeleton className="h-4 w-3/4 bg-muted" />
-                             <Skeleton className="h-4 w-1/2 bg-muted" />
-                             <Skeleton className="h-6 w-1/3 bg-muted" />
+                             <Skeleton className="h-3 w-1/2 bg-muted" />
+                             <Skeleton className="h-5 w-1/3 bg-muted" />
                          </CardContent>
-                         <CardFooter className="p-4 pt-0">
-                             <Skeleton className="h-9 w-full bg-muted" />
+                         <CardFooter className="p-3 pt-0">
+                             <Skeleton className="h-8 w-full bg-muted" /> {/* Smaller button skeleton */}
                          </CardFooter>
                      </Card>
                  ))}
@@ -454,7 +454,7 @@ export default function Home() {
             {/* Product Grid */}
             {!isLoadingAmazon && !amazonError && (
                 amazonProducts.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4"> {/* Adjusted grid layout */}
                       {amazonProducts.map((product) => (
                         <ProductCard key={product.asin} product={product} />
                       ))}
