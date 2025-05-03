@@ -1,5 +1,5 @@
 // src/lib/types.ts
-import type { User as FirebaseUser } from 'firebase/auth'; // Import Firebase User type
+import type { User as FirebaseUser, Timestamp as FirestoreTimestamp } from 'firebase/auth'; // Import Firebase User type and Timestamp
 
 // Export Firebase User type along with existing types
 export type User = FirebaseUser;
@@ -15,8 +15,9 @@ export interface UserProfile {
   lifetimeCashback: number; // Total cashback earned
   referralCode?: string | null; // Optional referral code - allow null
   referredBy?: string | null; // UID of the user who referred this user - allow null
-  createdAt: Date;
-  updatedAt?: Date; // Added optional updatedAt
+  isDisabled?: boolean; // Optional: Flag to disable user account
+  createdAt: Date | FirestoreTimestamp; // Allow both Date and Timestamp initially
+  updatedAt?: Date | FirestoreTimestamp; // Allow both Date and Timestamp initially
 }
 
 export interface Store {
@@ -28,8 +29,8 @@ export interface Store {
   description?: string; // Optional description or terms
   categories: string[]; // e.g., ["Fashion", "Electronics"]
   isActive: boolean; // Whether the store is currently active
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date | FirestoreTimestamp;
+  updatedAt: Date | FirestoreTimestamp;
 }
 
 export interface Coupon {
@@ -38,11 +39,11 @@ export interface Coupon {
   code?: string | null; // Make code optional/nullable
   description: string; // Details about the coupon offer
   link?: string | null; // Direct link to the offer/coupon page (can be affiliate link), optional
-  expiryDate?: Date | null; // Optional expiry date
+  expiryDate?: Date | FirestoreTimestamp | null; // Optional expiry date
   isFeatured: boolean; // Highlight this coupon
   isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date | FirestoreTimestamp;
+  updatedAt: Date | FirestoreTimestamp;
 }
 
 export interface ClickLog {
@@ -50,7 +51,7 @@ export interface ClickLog {
   userId: string; // User who clicked
   storeId: string; // Store that was clicked
   couponId?: string; // Optional: Coupon associated with the click
-  timestamp: Date; // Time of the click
+  timestamp: Date | FirestoreTimestamp; // Time of the click
   userAgent?: string; // Browser/device info
   ipAddress?: string; // User's IP address (handle privacy implications)
   trackingId?: string; // Unique ID passed to affiliate network (if possible)
@@ -66,12 +67,12 @@ export interface Transaction {
   saleAmount: number; // Amount of the sale reported by affiliate network
   cashbackAmount: number; // Calculated cashback amount
   status: CashbackStatus;
-  transactionDate: Date; // Date of the purchase
-  confirmationDate?: Date | null; // Date the cashback was confirmed/rejected
+  transactionDate: Date | FirestoreTimestamp; // Date of the purchase
+  confirmationDate?: Date | FirestoreTimestamp | null; // Date the cashback was confirmed/rejected
   payoutId?: string | null; // Reference to the PayoutRequest ID if included
   notes?: string; // Admin notes (e.g., reason for rejection)
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date | FirestoreTimestamp;
+  updatedAt: Date | FirestoreTimestamp;
 }
 
 export type PayoutStatus = 'pending' | 'approved' | 'rejected' | 'processing' | 'completed';
@@ -81,8 +82,8 @@ export interface PayoutRequest {
   userId: string; // User requesting payout
   amount: number; // Amount requested
   status: PayoutStatus;
-  requestedAt: Date; // Use Date directly
-  processedAt?: Date | null; // Date the request was approved/rejected/processed
+  requestedAt: Date | FirestoreTimestamp; // Use Date or Timestamp
+  processedAt?: Date | FirestoreTimestamp | null; // Date the request was approved/rejected/processed
   paymentMethod: string; // e.g., "PayPal", "Bank Transfer"
   paymentDetails: Record<string, any>; // e.g., { paypalEmail: 'user@example.com' }
   adminNotes?: string; // Notes from the admin processing the request

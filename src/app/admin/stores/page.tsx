@@ -5,7 +5,7 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { collection, getDocs, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, deleteDoc, doc, addDoc, updateDoc, serverTimestamp, where, getCountFromServer } from 'firebase/firestore'; // Added addDoc, updateDoc, serverTimestamp, where, getCountFromServer
 import { db } from '@/lib/firebase/config';
 import type { Store } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -37,17 +37,15 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast";
 import AdminGuard from '@/components/guards/admin-guard'; // Ensure page is protected
-
-// TODO: Define Add/Edit Store Form Component (e.g., in components/admin/store-form.tsx)
-// import StoreForm from '@/components/admin/store-form';
+import StoreForm from '@/components/admin/store-form'; // Import the StoreForm component
 
 function AdminStoresPageContent() {
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
-  // const [isFormOpen, setIsFormOpen] = useState(false); // State for Add/Edit modal/drawer
-  // const [selectedStore, setSelectedStore] = useState<Store | null>(null); // State for editing
+  const [isFormOpen, setIsFormOpen] = useState(false); // State for Add/Edit modal/drawer
+  const [selectedStore, setSelectedStore] = useState<Store | null>(null); // State for editing
 
   const fetchStores = async () => {
       setLoading(true);
@@ -79,41 +77,57 @@ function AdminStoresPageContent() {
 
   const handleEdit = (store: Store) => {
       console.log(`Edit action for store: ${store.name} (ID: ${store.id})`);
-      // setSelectedStore(store);
-      // setIsFormOpen(true);
-      // TODO: Implement opening the StoreForm with the selected store data
-       alert(`Editing store ${store.name} - Implementation pending.`);
+      setSelectedStore(store);
+      setIsFormOpen(true);
   };
 
   const handleDelete = async (storeId: string, storeName: string) => {
       console.log(`Attempting to delete store: ${storeName} (ID: ${storeId})`);
-       // TODO: Add check for associated coupons/transactions before deleting
-      try {
-          await deleteDoc(doc(db, 'stores', storeId));
-          toast({
-              title: "Store Deleted",
-              description: `Store "${storeName}" has been successfully deleted.`,
-          });
-          // Refetch stores list
-          fetchStores();
-      } catch (err) {
-          console.error("Error deleting store:", err);
-          toast({
-              variant: "destructive",
-              title: "Deletion Failed",
-              description: `Could not delete store "${storeName}". Please try again.`,
-          });
-          setError(`Failed to delete store ${storeName}.`);
-      }
+
+       // Check for associated coupons before deleting
+       try {
+           const couponsCollection = collection(db, 'coupons');
+           const q = query(couponsCollection, where('storeId', '==', storeId));
+           const countSnapshot = await getCountFromServer(q);
+
+           if (countSnapshot.data().count > 0) {
+               toast({
+                   variant: "destructive",
+                   title: "Deletion Blocked",
+                   description: `Cannot delete store "${storeName}" as it has ${countSnapshot.data().count} associated coupons. Please delete or reassign the coupons first.`,
+               });
+               return; // Stop deletion process
+           }
+
+           // Proceed with deletion if no coupons found
+           await deleteDoc(doc(db, 'stores', storeId));
+           toast({
+               title: "Store Deleted",
+               description: `Store "${storeName}" has been successfully deleted.`,
+           });
+           fetchStores(); // Refresh stores list
+       } catch (err) {
+           console.error("Error deleting store or checking coupons:", err);
+           toast({
+               variant: "destructive",
+               title: "Deletion Failed",
+               description: `Could not delete store "${storeName}". Please try again. Error: ${err instanceof Error ? err.message : String(err)}`,
+           });
+           setError(`Failed to delete store ${storeName}.`);
+       }
   };
 
   const handleAddNew = () => {
       console.log("Add new store action triggered");
-      // setSelectedStore(null); // Ensure no store is selected for editing
-      // setIsFormOpen(true);
-       // TODO: Implement opening the StoreForm for adding a new store
-        alert(`Adding new store - Implementation pending.`);
+      setSelectedStore(null); // Ensure no store is selected for editing
+      setIsFormOpen(true);
   };
+
+   const handleFormSuccess = () => {
+      fetchStores();
+      setIsFormOpen(false);
+      setSelectedStore(null); // Clear selection after success
+   };
 
 
   return (
@@ -205,7 +219,7 @@ function AdminStoresPageContent() {
                                   <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                                   <AlertDialogDescription>
                                     This action cannot be undone. This will permanently delete the store
-                                    "{store.name}" and potentially affect associated coupons and tracking data.
+                                    "{store.name}". Make sure no coupons are associated with this store first.
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
@@ -230,14 +244,14 @@ function AdminStoresPageContent() {
            )}
            {/* TODO: Add Pagination */}
          </CardContent>
-         {/* TODO: Implement Add/Edit Form Modal/Drawer */}
-          {/* {isFormOpen && (
+         {/* Implement Add/Edit Form Modal/Drawer */}
+          {isFormOpen && (
               <StoreForm
                   store={selectedStore}
                   onClose={() => setIsFormOpen(false)}
-                  onSuccess={() => { fetchStores(); setIsFormOpen(false); }}
+                  onSuccess={handleFormSuccess} // Use the success handler
               />
-          )} */}
+          )}
        </Card>
      </AdminGuard>
    );

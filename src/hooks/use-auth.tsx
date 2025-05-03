@@ -26,6 +26,7 @@ interface AuthContextType {
   loading: boolean;
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<void>; // Add signInWithGoogle method
+  createOrUpdateUserProfile: (userToUpdate: User, referredByCode?: string | null) => Promise<void>; // Expose profile creation function
   authError?: string | null; // Error related to auth state or profile loading
   initializationError?: string | null; // Error during Firebase init
 }
@@ -89,13 +90,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
          console.log("No existing profile found, creating new one.");
       }
 
-      // Prepare the data, prioritizing existing values for certain fields if needed
-      const userProfileData: UserProfile = {
-        uid: userToUpdate.uid,
+       // Prepare the data, prioritizing existing values for certain fields if needed
+        // Handle role update separately: Allow setting role directly if provided in userToUpdate
+       const roleToSet = (userToUpdate as any).role ?? existingData.role ?? 'user';
+
+      const userProfileData: Omit<UserProfile, 'createdAt' | 'updatedAt' | 'uid'> & { createdAt?: any, updatedAt?: any } = {
+        //uid: userToUpdate.uid, // uid is the doc ID, not stored in the doc itself
         email: userToUpdate.email ?? existingData.email ?? null,
         displayName: userToUpdate.displayName ?? existingData.displayName ?? 'User', // Default display name
         photoURL: userToUpdate.photoURL ?? existingData.photoURL ?? null,
-        role: existingData.role ?? 'user', // Default to 'user' role
+        role: roleToSet, // Use role from input or existing, default to 'user'
         cashbackBalance: existingData.cashbackBalance ?? 0,
         pendingCashback: existingData.pendingCashback ?? 0,
         lifetimeCashback: existingData.lifetimeCashback ?? 0,
@@ -103,14 +107,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         referralCode: existingData.referralCode ?? generateReferralCode(),
          // Set referredBy only if it's a new user and a valid referrer was found
          referredBy: isNewUser && referredByUid ? referredByUid : (existingData.referredBy ?? null),
-         // Set createdAt only if it's a new user, otherwise keep existing or set current Date as fallback
-         createdAt: existingData.createdAt instanceof Timestamp
-                    ? existingData.createdAt.toDate()
-                    : existingData.createdAt instanceof Date
-                    ? existingData.createdAt
-                    : new Date(), // Fallback for new or improperly stored dates
+         isDisabled: existingData.isDisabled ?? false, // Default isDisabled to false
+         // Set createdAt only if it's a new user
+         ...(isNewUser && { createdAt: serverTimestamp() }),
          updatedAt: serverTimestamp(), // Always update updatedAt on write
       };
+
+
+       // Remove createdAt if it's not a new user to avoid overwriting
+       if (!isNewUser) {
+           delete userProfileData.createdAt;
+       }
 
       // Use setDoc with merge: true to create or update
       await setDoc(userDocRef, userProfileData, { merge: true });
@@ -120,13 +127,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
        if (isNewUser && referredByUid) {
            console.log(`TODO: Credit referrer ${referredByUid} for referring user ${userToUpdate.uid}`);
            // TODO: Implement referral bonus logic (e.g., add a pending transaction or directly credit balance)
-            // Example: Add a transaction or notification for the referrer
-            // const referralBonusAmount = 5; // Example bonus
-            // const referrerDocRef = doc(db, 'users', referredByUid);
-            // await updateDoc(referrerDocRef, {
-            //     pendingCashback: increment(referralBonusAmount)
-            // });
-            // await addDoc(collection(db, 'transactions'), { ... referral transaction data ... });
        }
 
     } catch (error) {
@@ -170,9 +170,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (docSnap.exists()) {
             const data = docSnap.data() as DocumentData;
              console.log("Raw profile data from Firestore:", data); // Log raw data
-            // Convert Firestore Timestamp to JS Date safely
-            const createdAtDate = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : data.createdAt instanceof Date ? data.createdAt : new Date(); // Fallback
-            const updatedAtDate = data.updatedAt instanceof Timestamp ? data.updatedAt.toDate() : data.updatedAt instanceof Date ? data.updatedAt : createdAtDate; // Use createdAt as fallback
+             // Helper function to safely convert Firestore Timestamps or existing Dates
+              const safeToDate = (fieldValue: any): Date => {
+                  if (fieldValue instanceof Timestamp) {
+                      return fieldValue.toDate();
+                  } else if (fieldValue instanceof Date) {
+                      return fieldValue;
+                  }
+                  // Fallback or default date if the field is missing or invalid
+                  return new Date(); // Or consider returning null/undefined based on needs
+              };
 
             const profileData: UserProfile = {
               uid: docSnap.id,
@@ -185,8 +192,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               lifetimeCashback: typeof data.lifetimeCashback === 'number' ? data.lifetimeCashback : 0,
               referralCode: data.referralCode ?? null, // Handle undefined/null from DB
               referredBy: data.referredBy ?? null, // Handle undefined/null from DB
-              createdAt: createdAtDate,
-              updatedAt: updatedAtDate,
+              isDisabled: typeof data.isDisabled === 'boolean' ? data.isDisabled : false, // Handle isDisabled field, default false
+              createdAt: safeToDate(data.createdAt), // Convert safely
+              updatedAt: safeToDate(data.updatedAt), // Convert safely
             };
             console.log("Processed profile data:", profileData); // Log processed data
             setUserProfile(profileData);
@@ -202,8 +210,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                    setUserProfile(null); // Ensure profile is null if creation fails
                });
              // Don't set profile to null immediately, let the creation attempt resolve.
-             // If creation succeeds, the next snapshot will populate the profile.
-             // If it fails, the error state is set.
           }
           setLoading(false); // Profile loaded or creation attempted
         }, (error) => {
@@ -329,9 +335,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       loading,
       signOut,
       signInWithGoogle, // Include the new method
+      createOrUpdateUserProfile, // Expose the profile function
       authError, // Auth/profile errors
       initializationError: firebaseInitializationError // Pass init error down
-  }), [user, userProfile, loading, signOut, signInWithGoogle, authError]);
+  }), [user, userProfile, loading, signOut, signInWithGoogle, createOrUpdateUserProfile, authError]);
 
   // Provide the authentication context to children components
   // Ensure correct JSX syntax

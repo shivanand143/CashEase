@@ -4,7 +4,7 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { collection, getDocs, query, orderBy, doc, deleteDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, doc, deleteDoc, getDoc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore'; // Added addDoc, updateDoc, serverTimestamp
 import { db } from '@/lib/firebase/config';
 import type { Coupon, Store } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -36,28 +36,40 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast";
 import AdminGuard from '@/components/guards/admin-guard';
+import CouponForm from '@/components/admin/coupon-form'; // Import the CouponForm component
 
 // Combined type for display
 interface CouponWithStoreName extends Coupon {
   storeName: string;
 }
 
-// TODO: Define Add/Edit Coupon Form Component (e.g., in components/admin/coupon-form.tsx)
-// import CouponForm from '@/components/admin/coupon-form';
-
 function AdminCouponsPageContent() {
   const [coupons, setCoupons] = useState<CouponWithStoreName[]>([]);
+  const [stores, setStores] = useState<Store[]>([]); // State to hold stores for the form
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
-  // const [isFormOpen, setIsFormOpen] = useState(false);
-  // const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false); // State for Add/Edit modal/drawer
+  const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null); // State for editing
 
- const fetchCoupons = async () => {
+ const fetchCouponsAndStores = async () => {
      setLoading(true);
      setError(null);
      try {
-       // 1. Fetch all coupons ordered by creation date
+       // 1. Fetch all stores (needed for the dropdown in CouponForm)
+       const storesCollection = collection(db, 'stores');
+       const storesSnapshot = await getDocs(query(storesCollection, orderBy('name', 'asc')));
+       const storesData = storesSnapshot.docs.map(doc => ({
+           id: doc.id,
+           ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : new Date(),
+            updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate() : new Date(),
+       })) as Store[];
+       setStores(storesData);
+       const storesMap = new Map<string, string>(storesData.map(s => [s.id, s.name]));
+
+
+       // 2. Fetch all coupons ordered by creation date
        const couponsCollection = collection(db, 'coupons');
        const qCoupons = query(couponsCollection, orderBy('createdAt', 'desc'));
        const couponsSnapshot = await getDocs(qCoupons);
@@ -69,22 +81,6 @@ function AdminCouponsPageContent() {
            updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate() : new Date(),
        })) as Coupon[];
 
-       // 2. Fetch store names for each coupon
-       const storesMap = new Map<string, string>();
-       const storePromises = couponsData.map(coupon => {
-           if (!storesMap.has(coupon.storeId)) { // Avoid fetching the same store multiple times
-               return getDoc(doc(db, 'stores', coupon.storeId)).then(storeDoc => {
-                   if (storeDoc.exists()) {
-                       storesMap.set(coupon.storeId, storeDoc.data().name || 'Unknown Store');
-                   } else {
-                       storesMap.set(coupon.storeId, 'Store Not Found');
-                   }
-               });
-           }
-           return Promise.resolve();
-       });
-       await Promise.all(storePromises);
-
        // 3. Combine coupon data with store names
        const combinedData = couponsData.map(coupon => ({
          ...coupon,
@@ -94,8 +90,8 @@ function AdminCouponsPageContent() {
        setCoupons(combinedData);
 
      } catch (err) {
-       console.error("Error fetching coupons:", err);
-       setError("Failed to load coupons. Please try again later.");
+       console.error("Error fetching coupons or stores:", err);
+       setError("Failed to load data. Please try again later.");
      } finally {
        setLoading(false);
      }
@@ -103,15 +99,13 @@ function AdminCouponsPageContent() {
 
 
   useEffect(() => {
-    fetchCoupons();
+    fetchCouponsAndStores();
   }, []);
 
    const handleEdit = (coupon: Coupon) => {
       console.log(`Edit action for coupon: ${coupon.description} (ID: ${coupon.id})`);
-      // setSelectedCoupon(coupon);
-      // setIsFormOpen(true);
-      // TODO: Implement opening the CouponForm with the selected coupon data
-       alert(`Editing coupon ${coupon.description} - Implementation pending.`);
+      setSelectedCoupon(coupon);
+      setIsFormOpen(true);
    };
 
    const handleDelete = async (couponId: string, couponDesc: string) => {
@@ -122,13 +116,13 @@ function AdminCouponsPageContent() {
                title: "Coupon Deleted",
                description: `Coupon "${couponDesc}" has been successfully deleted.`,
            });
-           fetchCoupons(); // Refresh the list
+           fetchCouponsAndStores(); // Refresh the list
        } catch (err) {
            console.error("Error deleting coupon:", err);
            toast({
                variant: "destructive",
                title: "Deletion Failed",
-               description: `Could not delete coupon "${couponDesc}". Please try again.`,
+               description: `Could not delete coupon "${couponDesc}". Please try again. Error: ${err instanceof Error ? err.message : String(err)}`,
            });
            setError(`Failed to delete coupon ${couponDesc}.`);
        }
@@ -136,10 +130,14 @@ function AdminCouponsPageContent() {
 
    const handleAddNew = () => {
        console.log("Add new coupon action triggered");
-      // setSelectedCoupon(null);
-      // setIsFormOpen(true);
-        // TODO: Implement opening the CouponForm for adding a new coupon
-         alert(`Adding new coupon - Implementation pending.`);
+      setSelectedCoupon(null); // Ensure no coupon is selected
+      setIsFormOpen(true);
+   };
+
+   const handleFormSuccess = () => {
+       fetchCouponsAndStores();
+       setIsFormOpen(false);
+       setSelectedCoupon(null); // Clear selection after success
    };
 
 
@@ -184,7 +182,7 @@ function AdminCouponsPageContent() {
                  {coupons.map((coupon) => (
                    <TableRow key={coupon.id}>
                       <TableCell className="font-medium">
-                         <Link href={`/admin/stores?edit=${coupon.storeId}`} className="hover:underline">
+                         <Link href={`/stores/${coupon.storeId}`} className="hover:underline">
                             {coupon.storeName}
                          </Link>
                       </TableCell>
@@ -255,14 +253,15 @@ function AdminCouponsPageContent() {
            )}
            {/* TODO: Add Pagination */}
          </CardContent>
-           {/* TODO: Implement Add/Edit Form Modal/Drawer */}
-           {/* {isFormOpen && (
+           {/* Render Add/Edit Form Modal/Drawer */}
+           {isFormOpen && (
                <CouponForm
+                   stores={stores} // Pass stores list to the form
                    coupon={selectedCoupon}
                    onClose={() => setIsFormOpen(false)}
-                   onSuccess={() => { fetchCoupons(); setIsFormOpen(false); }}
+                   onSuccess={handleFormSuccess} // Use the success handler
                />
-           )} */}
+           )}
        </Card>
      </AdminGuard>
    );
