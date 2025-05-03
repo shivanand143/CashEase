@@ -40,18 +40,28 @@ export default function ProductCard({ product }: ProductCardProps) {
   // Helper to attempt extracting number and format with INR symbol
   const formatPrice = (priceString?: string): string | undefined => {
     if (!priceString) return undefined;
-    const numericString = priceString.replace(/[^\d.]/g, '');
+    // Remove currency symbols, commas, and ensure only one decimal point remains if needed.
+    // This regex handles cases like ₹1,299.00, $19.99 etc. more robustly
+    const numericString = priceString.replace(/[^0-9.]/g, '');
     const priceValue = parseFloat(numericString);
     if (isNaN(priceValue)) {
-      return priceString;
+        // If it's still not a number after cleaning, return the original string or an indicator
+        return priceString; // Or maybe 'Price not available'
     }
+    // Format specifically for INR
     return `₹${priceValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
+
   const displayPrice = formatPrice(product.price);
 
+  const handleProductClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+      // Optional: Add any client-side tracking here if needed before navigation
+      // console.log(`Navigating to: ${product.detailPageURL}`);
+  };
+
   return (
-    <Card className="flex flex-col h-full overflow-hidden rounded-lg border border-border hover:shadow-lg transition-shadow duration-300 ease-in-out group bg-card">
+    <Card className="flex flex-col h-full overflow-hidden rounded-lg border border-border hover:shadow-xl transition-shadow duration-300 ease-in-out group bg-card">
       {/* Image Section */}
       <div className="relative aspect-square w-full overflow-hidden bg-muted/30"> {/* Use aspect-square for consistency */}
         <a
@@ -60,13 +70,14 @@ export default function ProductCard({ product }: ProductCardProps) {
           rel="noopener noreferrer sponsored"
           title={product.title}
           className="block h-full w-full"
+          onClick={handleProductClick}
         >
           <Image
             data-ai-hint={`amazon product ${product.title}`}
             src={product.imageUrl || `https://picsum.photos/seed/${product.asin}/300/300`} // Slightly larger placeholder
             alt={product.title}
             fill
-            className="object-contain p-3 group-hover:scale-105 transition-transform duration-300 ease-in-out" // Add subtle zoom on hover
+            className="object-contain p-4 group-hover:scale-105 transition-transform duration-300 ease-in-out" // Added more padding
             onError={(e) => { e.currentTarget.src = `https://picsum.photos/seed/placeholder-${product.asin}/300/300`; }}
             sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw" // Optimize image loading
           />
@@ -74,32 +85,31 @@ export default function ProductCard({ product }: ProductCardProps) {
       </div>
 
       {/* Content Section */}
-      <CardContent className="p-3 flex-grow flex flex-col justify-between space-y-2"> {/* Reduced padding */}
+      <CardContent className="p-3 flex-grow flex flex-col justify-between space-y-1.5"> {/* Adjusted spacing */}
         <a
           href={product.detailPageURL}
           target="_blank"
           rel="noopener noreferrer sponsored"
           title={product.title}
           className="block"
+           onClick={handleProductClick}
         >
-          <h3 className="font-semibold text-sm leading-snug line-clamp-2 group-hover:text-primary transition-colors duration-200">
+          <h3 className="font-semibold text-sm leading-snug line-clamp-2 group-hover:text-primary transition-colors duration-200 h-[2.5em]"> {/* Fixed height */}
             {product.title}
           </h3>
         </a>
         {/* Rating and Price */}
-        <div className="flex flex-col gap-1">
-           <div className="flex items-center gap-1.5">
-             {product.rating !== undefined && product.rating > 0 && renderStars(product.rating)}
-             {product.reviewsCount !== undefined && product.reviewsCount > 0 && (
-                 <span className="text-xs text-muted-foreground">({product.reviewsCount.toLocaleString()})</span>
-             )}
-             {/* Show empty stars if no rating */}
-             {(product.rating === undefined || product.rating <= 0) && (
+        <div className="flex flex-col gap-0.5"> {/* Reduced gap */}
+           <div className="flex items-center gap-1"> {/* Reduced gap */}
+             {product.rating !== undefined && product.rating > 0 ? renderStars(product.rating) : (
                  <div className="flex items-center">
                     {[...Array(5)].map((_, i) => (
                         <Star key={`empty-placeholder-${i}`} className="w-3.5 h-3.5 text-gray-300 fill-current" />
                     ))}
                  </div>
+             )}
+             {product.reviewsCount !== undefined && product.reviewsCount > 0 && (
+                 <span className="text-xs text-muted-foreground">({product.reviewsCount.toLocaleString()})</span>
              )}
            </div>
            {displayPrice && (
@@ -110,20 +120,20 @@ export default function ProductCard({ product }: ProductCardProps) {
         </div>
       </CardContent>
 
-      {/* Footer/Action Section */}
-      <CardFooter className="p-3 pt-0 mt-auto border-t border-border/50"> {/* Added border */}
-        <Button asChild size="sm" className="w-full h-9 text-sm" variant="secondary"> {/* Use secondary variant */}
+      {/* Footer/Action Section - Changed Button usage */}
+      <CardFooter className="p-2 pt-0 mt-auto border-t border-border/50"> {/* Adjusted padding */}
+          {/* Wrap the Button content in the anchor tag instead of using asChild */}
           <a
             href={product.detailPageURL}
             target="_blank"
             rel="noopener noreferrer sponsored"
-            className="flex items-center justify-center gap-1.5"
+            className="w-full block" // Anchor takes full width
+             onClick={handleProductClick}
           >
-            View on Amazon
-             {/* Optional: Add external link icon */}
-             {/* <ExternalLink className="w-3 h-3"/> */}
+              <Button size="sm" className="w-full h-9 text-sm" variant="secondary">
+                  View on Amazon
+              </Button>
           </a>
-        </Button>
       </CardFooter>
     </Card>
   );
