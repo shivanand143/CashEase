@@ -9,7 +9,7 @@ import { db } from '@/lib/firebase/config'; // Import db instance
 import type { Store, Coupon } from '@/lib/types'; // Import types
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowRight, Tag, Store as StoreIcon, ShoppingBag, Search, Loader2, AlertCircle, IndianRupee, List, BookOpen, Percent, Copy } from 'lucide-react'; // Added Copy
+import { ArrowRight, Tag, Store as StoreIcon, ShoppingBag, Search, Loader2, AlertCircle, IndianRupee, List, BookOpen, Percent, Copy, Sparkles } from 'lucide-react'; // Added Sparkles icon
 import { Input } from '@/components/ui/input'; // Import Input
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'; // Import Alert components
 import ProductCard from '@/components/product-card'; // Import the ProductCard
@@ -52,10 +52,10 @@ const staticCategories = [
 
 // Mock Banner Data
 const bannerData = [
-    { id: 'banner1', img: 'https://picsum.photos/seed/banner1/1200/400', alt: 'Sale Banner 1', link: '/deals/summer-sale', hint: 'summer sale electronics' },
-    { id: 'banner2', img: 'https://picsum.photos/seed/banner2/1200/400', alt: 'Fashion Deals', link: '/category/fashion', hint: 'fashion clothing discount' },
-    { id: 'banner3', img: 'https://picsum.photos/seed/banner3/1200/400', alt: 'Travel Offers', link: '/category/travel', hint: 'travel flight hotel deals' },
-    { id: 'banner4', img: 'https://picsum.photos/seed/banner4/1200/400', alt: 'New User Bonus', link: '/signup', hint: 'signup bonus offer' },
+    { id: 'banner1', img: 'https://picsum.photos/seed/banner1/1200/350', alt: 'Sale Banner 1', link: '/deals/summer-sale', hint: 'summer sale electronics' }, // Slightly shorter aspect ratio
+    { id: 'banner2', img: 'https://picsum.photos/seed/banner2/1200/350', alt: 'Fashion Deals', link: '/category/fashion', hint: 'fashion clothing discount' },
+    { id: 'banner3', img: 'https://picsum.photos/seed/banner3/1200/350', alt: 'Travel Offers', link: '/category/travel', hint: 'travel flight hotel deals' },
+    { id: 'banner4', img: 'https://picsum.photos/seed/banner4/1200/350', alt: 'New User Bonus', link: '/signup', hint: 'signup bonus offer' },
 ];
 
 interface CouponWithStore extends Coupon {
@@ -293,7 +293,10 @@ export default function Home() {
       </section>
 
        {/* Banner Carousel Section */}
-       <section className="container px-0 md:px-6 -mt-8 md:-mt-12 lg:-mt-16 relative z-20">
+       <section className="container px-4 md:px-6 -mt-8 md:-mt-12 lg:-mt-16 relative z-20">
+         <h2 className="text-2xl md:text-3xl font-bold text-center mb-6 md:mb-8 flex items-center justify-center gap-2">
+            <Sparkles className="w-7 h-7 text-primary" /> Featured Deals & Banners
+         </h2>
          <Carousel
            plugins={[
              Autoplay({
@@ -305,31 +308,28 @@ export default function Home() {
              align: "start",
              loop: true,
            }}
-           className="w-full"
+           className="w-full overflow-hidden rounded-lg shadow-xl border border-border/10" // Add border and shadow
          >
            <CarouselContent>
              {bannerData.map((banner) => (
                <CarouselItem key={banner.id}>
                  <Link href={banner.link}>
-                    <Card className="overflow-hidden rounded-lg shadow-lg border-none">
-                      <CardContent className="p-0">
-                          <Image
-                            data-ai-hint={banner.hint}
-                            src={banner.img}
-                            alt={banner.alt}
-                            width={1200}
-                            height={400}
-                            className="w-full h-auto aspect-[3/1] object-cover" // Adjust aspect ratio as needed
-                            priority={banner.id === 'banner1'} // Prioritize loading the first banner
-                          />
-                      </CardContent>
-                    </Card>
+                   {/* Removed Card and CardContent for direct Image */}
+                   <Image
+                     data-ai-hint={banner.hint}
+                     src={banner.img}
+                     alt={banner.alt}
+                     width={1200}
+                     height={350} // Adjusted height
+                     className="w-full h-auto aspect-[21/7] object-cover" // Adjusted aspect ratio (approx 3.4:1)
+                     priority={banner.id === 'banner1'} // Prioritize loading the first banner
+                   />
                  </Link>
                </CarouselItem>
              ))}
            </CarouselContent>
-           <CarouselPrevious className="absolute left-2 top-1/2 -translate-y-1/2 hidden sm:flex bg-background/50 hover:bg-background/80" />
-           <CarouselNext className="absolute right-2 top-1/2 -translate-y-1/2 hidden sm:flex bg-background/50 hover:bg-background/80" />
+           <CarouselPrevious className="absolute left-4 top-1/2 -translate-y-1/2 hidden sm:flex bg-background/60 hover:bg-background/90 border-border/50 text-foreground" />
+           <CarouselNext className="absolute right-4 top-1/2 -translate-y-1/2 hidden sm:flex bg-background/60 hover:bg-background/90 border-border/50 text-foreground" />
          </Carousel>
        </section>
 
