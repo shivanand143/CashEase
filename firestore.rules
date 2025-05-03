@@ -1,98 +1,126 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if a user is authenticated
+    // Helper function to check if the user is an admin
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Helper function to check if user is authenticated
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Helper function to check if the requesting user is the owner of the document
+    // Helper function to check if user owns the document
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
-    // Helper function to check if the requesting user is an admin
-    function isAdmin() {
-      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return request.auth.uid == userId;
     }
 
     // Users Collection
     match /users/{userId} {
-      // Admins can read/write any user profile
-      // Authenticated users can read their own profile
-      allow read: if isAdmin() || isOwner(userId);
+      // Allow users to read their own profile
+      // Allow admins to read any profile
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
 
-      // Admins can update any user profile (be cautious with this)
-      // Authenticated users can create their own profile during signup
-      // Authenticated users can update their own profile (specific fields)
-      allow write: if isAdmin();
-      allow create: if isOwner(userId); // Allows signup to create the doc
-      allow update: if isOwner(userId) &&
-                      request.resource.data.uid == userId && // Cannot change UID
-                      request.resource.data.email == request.auth.token.email && // Cannot change email via profile update directly (use auth methods)
-                      request.resource.data.role == resource.data.role && // User cannot change their own role
-                      request.resource.data.keys().hasAll(['uid', 'email', 'displayName', 'photoURL', 'role', 'cashbackBalance', 'pendingCashback', 'lifetimeCashback', 'referralCode', 'referredBy', 'createdAt', 'updatedAt']) && // Ensure all required fields exist
-                      request.resource.data.size() == 12; // Ensure no extra fields are added
-                      // Add specific field validations if needed (e.g., displayName is string)
-                      // Allow updating specific fields like displayName, photoURL, payment details (if added)
+      // Allow users to create their own profile (on signup)
+      allow create: if isAuthenticated() && isOwner(userId);
+
+      // Allow users to update their own profile (e.g., displayName, payment details)
+      // Allow admins to update any profile (e.g., role, balance adjustments)
+      // Prevent users from changing their own role or balances directly
+      allow update: if isAuthenticated() &&
+                     (isOwner(userId) && request.resource.data.role == resource.data.role && request.resource.data.cashbackBalance == resource.data.cashbackBalance && request.resource.data.pendingCashback == resource.data.pendingCashback && request.resource.data.lifetimeCashback == resource.data.lifetimeCashback) ||
+                     isAdmin();
+
+      // Generally disallow direct deletion of user profiles
+      allow delete: if false; // Or: if isAdmin();
     }
+    // Allow admins to list users
+    match /users {
+       allow list: if isAuthenticated() && isAdmin();
+    }
+
 
     // Stores Collection
     match /stores/{storeId} {
-      // Anyone can read store information
-      allow read: if true;
+      // Allow anyone to read active store details
+      allow read: if resource.data.isActive == true || (isAuthenticated() && isAdmin());
+
       // Only admins can create, update, or delete stores
-      allow write: if isAdmin();
+      allow write: if isAuthenticated() && isAdmin();
+    }
+    // Allow anyone to list active stores
+    match /stores {
+        allow list: if true; // Allow listing for filtering active stores client-side, or restrict further
     }
 
     // Coupons Collection
     match /coupons/{couponId} {
-      // Anyone can read coupon information
-      allow read: if true;
+      // Allow anyone to read active coupon details
+      allow read: if resource.data.isActive == true || (isAuthenticated() && isAdmin());
+
       // Only admins can create, update, or delete coupons
-      allow write: if isAdmin();
+      allow write: if isAuthenticated() && isAdmin();
     }
+     // Allow anyone to list active coupons
+     match /coupons {
+         allow list: if true; // Allow listing for filtering active coupons client-side
+     }
+
 
     // Clicks Collection
     match /clicks/{clickId} {
-      // Only authenticated users can create click logs for themselves
+      // Allow users to create their own click logs
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      // Admins can read clicks (for analytics/debugging)
-      // Users cannot read/update/delete clicks directly
-      allow read: if isAdmin();
-      allow update, delete: if false; // Clicks are append-only usually
+
+      // Restrict reads/updates/deletes, maybe allow admins later if needed
+      allow read, update, delete: if false; // Or: if isAuthenticated() && isAdmin();
+    }
+    // Restrict listing clicks by default
+    match /clicks {
+        allow list: if false; // Or: if isAuthenticated() && isAdmin();
     }
 
     // Transactions Collection
     match /transactions/{transactionId} {
-      // Admins can read/write any transaction (for manual adjustments/creation)
-      // Users can read their own transactions
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
-      // Only admins should typically write transactions (e.g., via backend process)
-      allow write: if isAdmin();
-       // Users cannot create/delete transactions directly
-      allow create, delete: if false;
-    }
+       // Allow users to read their own transactions
+       // Allow admins to read any transaction
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
 
-    // Payout Requests Collection
+      // Transactions should typically be created server-side or by admins
+      allow create: if isAuthenticated() && isAdmin(); // Or use a Cloud Function
+      // Allow admins to update status (e.g., confirm, reject)
+      allow update: if isAuthenticated() && isAdmin();
+      // Disallow direct deletion
+      allow delete: if false;
+    }
+     // Allow admins to list all transactions, allow users to list their own
+     match /transactions {
+         allow list: if isAuthenticated() && (request.query.limit <= 20 || isAdmin()); // Allow limited listing for user history, or full listing for admin
+     }
+
+
+    // PayoutRequests Collection
     match /payoutRequests/{requestId} {
-       // Admins can read/update any payout request
-       // Users can read their own payout requests
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
-       // Users can create their own payout requests
-       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-       // Only admins can update payout requests (approve/reject)
-       allow update: if isAdmin();
-       // Users/Admins cannot delete payout requests (keep history)
-       allow delete: if false;
-    }
+      // Allow users to create their own payout requests
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
 
-    // Default deny all other paths
-    match /{document=**} {
-      allow read, write: if false;
+      // Allow users to read their own requests
+      // Allow admins to read any request
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+
+      // Only admins can update (approve/reject) requests
+      allow update: if isAuthenticated() && isAdmin();
+
+      // Disallow direct deletion
+      allow delete: if false;
     }
+     // Allow admins to list payout requests
+     match /payoutRequests {
+         allow list: if isAuthenticated() && isAdmin();
+     }
+
   }
 }
