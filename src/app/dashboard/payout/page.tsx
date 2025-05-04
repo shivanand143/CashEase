@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form'; // Import Controller
 import * as z from 'zod';
 import { collection, addDoc, serverTimestamp, writeBatch, doc, getDocs, query, where, updateDoc, Timestamp, runTransaction, getDoc, limit } from 'firebase/firestore'; // Added runTransaction, getDoc, limit
 import { db } from '@/lib/firebase/config';
@@ -41,7 +41,7 @@ const payoutSchema = z.object({
 type PayoutFormValues = z.infer<typeof payoutSchema>;
 
 export default function PayoutPage() {
-  const { user, userProfile, loading: authLoading } = useAuth();
+  const { user, userProfile, loading: authLoading, fetchUserProfile } = useAuth(); // Add fetchUserProfile
   const router = useRouter();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -58,6 +58,7 @@ export default function PayoutPage() {
     formState: { errors },
      setValue,
      watch,
+     reset, // Add reset
   } = useForm<PayoutFormValues>({
     resolver: zodResolver(payoutSchema),
      defaultValues: {
@@ -92,7 +93,24 @@ export default function PayoutPage() {
 
      setIsSubmitting(true); // Indicate submission process started
      setError(null);
-     const payoutAmount = userProfile.cashbackBalance; // Payout the full available balance
+
+     // Fetch the latest user profile data just before submitting
+     const latestUserProfile = await fetchUserProfile(user.uid);
+      if (!latestUserProfile) {
+          setError("Could not verify user balance. Please try again.");
+          setIsSubmitting(false);
+          return;
+      }
+      const payoutAmount = latestUserProfile.cashbackBalance; // Use latest balance
+
+     // Re-check eligibility with the latest balance
+      if (payoutAmount < MIN_PAYOUT_THRESHOLD) {
+          setError(`Your current balance (₹${payoutAmount.toFixed(2)}) is below the minimum payout threshold of ₹${MIN_PAYOUT_THRESHOLD}.`);
+          setIsSubmitting(false);
+          return;
+      }
+
+
      console.log(`Starting payout request for User: ${user.uid}, Amount: ₹${payoutAmount.toFixed(2)}`);
 
      const batch = writeBatch(db);
@@ -112,9 +130,11 @@ export default function PayoutPage() {
 
        const transactionIdsToUpdate: string[] = [];
        let sumOfTransactions = 0;
+       const fetchedTransactionsData: any[] = []; // For detailed logging
 
        querySnapshot.forEach((docSnap) => {
          const txData = docSnap.data();
+         fetchedTransactionsData.push({ id: docSnap.id, ...txData }); // Log fetched data
          if (typeof txData.cashbackAmount === 'number') {
              transactionIdsToUpdate.push(docSnap.id);
              sumOfTransactions += txData.cashbackAmount;
@@ -125,24 +145,23 @@ export default function PayoutPage() {
        });
 
        console.log(`Total sum of queried 'confirmed' transactions with no payoutId: ₹${sumOfTransactions.toFixed(2)}`);
-       console.log(`User profile available balance: ₹${payoutAmount.toFixed(2)}`);
+       console.log(`User profile available balance (latest): ₹${payoutAmount.toFixed(2)}`);
+        console.log("Fetched Transactions Details:", JSON.stringify(fetchedTransactionsData, null, 2)); // Detailed log
+
 
        // Strict validation: Ensure the sum exactly matches the available balance
        // Allow for minor floating point discrepancies
        if (Math.abs(sumOfTransactions - payoutAmount) > 0.01) {
-           // Improved error message:
-           const mismatchError = `Balance Mismatch: The sum of your unpaid confirmed transactions (₹${sumOfTransactions.toFixed(2)}) does not match your available balance (₹${payoutAmount.toFixed(2)}). This might indicate a data inconsistency. Please contact support.`;
-           console.error(mismatchError);
-           throw new Error(mismatchError);
+            console.error(`Mismatch: Sum of confirmed transactions (₹${sumOfTransactions.toFixed(2)}) does not match available balance (₹${payoutAmount.toFixed(2)}).`);
+            throw new Error("Balance calculation error. There's a mismatch between your confirmed cashback and transaction history. Please contact support.");
        }
 
-        // If the balance is > threshold, but sum is 0 (and no transactions found), it's an inconsistency
+       // If the balance is > threshold, but sum is 0 (and no transactions found), it's an inconsistency
         if (payoutAmount >= MIN_PAYOUT_THRESHOLD && querySnapshot.empty && sumOfTransactions === 0) {
             const inconsistencyError = `Data Inconsistency: Your available balance is ₹${payoutAmount.toFixed(2)}, but no corresponding unpaid confirmed transactions were found. Please contact support to resolve this before requesting a payout.`;
             console.error(inconsistencyError);
             throw new Error(inconsistencyError);
         }
-
 
        // 2. Create the PayoutRequest document
        const payoutCollection = collection(db, 'payoutRequests');
@@ -154,7 +173,7 @@ export default function PayoutPage() {
          status: 'pending',
          requestedAt: serverTimestamp(),
          paymentMethod: data.paymentMethod,
-         paymentDetails: { detail: data.paymentDetails }, // Adjust as needed
+         paymentDetails: { detail: data.paymentDetails }, // Store detail under a key
          transactionIds: transactionIdsToUpdate,
          adminNotes: null,
          processedAt: null,
@@ -248,20 +267,27 @@ export default function PayoutPage() {
           {/* Payment Method Selection */}
            <div className="space-y-2">
                <Label htmlFor="paymentMethod">Payment Method *</Label>
-                 <Select
-                    onValueChange={(value) => setValue('paymentMethod', value)} // Update RHF state
-                    defaultValue={selectedPaymentMethod}
-                    disabled={isSubmitting}
-                 >
-                     <SelectTrigger id="paymentMethod" aria-invalid={errors.paymentMethod ? "true" : "false"}>
-                         <SelectValue placeholder="Select a method" />
-                     </SelectTrigger>
-                     <SelectContent>
-                         <SelectItem value="paypal">PayPal</SelectItem>
-                         <SelectItem value="bank_transfer">Bank Transfer (India - UPI/NEFT)</SelectItem>
-                         <SelectItem value="gift_card">Gift Card (e.g., Amazon)</SelectItem>
-                     </SelectContent>
-                 </Select>
+                 {/* Use Controller for ShadCN Select with React Hook Form */}
+                 <Controller
+                    name="paymentMethod"
+                    control={control}
+                    render={({ field }) => (
+                         <Select
+                            onValueChange={field.onChange}
+                            value={field.value} // Use field.value
+                            disabled={isSubmitting}
+                         >
+                             <SelectTrigger id="paymentMethod" aria-invalid={errors.paymentMethod ? "true" : "false"}>
+                                 <SelectValue placeholder="Select a method" />
+                             </SelectTrigger>
+                             <SelectContent>
+                                 <SelectItem value="paypal">PayPal</SelectItem>
+                                 <SelectItem value="bank_transfer">Bank Transfer (India - UPI/NEFT)</SelectItem>
+                                 <SelectItem value="gift_card">Gift Card (e.g., Amazon)</SelectItem>
+                             </SelectContent>
+                         </Select>
+                     )}
+                 />
                  {errors.paymentMethod && <p className="text-sm text-destructive mt-1">{errors.paymentMethod.message}</p>}
            </div>
 

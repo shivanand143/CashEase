@@ -16,6 +16,7 @@ import type { UserProfile } from '@/lib/types';
 import { useToast } from "@/hooks/use-toast"; // Import useToast
 import { v4 as uuidv4 } from 'uuid'; // Import UUID for referral codes
 
+
 // Check if Firebase services are available (handle potential initialization failure in config.ts)
 const isFirebaseAvailable = !!auth && !!db && !firebaseInitializationError;
 const googleProvider = new GoogleAuthProvider(); // Create a GoogleAuthProvider instance
@@ -27,6 +28,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<void>; // Add signInWithGoogle method
   createOrUpdateUserProfile: (userToUpdate: User & { role?: 'admin' | 'user' }, referredByCode?: string | null) => Promise<void>; // Expose profile creation function
+  fetchUserProfile: (uid: string) => Promise<UserProfile | null>; // Add function to fetch profile
   authError?: string | null; // Error related to auth state or profile loading
   initializationError?: string | null; // Error during Firebase init
 }
@@ -149,6 +151,53 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []); // Added dependency array for useCallback
 
 
+  // Helper function to map Firestore data to UserProfile
+  const mapFirestoreDataToProfile = (docSnap: DocumentData): UserProfile => {
+       const data = docSnap.data()!; // Assert data exists
+       const safeToDate = (fieldValue: any): Date | null => {
+           if (fieldValue instanceof Timestamp) return fieldValue.toDate();
+           if (fieldValue instanceof Date) return fieldValue;
+           return null;
+       };
+       const createdAtDate = safeToDate(data.createdAt);
+       return {
+           uid: docSnap.id,
+           email: data.email ?? null,
+           displayName: data.displayName ?? 'User',
+           photoURL: data.photoURL ?? null,
+           role: data.role ?? 'user',
+           cashbackBalance: typeof data.cashbackBalance === 'number' ? data.cashbackBalance : 0,
+           pendingCashback: typeof data.pendingCashback === 'number' ? data.pendingCashback : 0,
+           lifetimeCashback: typeof data.lifetimeCashback === 'number' ? data.lifetimeCashback : 0,
+           referralCode: data.referralCode ?? '',
+           referralCount: typeof data.referralCount === 'number' ? data.referralCount : 0,
+           referredBy: data.referredBy ?? null,
+           isDisabled: typeof data.isDisabled === 'boolean' ? data.isDisabled : false,
+           createdAt: createdAtDate || new Date(0),
+           updatedAt: safeToDate(data.updatedAt) || createdAtDate || new Date(0),
+       };
+  };
+
+
+  // Function to fetch user profile data on demand
+  const fetchUserProfile = useCallback(async (uid: string): Promise<UserProfile | null> => {
+      if (!db) return null;
+      const userDocRef = doc(db, 'users', uid);
+      try {
+          const docSnap = await getDoc(userDocRef);
+          if (docSnap.exists()) {
+              return mapFirestoreDataToProfile(docSnap);
+          } else {
+              console.warn(`fetchUserProfile: No profile found for UID ${uid}`);
+              return null;
+          }
+      } catch (error) {
+          console.error(`Error fetching user profile for UID ${uid}:`, error);
+          return null;
+      }
+  }, []);
+
+
   useEffect(() => {
     console.log("AuthProvider mounted. Firebase Available:", isFirebaseAvailable, "Initialization Error:", firebaseInitializationError);
 
@@ -180,43 +229,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         unsubscribeProfile = onSnapshot(userDocRef, (docSnap) => {
           console.log("Profile snapshot received. Exists:", docSnap.exists());
           if (docSnap.exists()) {
-            const data = docSnap.data() as DocumentData;
-             console.log("Raw profile data from Firestore:", data); // Log raw data
-             // Helper function to safely convert Firestore Timestamps or existing Dates
-              const safeToDate = (fieldValue: any): Date | null => {
-                  if (fieldValue instanceof Timestamp) {
-                      return fieldValue.toDate();
-                  } else if (fieldValue instanceof Date) {
-                      return fieldValue;
-                  }
-                   // Return null if the field is missing or not a valid date type
-                   return null;
-              };
-
-             const createdAtDate = safeToDate(data.createdAt);
-             const updatedAtDate = safeToDate(data.updatedAt);
-
-             if (!createdAtDate) {
-                 console.warn(`User ${docSnap.id} has missing or invalid createdAt field.`);
-             }
-
-            const profileData: UserProfile = {
-              uid: docSnap.id,
-              email: data.email ?? null,
-              displayName: data.displayName ?? firebaseUser.displayName ?? 'User', // Prioritize Firestore, then auth, then default
-              photoURL: data.photoURL ?? firebaseUser.photoURL ?? null, // Prioritize Firestore, then auth
-              role: data.role ?? 'user',
-              cashbackBalance: typeof data.cashbackBalance === 'number' ? data.cashbackBalance : 0,
-              pendingCashback: typeof data.pendingCashback === 'number' ? data.pendingCashback : 0,
-              lifetimeCashback: typeof data.lifetimeCashback === 'number' ? data.lifetimeCashback : 0,
-              referralCode: data.referralCode ?? '', // Default to empty string if null/undefined
-              referralCount: typeof data.referralCount === 'number' ? data.referralCount : 0, // Default to 0
-              referredBy: data.referredBy ?? null, // Handle undefined/null from DB
-              isDisabled: typeof data.isDisabled === 'boolean' ? data.isDisabled : false, // Handle isDisabled field, default false
-              createdAt: createdAtDate || new Date(0), // Use fallback if null
-              updatedAt: updatedAtDate || createdAtDate || new Date(0), // Use fallback if null
-            };
-            console.log("Processed profile data:", profileData); // Log processed data
+            const profileData = mapFirestoreDataToProfile(docSnap);
+            console.log("Processed profile data from listener:", profileData); // Log processed data
             setUserProfile(profileData);
             setAuthError(null); // Clear any previous auth/profile error
           } else {
@@ -337,7 +351,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log("Sign out successful via hook call.");
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
       // State updates (user=null, profile=null, loading=false) are handled by onAuthStateChanged
-    } catch (error) { // Catch any error
+    } catch (error: any) {
       console.error('Error signing out:', error);
       const errorMsg = `Sign out error: ${error instanceof Error ? error.message : String(error)}`;
       setAuthError(errorMsg);
@@ -355,9 +369,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       signOut,
       signInWithGoogle, // Include the new method
       createOrUpdateUserProfile, // Expose the profile function
+      fetchUserProfile, // Expose fetchUserProfile
       authError, // Auth/profile errors
       initializationError: firebaseInitializationError // Pass init error down
-  }), [user, userProfile, loading, signOut, signInWithGoogle, createOrUpdateUserProfile, authError]);
+  }), [user, userProfile, loading, signOut, signInWithGoogle, createOrUpdateUserProfile, fetchUserProfile, authError]);
 
   // Provide the authentication context to children components
   // Ensure correct JSX syntax
