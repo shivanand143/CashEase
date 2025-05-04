@@ -86,22 +86,44 @@ export default function PayoutPage() {
 
 
  const onSubmit = async (data: PayoutFormValues) => {
-     if (!user || !userProfile || !canRequestPayout) {
+     if (!user || !userProfile) {
        setError("Cannot process payout request. Please check your balance and login status.");
        return;
      }
 
-     setIsSubmitting(true); // Indicate submission process started
+     setIsSubmitting(true);
      setError(null);
 
-     // Fetch the latest user profile data just before submitting
-     const latestUserProfile = await fetchUserProfile(user.uid);
-      if (!latestUserProfile) {
-          setError("Could not verify user balance. Please try again.");
+     let payoutAmount = availableBalance;
+     let latestUserProfile: UserProfile | null = userProfile; // Use current profile initially
+
+      // Add a check right after getting the hook value
+      if (typeof fetchUserProfile !== 'function') {
+          console.error("CRITICAL ERROR: fetchUserProfile is not a function within onSubmit. Value:", fetchUserProfile);
+          setError("An internal error occurred. Please try again later or contact support. (Error code: FPUPNF)"); // Provide an error code
           setIsSubmitting(false);
           return;
       }
-      const payoutAmount = latestUserProfile.cashbackBalance; // Use latest balance
+
+
+     // Fetch the latest user profile data just before submitting ONLY IF fetchUserProfile exists
+     if (user) { // We already checked fetchUserProfile above
+        try {
+           latestUserProfile = await fetchUserProfile(user.uid); // Call the function
+           if (!latestUserProfile) {
+              setError("Could not verify user balance. Please try again.");
+              setIsSubmitting(false);
+              return;
+           }
+           payoutAmount = latestUserProfile.cashbackBalance; // Use latest balance
+           console.log("Fetched latest profile balance:", payoutAmount);
+        } catch (fetchError) {
+            console.error("Error fetching latest profile before payout:", fetchError);
+            setError("Could not verify user balance. Please try again.");
+            setIsSubmitting(false);
+            return;
+        }
+     }
 
      // Re-check eligibility with the latest balance
       if (payoutAmount < MIN_PAYOUT_THRESHOLD) {
@@ -122,46 +144,49 @@ export default function PayoutPage() {
        const q = query(
          transactionsCollection,
          where('userId', '==', user.uid),
-         where('status', '==', 'confirmed'),
-         where('payoutId', '==', null) // Explicitly check for unpaid transactions
+         where('status', '==', 'confirmed')
+         // Removing where('payoutId', '==', null) for now to simplify and see if it fixes the mismatch
        );
        const querySnapshot = await getDocs(q);
-       console.log(`Found ${querySnapshot.size} 'confirmed' transactions with no payoutId.`);
+       console.log(`Found ${querySnapshot.size} 'confirmed' transactions.`);
 
        const transactionIdsToUpdate: string[] = [];
        let sumOfTransactions = 0;
-       const fetchedTransactionsData: any[] = []; // For detailed logging
 
        querySnapshot.forEach((docSnap) => {
          const txData = docSnap.data();
-         fetchedTransactionsData.push({ id: docSnap.id, ...txData }); // Log fetched data
-         if (typeof txData.cashbackAmount === 'number') {
-             transactionIdsToUpdate.push(docSnap.id);
-             sumOfTransactions += txData.cashbackAmount;
-             console.log(`  - Including Tx ID: ${docSnap.id}, Amount: ₹${txData.cashbackAmount.toFixed(2)}`);
+          // Only include transactions that are NOT already paid out
+          if (!txData.payoutId) {
+             if (typeof txData.cashbackAmount === 'number') {
+                 transactionIdsToUpdate.push(docSnap.id);
+                 sumOfTransactions += txData.cashbackAmount;
+                 console.log(`  - Including Unpaid Tx ID: ${docSnap.id}, Amount: ₹${txData.cashbackAmount.toFixed(2)}`);
+             } else {
+                 console.warn(`Transaction ${docSnap.id} has missing or invalid cashbackAmount. Skipping.`);
+             }
          } else {
-             console.warn(`Transaction ${docSnap.id} has missing or invalid cashbackAmount. Skipping.`);
+             console.log(`  - Skipping Paid Tx ID: ${docSnap.id} (Payout ID: ${txData.payoutId})`);
          }
        });
 
-       console.log(`Total sum of queried 'confirmed' transactions with no payoutId: ₹${sumOfTransactions.toFixed(2)}`);
+       console.log(`Total sum of queried 'confirmed' AND unpaid transactions: ₹${sumOfTransactions.toFixed(2)}`);
        console.log(`User profile available balance (latest): ₹${payoutAmount.toFixed(2)}`);
-        console.log("Fetched Transactions Details:", JSON.stringify(fetchedTransactionsData, null, 2)); // Detailed log
-
 
        // Strict validation: Ensure the sum exactly matches the available balance
        // Allow for minor floating point discrepancies
        if (Math.abs(sumOfTransactions - payoutAmount) > 0.01) {
+           // Simplified error logging - the specific message is more useful here
             console.error(`Mismatch: Sum of confirmed transactions (₹${sumOfTransactions.toFixed(2)}) does not match available balance (₹${payoutAmount.toFixed(2)}).`);
             throw new Error("Balance calculation error. There's a mismatch between your confirmed cashback and transaction history. Please contact support.");
        }
 
-       // If the balance is > threshold, but sum is 0 (and no transactions found), it's an inconsistency
-        if (payoutAmount >= MIN_PAYOUT_THRESHOLD && querySnapshot.empty && sumOfTransactions === 0) {
-            const inconsistencyError = `Data Inconsistency: Your available balance is ₹${payoutAmount.toFixed(2)}, but no corresponding unpaid confirmed transactions were found. Please contact support to resolve this before requesting a payout.`;
-            console.error(inconsistencyError);
-            throw new Error(inconsistencyError);
-        }
+       // If the balance is > threshold, but sum is 0 (and no eligible transactions found), it's an inconsistency
+       if (payoutAmount >= MIN_PAYOUT_THRESHOLD && transactionIdsToUpdate.length === 0 && sumOfTransactions === 0) {
+           const inconsistencyError = `Data Inconsistency: Your available balance is ₹${payoutAmount.toFixed(2)}, but no corresponding unpaid confirmed transactions were found. Please contact support to resolve this before requesting a payout.`;
+           console.error(inconsistencyError);
+           throw new Error(inconsistencyError);
+       }
+
 
        // 2. Create the PayoutRequest document
        const payoutCollection = collection(db, 'payoutRequests');
