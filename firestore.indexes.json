@@ -34,13 +34,6 @@
         { "fieldPath": "status", "order": "ASCENDING" }
       ]
      },
-     {
-      "collectionGroup": "transactions",
-      "queryScope": "COLLECTION",
-      "fields": [
-          { "fieldPath": "transactionDate", "order": "DESCENDING" }
-      ]
-    },
     {
       "collectionGroup": "coupons",
       "queryScope": "COLLECTION",
@@ -84,13 +77,6 @@
         { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "isFeatured", "order": "DESCENDING" },
         { "fieldPath": "name", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "users",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "referralCode", "order": "ASCENDING" }
       ]
     }
   ],
