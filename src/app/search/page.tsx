@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from 'react';
+import { useState, useEffect } from 'react'; // Import useState and useEffect
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -33,13 +34,13 @@ export default function SearchPage() {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  const [searchTerm, setSearchTerm] = React.useState(queryParam || '');
+  const [searchTerm, setSearchTerm] = useState(queryParam || '');
   const [stores, setStores] = useState<Store[]>([]);
   const [coupons, setCoupons] = useState<CouponWithStore[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const fetchResults = async () => {
       if (!searchTerm.trim()) {
           setStores([]);
