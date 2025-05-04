@@ -32,7 +32,7 @@ const SheetOverlay = React.forwardRef<
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName
 
 const sheetVariants = cva(
-  "fixed z-50 gap-4 bg-background p-6 shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
+  "fixed z-50 gap-4 bg-background shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
   {
     variants: {
       side: {
@@ -54,33 +54,36 @@ interface SheetContentProps
   extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
     VariantProps<typeof sheetVariants> {}
 
-const SheetHeader = ({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) => (
+// Forward Refs for Header Components
+const SheetHeader = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
   <div
+    ref={ref}
     className={cn(
       "flex flex-col space-y-2 text-center sm:text-left",
       className
     )}
     {...props}
   />
-)
-SheetHeader.displayName = "SheetHeader"
+));
+SheetHeader.displayName = "SheetHeader";
 
-const SheetFooter = ({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) => (
+const SheetFooter = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
   <div
+    ref={ref}
     className={cn(
       "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
       className
     )}
     {...props}
   />
-)
-SheetFooter.displayName = "SheetFooter"
+));
+SheetFooter.displayName = "SheetFooter";
 
 const SheetTitle = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Title>,
@@ -91,8 +94,8 @@ const SheetTitle = React.forwardRef<
     className={cn("text-lg font-semibold text-foreground", className)}
     {...props}
   />
-))
-SheetTitle.displayName = SheetPrimitive.Title.displayName
+));
+SheetTitle.displayName = SheetPrimitive.Title.displayName;
 
 const SheetDescription = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Description>,
@@ -103,54 +106,59 @@ const SheetDescription = React.forwardRef<
     className={cn("text-sm text-muted-foreground", className)}
     {...props}
   />
-))
-SheetDescription.displayName = SheetPrimitive.Description.displayName
+));
+SheetDescription.displayName = SheetPrimitive.Description.displayName;
 
 
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
 >(({ side = "right", className, children, ...props }, ref) => {
-  // Generate a unique ID for accessibility linking if not provided
   const generatedTitleId = React.useId();
-  // Check if the children contain a SheetHeader with a SheetTitle
   let hasExplicitTitle = false;
+  let explicitTitleId: string | undefined;
+
+  // Check if children contain a SheetHeader with SheetTitle to get its ID
   React.Children.forEach(children, (child) => {
     if (React.isValidElement(child) && child.type === SheetHeader) {
       React.Children.forEach(child.props.children, (headerChild) => {
         if (React.isValidElement(headerChild) && headerChild.type === SheetTitle) {
           hasExplicitTitle = true;
+          // Attempt to get ID from the explicit title, if provided
+          explicitTitleId = headerChild.props.id;
         }
       });
     }
   });
 
-  const labelledBy = props['aria-labelledby'] || (hasExplicitTitle ? undefined : generatedTitleId);
+  // Determine the ID to use for aria-labelledby
+  const labelledBy = props['aria-labelledby'] || explicitTitleId || (hasExplicitTitle ? undefined : generatedTitleId);
+
 
   return (
     <SheetPortal>
       <SheetOverlay />
       <SheetPrimitive.Content
         ref={ref}
-        role="dialog" // Explicitly set role
-        aria-labelledby={labelledBy}
-        aria-describedby={props['aria-describedby']}
+        aria-labelledby={labelledBy} // Use the determined ID
         className={cn(sheetVariants({ side }), className)}
         {...props}
       >
-        {/* Conditionally render a hidden title if no explicit title/labelledby is found */}
-        {!labelledBy && !hasExplicitTitle && (
-           <SheetHeader className="sr-only">
-             <SheetTitle id={generatedTitleId}>Sheet</SheetTitle>
-             {/* Add a default description if needed, though title is the primary requirement */}
-             {/* <SheetDescription>Sheet content</SheetDescription> */}
-           </SheetHeader>
+         {/* Render a hidden title only if no explicit title was found AND no aria-labelledby was provided */}
+         {!hasExplicitTitle && !props['aria-labelledby'] && (
+            <SheetHeader className="sr-only">
+              <SheetTitle id={generatedTitleId}>Sheet</SheetTitle>
+              {/* Optionally add a default hidden description */}
+              {/* <SheetDescription>Sheet content</SheetDescription> */}
+            </SheetHeader>
          )}
         {children}
-        <SheetPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
-          <X className="h-4 w-4" />
-          <span className="sr-only">Close</span>
-        </SheetPrimitive.Close>
+        <SheetClose asChild>
+            <button className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
+                 <X className="h-4 w-4" />
+                 <span className="sr-only">Close</span>
+            </button>
+        </SheetClose>
       </SheetPrimitive.Content>
     </SheetPortal>
   );
