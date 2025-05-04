@@ -3,7 +3,7 @@
 
 import * as React from 'react';
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, orderBy, doc, getDoc, limit, startAfter, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, doc, getDoc, limit, startAfter, QueryDocumentSnapshot, DocumentData, Timestamp } from 'firebase/firestore'; // Import Timestamp
 import { db } from '@/lib/firebase/config';
 import type { Transaction, Store, UserProfile } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -97,12 +97,12 @@ function AdminTransactionsPageContent() {
          const detailedTransactions = await fetchDetailsForTransactions(newTransactionsData);
 
          setTransactions(prev => loadMore ? [...prev, ...detailedTransactions] : detailedTransactions);
-         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1]);
+         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] ?? null); // Handle empty snapshot case
          setHasMore(querySnapshot.docs.length === TRANSACTIONS_PER_PAGE);
 
-     } catch (err) {
+     } catch (err: any) {
          console.error("Error fetching transactions:", err);
-         setError("Failed to load transactions. Please try again later.");
+         setError(`Failed to load transactions. Error: ${err.message}`); // Include error message
      } finally {
          if (!loadMore) setLoading(false);
          setLoadingMore(false);
@@ -112,27 +112,29 @@ function AdminTransactionsPageContent() {
 
   // Function to fetch user and store details for a batch of transactions
   const fetchDetailsForTransactions = async (txs: Transaction[]): Promise<TransactionWithDetails[]> => {
-      const storeIds = Array.from(new Set(txs.map(tx => tx.storeId)));
-      const userIds = Array.from(new Set(txs.map(tx => tx.userId)));
+      if (txs.length === 0) return [];
+
+      const storeIds = Array.from(new Set(txs.map(tx => tx.storeId).filter(Boolean))); // Filter out undefined/null IDs
+      const userIds = Array.from(new Set(txs.map(tx => tx.userId).filter(Boolean)));
 
       const storesMap = new Map<string, string>();
       const usersMap = new Map<string, Pick<UserProfile, 'email' | 'displayName'>>();
 
       // Fetch stores (consider fetching only if not already cached)
       if (storeIds.length > 0) {
-         // Batch fetch stores if needed, simplified here
-         const storePromises = storeIds.map(id => getDoc(doc(db, 'stores', id)));
-         const storeDocs = await Promise.all(storePromises);
-         storeDocs.forEach(docSnap => {
-             if (docSnap.exists()) storesMap.set(docSnap.id, docSnap.data().name || 'Unknown Store');
-         });
+          // Simplified fetch, batching might be needed for > 10 IDs in 'in' query
+          const storesQuery = query(collection(db, 'stores'), where('__name__', 'in', storeIds));
+          const storeDocs = await getDocs(storesQuery);
+          storeDocs.forEach(docSnap => {
+              if (docSnap.exists()) storesMap.set(docSnap.id, docSnap.data().name || 'Unknown Store');
+          });
       }
 
       // Fetch users
       if (userIds.length > 0) {
-         // Batch fetch users
-         const userPromises = userIds.map(id => getDoc(doc(db, 'users', id)));
-         const userDocs = await Promise.all(userPromises);
+         // Simplified fetch
+         const usersQuery = query(collection(db, 'users'), where('__name__', 'in', userIds));
+         const userDocs = await getDocs(usersQuery);
          userDocs.forEach(docSnap => {
              if (docSnap.exists()) {
                  usersMap.set(docSnap.id, {
@@ -145,9 +147,9 @@ function AdminTransactionsPageContent() {
 
       return txs.map(tx => ({
           ...tx,
-          storeName: storesMap.get(tx.storeId) || tx.storeId, // Fallback to ID if name not found
-          userEmail: usersMap.get(tx.userId)?.email,
-          userDisplayName: usersMap.get(tx.userId)?.displayName
+          storeName: tx.storeId ? (storesMap.get(tx.storeId) || tx.storeId) : 'N/A', // Handle missing storeId
+          userEmail: tx.userId ? usersMap.get(tx.userId)?.email : null,
+          userDisplayName: tx.userId ? usersMap.get(tx.userId)?.displayName : null
       }));
   };
 
@@ -192,22 +194,36 @@ function AdminTransactionsPageContent() {
     }
   };
 
+  // Helper function to safely convert Firestore Timestamps or Dates
+  const safeToDate = (fieldValue: any): Date | null => {
+    if (fieldValue instanceof Timestamp) return fieldValue.toDate();
+    if (fieldValue instanceof Date) return fieldValue;
+    // Add more checks if needed (e.g., for ISO string dates)
+    return null; // Return null if conversion is not possible
+  };
+
+
   const mapDocToTransaction = (docSnap: QueryDocumentSnapshot<DocumentData>): Transaction => {
       const data = docSnap.data();
+      const transactionDate = safeToDate(data.transactionDate);
+      const confirmationDate = safeToDate(data.confirmationDate);
+      const createdAt = safeToDate(data.createdAt);
+      const updatedAt = safeToDate(data.updatedAt);
+
       return {
           id: docSnap.id,
-          userId: data.userId,
-          storeId: data.storeId,
-          clickId: data.clickId,
-          saleAmount: data.saleAmount,
-          cashbackAmount: data.cashbackAmount,
-          status: data.status,
-          transactionDate: data.transactionDate?.toDate ? data.transactionDate.toDate() : new Date(0),
-          confirmationDate: data.confirmationDate?.toDate ? data.confirmationDate.toDate() : null,
-          payoutId: data.payoutId,
-          adminNotes: data.adminNotes, // Changed from notes
-          createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(0),
-          updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date(0),
+          userId: data.userId || '', // Provide default empty string
+          storeId: data.storeId || '', // Provide default empty string
+          clickId: data.clickId || null,
+          saleAmount: typeof data.saleAmount === 'number' ? data.saleAmount : 0,
+          cashbackAmount: typeof data.cashbackAmount === 'number' ? data.cashbackAmount : 0,
+          status: data.status || 'pending', // Default status
+          transactionDate: transactionDate || new Date(0), // Fallback date
+          confirmationDate: confirmationDate, // Keep null if conversion failed
+          payoutId: data.payoutId || null,
+          adminNotes: data.adminNotes || null, // Ensure null if missing
+          createdAt: createdAt || new Date(0), // Fallback date
+          updatedAt: updatedAt || createdAt || new Date(0), // Fallback dates
       } as Transaction;
   };
 
@@ -223,11 +239,11 @@ function AdminTransactionsPageContent() {
                <CardDescription>View, add, or edit cashback transactions.</CardDescription>
             </div>
              <div className="flex items-center gap-2">
-               <Button onClick={handleRefresh} variant="outline" size="icon" disabled={isRefreshing}>
+               <Button onClick={handleRefresh} variant="outline" size="icon" disabled={isRefreshing || loading}>
                   <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                   <span className="sr-only">Refresh</span>
                </Button>
-               <Button onClick={handleAddNew}>
+               <Button onClick={handleAddNew} disabled={loading || isRefreshing}>
                    <PlusCircle className="mr-2 h-4 w-4" /> Add New Transaction
                </Button>
             </div>
@@ -274,12 +290,12 @@ function AdminTransactionsPageContent() {
                         <TableRow key={tx.id}>
                           <TableCell>{format(tx.transactionDate, 'PP')}</TableCell>
                            <TableCell>
-                              <div className="font-medium truncate" title={tx.userDisplayName || tx.userEmail || tx.userId}>
+                              <div className="font-medium truncate max-w-[150px]" title={tx.userDisplayName || tx.userEmail || tx.userId}>
                                   {tx.userDisplayName || tx.userEmail || tx.userId.substring(0, 8) + '...'}
                               </div>
-                               <div className="text-xs text-muted-foreground truncate">{tx.userEmail ? tx.userEmail : tx.userId}</div>
+                               <div className="text-xs text-muted-foreground truncate max-w-[150px]">{tx.userEmail ? tx.userEmail : tx.userId}</div>
                            </TableCell>
-                          <TableCell>{tx.storeName}</TableCell>
+                          <TableCell className="max-w-[150px] truncate">{tx.storeName}</TableCell>
                           <TableCell className="hidden md:table-cell text-right">₹{tx.saleAmount?.toFixed(2) ?? 'N/A'}</TableCell>
                           <TableCell className="text-right font-semibold">₹{tx.cashbackAmount?.toFixed(2) ?? 'N/A'}</TableCell>
                           <TableCell className="text-center">

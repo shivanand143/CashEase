@@ -45,7 +45,7 @@ export default function SignupPage() {
    const searchParams = useSearchParams(); // Get search params
   const { toast } = useToast();
   // Use the profile creation logic from the hook
-  const { signInWithGoogle, createOrUpdateUserProfile } = useAuth();
+  const { signInWithGoogle } = useAuth(); // Only need signInWithGoogle here
   const [loadingEmail, setLoadingEmail] = useState(false);
   const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,8 +62,9 @@ export default function SignupPage() {
  const onSubmit = async (data: SignupFormValues) => {
    setLoadingEmail(true);
    setError(null);
-   const referralCode = searchParams.get('ref'); // Get referral code from URL
-   console.log("Attempting manual signup. Referral code:", referralCode);
+   // Referral code will be handled by the onAuthStateChanged listener in useAuth
+   // const referralCode = searchParams.get('ref');
+   // console.log("Attempting manual signup. Referral code from URL:", referralCode);
 
    try {
      // 1. Create user in Firebase Authentication
@@ -72,23 +73,17 @@ export default function SignupPage() {
      console.log("User created in Firebase Auth:", user.uid);
 
      // 2. Update Firebase Auth profile (optional but good practice)
+     // This helps if the profile listener is slightly delayed
      await updateProfile(user, {
        displayName: data.displayName,
      });
      console.log("Firebase Auth profile updated with display name:", data.displayName);
 
-     // Ensure user object is refreshed to include displayName for profile creation
-     // It might not be immediately available, so we pass it directly if needed.
-     const userWithProfileData = {
-        ...user,
-        displayName: data.displayName, // Ensure displayName from form is used
-        role: 'user', // Assign default role
-     } as User; // Cast needed as user doesn't initially have all properties
-
-     // 3. Create user profile document in Firestore using the function from useAuth
-     // Pass the referral code obtained from the URL params
-     await createOrUpdateUserProfile(userWithProfileData, referralCode);
-     console.log("Firestore profile created/updated via useAuth function with referral code:", referralCode);
+     // 3. User profile document creation/update is now handled by the
+     //    onAuthStateChanged listener within the useAuth hook.
+     //    It will pick up the new user and create the profile,
+     //    checking for referral codes automatically if needed.
+     //    No need to call createOrUpdateUserProfile directly here.
 
      toast({
        title: 'Signup Successful',
@@ -114,14 +109,7 @@ export default function SignupPage() {
              errorMessage = 'Email/password accounts are not enabled. Please contact support.';
              break;
          default:
-              // Check for Firestore specific errors
-               if (err.message?.includes('Missing or insufficient permissions')) {
-                  errorMessage = 'Account created, but failed to save profile details due to permissions. Please contact support.';
-               } else if (err.message?.includes('Failed to save user profile information.')) {
-                  errorMessage = 'Account created, but failed to save profile details. Please contact support.';
-               } else {
-                   errorMessage = `An error occurred (${err.code || 'unknown'}). Please try again.`;
-               }
+           errorMessage = `An error occurred (${err.code || 'unknown'}). Please try again.`;
        }
      }
      setError(errorMessage);
@@ -139,7 +127,9 @@ export default function SignupPage() {
      setLoadingGoogle(true);
      setError(null);
      try {
-         await signInWithGoogle(); // This now handles profile creation/update internally, including referral code from URL
+         // The signInWithGoogle function in useAuth now handles profile creation/update
+         // and checks for the referral code from the URL internally.
+         await signInWithGoogle();
          // No need for toast here, it's handled in useAuth
          router.push('/dashboard'); // Redirect on success
      } catch (err: any) {

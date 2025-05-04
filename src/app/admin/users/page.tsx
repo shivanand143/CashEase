@@ -31,6 +31,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"; // Import AlertDialog
 import { useToast } from "@/hooks/use-toast"; // Import useToast
 import AdminGuard from '@/components/guards/admin-guard'; // Ensure page is protected
@@ -42,7 +43,8 @@ function AdminUsersPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast(); // Initialize toast
-  const { createOrUpdateUserProfile } = useAuth(); // Get the function from the hook
+  // Get the function from the hook for updating roles centrally
+  const { fetchUserProfile } = useAuth();
   const [userToConfirm, setUserToConfirm] = useState<UserProfile | null>(null); // For confirmation dialog
   const [actionToConfirm, setActionToConfirm] = useState<'make_admin' | 'disable' | 'enable' | null>(null);
 
@@ -75,23 +77,22 @@ function AdminUsersPageContent() {
   }, []);
 
 
-  const handleUpdateUserRole = async (userId: string, displayName: string | null, email: string | null, newRole: 'admin' | 'user') => {
+  const handleUpdateUserRole = async (userId: string, newRole: 'admin' | 'user') => {
     console.log(`Attempting to change role for user ID: ${userId} to ${newRole}`);
-    // Construct a partial User object sufficient for createOrUpdateUserProfile
-    const userToUpdate = {
-        uid: userId,
-        email: email ?? undefined, // Use undefined if null
-        displayName: displayName ?? undefined, // Use undefined if null
-        role: newRole
-    } as User & { role: 'admin' | 'user' }; // Cast to include the role
 
     try {
-       await createOrUpdateUserProfile(userToUpdate, null); // Call the function from the hook
-       toast({
-           title: "Role Updated",
-           description: `User role successfully changed to ${newRole}.`,
-       });
-       fetchUsers(); // Refresh the user list
+        // Use Firestore directly to update the role for simplicity in admin context
+        const userDocRef = doc(db, 'users', userId);
+        await updateDoc(userDocRef, {
+          role: newRole,
+          updatedAt: serverTimestamp()
+        });
+
+        toast({
+            title: "Role Updated",
+            description: `User role successfully changed to ${newRole}.`,
+        });
+        fetchUsers(); // Refresh the user list
     } catch (err) {
         console.error("Error updating user role:", err);
         toast({
@@ -155,7 +156,7 @@ function AdminUsersPageContent() {
        switch (actionToConfirm) {
            case 'make_admin':
                 // Pass necessary user info for role update
-               handleUpdateUserRole(userToConfirm.uid, userToConfirm.displayName, userToConfirm.email, 'admin');
+               handleUpdateUserRole(userToConfirm.uid, 'admin');
                break;
            case 'disable':
                // Assuming 'isDisabled' field exists. Default to 'false' if not present.
@@ -234,18 +235,24 @@ function AdminUsersPageContent() {
                            <DropdownMenuItem disabled>Edit User</DropdownMenuItem> {/* Add edit user functionality later */}
                            <DropdownMenuSeparator />
                            {user.role !== 'admin' && (
-                              <DropdownMenuItem onClick={() => openConfirmationDialog(user, 'make_admin')}>
-                                <ShieldCheck className="mr-2 h-4 w-4" /> Make Admin
-                              </DropdownMenuItem>
+                               <AlertDialogTrigger asChild>
+                                 <Button variant="ghost" className="w-full justify-start px-2 py-1.5 text-sm font-normal relative flex cursor-default select-none items-center rounded-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50" onClick={() => openConfirmationDialog(user, 'make_admin')}>
+                                   <ShieldCheck className="mr-2 h-4 w-4" /> Make Admin
+                                 </Button>
+                               </AlertDialogTrigger>
                            )}
                            {isDisabled ? (
-                             <DropdownMenuItem onClick={() => openConfirmationDialog(user, 'enable')}>
-                               <UserCheck className="mr-2 h-4 w-4" /> Enable User
-                             </DropdownMenuItem>
+                             <AlertDialogTrigger asChild>
+                                 <Button variant="ghost" className="w-full justify-start px-2 py-1.5 text-sm font-normal relative flex cursor-default select-none items-center rounded-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50" onClick={() => openConfirmationDialog(user, 'enable')}>
+                                  <UserCheck className="mr-2 h-4 w-4" /> Enable User
+                                 </Button>
+                             </AlertDialogTrigger>
                            ) : (
-                             <DropdownMenuItem onClick={() => openConfirmationDialog(user, 'disable')} className="text-destructive focus:text-destructive focus:bg-destructive/10">
-                               <UserX className="mr-2 h-4 w-4"/> Disable User
-                             </DropdownMenuItem>
+                              <AlertDialogTrigger asChild>
+                                 <Button variant="ghost" className="w-full justify-start px-2 py-1.5 text-sm font-normal text-destructive hover:bg-destructive/10 focus:text-destructive focus:bg-destructive/10 h-auto relative flex cursor-default select-none items-center rounded-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50" onClick={() => openConfirmationDialog(user, 'disable')}>
+                                   <UserX className="mr-2 h-4 w-4"/> Disable User
+                                 </Button>
+                              </AlertDialogTrigger>
                            )}
                         </DropdownMenuContent>
                       </DropdownMenu>

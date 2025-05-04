@@ -69,7 +69,7 @@ export default function ReferralsPage() {
     return <ReferralsPageSkeleton />;
   }
 
-  // Get the referral count, defaulting to 0 if not present
+  // Get the referral count directly from userProfile, defaulting to 0 if not present
   const referralCount = userProfile?.referralCount ?? 0;
 
   return (
@@ -113,7 +113,7 @@ export default function ReferralsPage() {
              <Card className="bg-muted/50">
                 <CardHeader className="pb-2">
                     <CardDescription>Friends Referred</CardDescription>
-                     {/* Display actual count */}
+                     {/* Display actual count from userProfile */}
                     <CardTitle className="text-4xl">{referralCount}</CardTitle>
                  </CardHeader>
                  <CardContent>

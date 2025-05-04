@@ -1,34 +1,17 @@
-
 {
   "indexes": [
     {
-      "collectionGroup": "transactions",
-      "queryScope": "COLLECTION",
+      "collectionGroup": "clicks",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "transactionDate", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "transactions",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "payoutId", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "payoutRequests",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "requestedAt", "order": "ASCENDING" }
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "coupons",
-      "queryScope": "COLLECTION",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "isFeatured", "order": "DESCENDING" },
@@ -37,7 +20,7 @@
     },
     {
       "collectionGroup": "coupons",
-      "queryScope": "COLLECTION",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "storeId", "order": "ASCENDING" },
         { "fieldPath": "isActive", "order": "ASCENDING" },
@@ -46,34 +29,34 @@
       ]
     },
     {
-       "collectionGroup": "coupons",
-       "queryScope": "COLLECTION",
-       "fields": [
-         { "fieldPath": "storeId", "order": "ASCENDING" },
-         { "fieldPath": "isActive", "order": "ASCENDING" },
-         { "fieldPath": "createdAt", "order": "DESCENDING" }
-       ]
-     },
+      "collectionGroup": "coupons",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "payoutRequests",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "ASCENDING" }
+      ]
+    },
     {
       "collectionGroup": "stores",
-      "queryScope": "COLLECTION",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "isFeatured", "order": "DESCENDING" },
         { "fieldPath": "name", "order": "ASCENDING" }
       ]
     },
-     {
-       "collectionGroup": "stores",
-       "queryScope": "COLLECTION",
-       "fields": [
-         { "fieldPath": "isActive", "order": "ASCENDING" },
-         { "fieldPath": "isFeatured", "order": "DESCENDING" },
-         { "fieldPath": "name", "order": "ASCENDING" }
-       ]
-     },
     {
       "collectionGroup": "stores",
-      "queryScope": "COLLECTION",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "categories", "arrayConfig": "CONTAINS" },
         { "fieldPath": "isActive", "order": "ASCENDING" },
@@ -81,17 +64,56 @@
       ]
     },
      {
-      "collectionGroup": "users",
-      "queryScope": "COLLECTION",
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "referralCode", "order": "ASCENDING" }
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
       ]
     },
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "payoutId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "transactionDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "transactionDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+       "collectionGroup": "users",
+       "queryScope": "COLLECTION",
+       "fields": [
+         { "fieldPath": "referralCode", "order": "ASCENDING" }
+       ]
+     },
+    {
+       "collectionGroup": "users",
+       "queryScope": "COLLECTION",
+       "fields": [
+         { "fieldPath": "email", "order": "ASCENDING" }
+       ]
+     },
      {
        "collectionGroup": "users",
        "queryScope": "COLLECTION",
        "fields": [
-         { "fieldPath": "email", "order": "ASCENDING" } 
+         { "fieldPath": "createdAt", "order": "DESCENDING" }
        ]
      }
   ],

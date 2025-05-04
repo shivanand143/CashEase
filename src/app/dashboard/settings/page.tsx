@@ -69,9 +69,9 @@ export default function SettingsPage() {
   // IMPORTANT: Replace 'YOUR_ADMIN_USER_ID_PLACEHOLDER' with the actual UID of the user you want to be the initial admin.
   // This is ONLY for initial setup and is NOT secure for production.
   // In production, use a backend function or secure method to manage roles.
-  const adminSetupUid = '4v1fcqAFtPTmCIndN9IhoiYLkBz1'; // <<<--- REPLACE THIS
+  const adminSetupUid = 'bB5J2kPzN9b91Xg4o9aG6aM2m4m1'; // <<<--- REPLACE THIS
 
-  const { user, userProfile, loading: authLoading, signOut, createOrUpdateUserProfile } = useAuth();
+  const { user, userProfile, loading: authLoading, signOut } = useAuth(); // Removed createOrUpdateUserProfile
   const router = useRouter();
   const { toast } = useToast();
 
@@ -183,9 +183,7 @@ export default function SettingsPage() {
         return;
     }
 
-    // !! SECURITY WARNING !!
-    // This client-side check is NOT secure for production.
-    // Anyone can inspect the code and find the adminSetupUid.
+    // !! SECURITY WARNING !! REMOVE THIS CHECK in PRODUCTION
     // Use this ONLY for initial local setup. Remove or replace with backend validation.
     if (user.uid !== adminSetupUid) {
         toast({ variant: "destructive", title: "Unauthorized", description: "You are not authorized for this action." });
@@ -199,25 +197,18 @@ export default function SettingsPage() {
 
     setAdminLoading(true);
     try {
-        // Re-use createOrUpdateUserProfile to set the role
-        // NOTE: Ensure your Firestore Security Rules allow the user with `adminSetupUid`
-        // to write to their own 'role' field for this client-side action to work.
-        // This rule is needed for setup:
-        // match /users/{userId} {
-        //   allow read: if request.auth != null;
-        //   allow write: if request.auth.uid == userId; // Basic rule allowing users to write their own doc
-        //   // Rule to allow the initial admin to set their own role:
-        //   allow update: if request.auth.uid == userId && request.auth.uid == 'YOUR_ADMIN_USER_ID' && request.resource.data.role == 'admin' && resource.data.role != 'admin';
-        // }
-        // Consider refining security rules further.
-        const updatedUser = { ...user, role: "admin" } as User & { role: 'admin' }; // Cast to include role
-        await createOrUpdateUserProfile(updatedUser, null); // Pass null for referral code
+        // Directly update the user's role in Firestore
+        const userDocRef = doc(db, 'users', user.uid);
+        await updateDoc(userDocRef, {
+            role: 'admin',
+            updatedAt: serverTimestamp()
+        });
+
         toast({
             title: 'Admin Role Granted',
             description: `User ${userProfile.displayName || user.email} is now an admin. Refresh might be needed.`,
         });
-        // The userProfile state will update automatically via the onSnapshot listener in useAuth,
-        // but it might take a moment. A page refresh might show the change sooner.
+        // The userProfile state in useAuth should update automatically via the snapshot listener
     } catch (err: any) {
         console.error("Failed to make user admin:", err);
         toast({ variant: "destructive", title: 'Update Failed', description: err.message || "Failed to grant admin role. Check Firestore rules." });
