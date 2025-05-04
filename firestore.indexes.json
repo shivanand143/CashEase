@@ -25,6 +25,15 @@
         { "fieldPath": "transactionDate", "order": "DESCENDING" }
       ]
     },
+     {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "payoutId", "order": "ASCENDING" } // Index needed for payout balance check
+      ]
+     },
     {
       "collectionGroup": "stores",
       "queryScope": "COLLECTION_GROUP",
@@ -39,6 +48,7 @@
       "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "isFeatured", "order": "DESCENDING" }, // Index for featured stores
         { "fieldPath": "name", "order": "ASCENDING" }
       ]
     },
@@ -47,8 +57,7 @@
       "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "isActive", "order": "ASCENDING" },
-        { "fieldPath": "isFeatured", "order": "DESCENDING" },
-        { "fieldPath": "name", "order": "ASCENDING" }
+        { "fieldPath": "name", "order": "ASCENDING" } // General store listing
       ]
     },
      {
@@ -56,7 +65,7 @@
       "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "isActive", "order": "ASCENDING" },
-        { "fieldPath": "isFeatured", "order": "DESCENDING" },
+        { "fieldPath": "isFeatured", "order": "DESCENDING" }, // Index for featured coupons
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
@@ -67,7 +76,7 @@
         { "fieldPath": "storeId", "order": "ASCENDING" },
         { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "isFeatured", "order": "DESCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        { "fieldPath": "createdAt", "order": "DESCENDING" } // Coupons by store, featured first
       ]
     },
     {
@@ -76,17 +85,10 @@
       "fields": [
         { "fieldPath": "storeId", "order": "ASCENDING" },
         { "fieldPath": "isActive", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        { "fieldPath": "createdAt", "order": "DESCENDING" } // All active coupons for a store
       ]
-    },
-     {
-      "collectionGroup": "transactions",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" }
-      ]
-     }
+    }
+    // Removed the unnecessary index for 'users' collection group causing the 400 error
   ],
   "fieldOverrides": []
 }

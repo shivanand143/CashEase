@@ -7,24 +7,24 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore'; // Import Timestamp
 import { db } from '@/lib/firebase/config';
-import type { Transaction } from '@/lib/types';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'; // Added CardFooter
+import type { Transaction, Store } from '@/lib/types'; // Import Store type
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import Link from 'next/link';
-import { IndianRupee, AlertCircle, History, Send, Settings } from 'lucide-react'; // Changed DollarSign to IndianRupee
+import { IndianRupee, AlertCircle, History, Send, Settings } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
-// Minimum payout threshold in INR
-const MIN_PAYOUT_THRESHOLD = 2000; // Example: ₹2000
+const MIN_PAYOUT_THRESHOLD = 250; // Ensure this matches the value in payout page
 
 export default function DashboardPage() {
-  const { user, userProfile, loading: authLoading, signOut } = useAuth();
+  const { user, userProfile, loading: authLoading } = useAuth(); // Removed signOut as it's not used directly here
   const router = useRouter();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [storesMap, setStoresMap] = useState<Map<string, string>>(new Map()); // Map to store store names
   const [loadingTransactions, setLoadingTransactions] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,75 +34,93 @@ export default function DashboardPage() {
     }
   }, [user, authLoading, router]);
 
+  // Helper to safely convert Timestamps or Dates
+    const safeToDate = (fieldValue: any): Date => {
+        if (fieldValue instanceof Timestamp) return fieldValue.toDate();
+        if (fieldValue instanceof Date) return fieldValue;
+        // Fallback for potentially invalid data, log warning
+        // console.warn("Invalid date field encountered:", fieldValue);
+        return new Date(0); // Return epoch or another default Date
+    };
+
+
   useEffect(() => {
-    // Fetch transactions only if user exists and db is available
     if (user && db) {
-      const fetchTransactions = async () => {
+      const fetchDashboardData = async () => {
         setLoadingTransactions(true);
         setError(null);
         try {
+          // Fetch latest 10 transactions
           const transactionsCollection = collection(db, 'transactions');
           const q = query(
             transactionsCollection,
             where('userId', '==', user.uid),
             orderBy('transactionDate', 'desc'),
-            limit(10) // Fetch latest 10 transactions for the overview
+            limit(10)
           );
           const querySnapshot = await getDocs(q);
           const transactionsData = querySnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),
-            // Ensure date fields are converted safely
-            transactionDate: doc.data().transactionDate instanceof Timestamp ? doc.data().transactionDate.toDate() : (doc.data().transactionDate || new Date(0)),
-            confirmationDate: doc.data().confirmationDate instanceof Timestamp ? doc.data().confirmationDate.toDate() : null,
-            createdAt: doc.data().createdAt instanceof Timestamp ? doc.data().createdAt.toDate() : (doc.data().createdAt || new Date(0)),
-            updatedAt: doc.data().updatedAt instanceof Timestamp ? doc.data().updatedAt.toDate() : (doc.data().updatedAt || new Date(0)),
+            transactionDate: safeToDate(doc.data().transactionDate),
+            confirmationDate: safeToDate(doc.data().confirmationDate),
+            createdAt: safeToDate(doc.data().createdAt),
+            updatedAt: safeToDate(doc.data().updatedAt),
           })) as Transaction[];
           setTransactions(transactionsData);
+
+          // Fetch store names for these transactions
+          const storeIds = Array.from(new Set(transactionsData.map(tx => tx.storeId).filter(Boolean)));
+          if (storeIds.length > 0) {
+              const storesQuery = query(collection(db, 'stores'), where('__name__', 'in', storeIds));
+              const storeDocs = await getDocs(storesQuery);
+              const fetchedStoresMap = new Map<string, string>();
+              storeDocs.forEach(docSnap => {
+                  if (docSnap.exists()) fetchedStoresMap.set(docSnap.id, docSnap.data().name || 'Unknown Store');
+              });
+              setStoresMap(fetchedStoresMap);
+          }
+
         } catch (err) {
-          console.error("Error fetching transactions:", err);
+          console.error("Error fetching dashboard data:", err);
           setError("Failed to load recent activity. Please try again later.");
         } finally {
           setLoadingTransactions(false);
         }
       };
-      fetchTransactions();
-    } else {
-      // If user is not logged in (or logs out) or db is unavailable, clear transactions and stop loading
+      fetchDashboardData();
+    } else if (!user && !authLoading) {
+      // Clear data if user logs out
       setTransactions([]);
+      setStoresMap(new Map());
       setLoadingTransactions(false);
-      if (!db) {
-          setError("Database connection not available.");
-      }
     }
-  }, [user]); // Dependency on user only
+  }, [user, authLoading]); // Add authLoading dependency
 
   const getStatusBadgeVariant = (status: Transaction['status']): "default" | "secondary" | "outline" | "destructive" => {
     switch (status) {
-      case 'confirmed': return 'default'; // Using primary color
-      case 'paid': return 'secondary'; // Using secondary color
-      case 'pending': return 'outline'; // Neutral outline
-      case 'rejected': return 'destructive'; // Red
+      case 'confirmed': return 'default';
+      case 'paid': return 'secondary';
+      case 'pending': return 'outline';
+      case 'rejected': return 'destructive';
+      case 'cancelled': return 'destructive'; // Handle cancelled status
       default: return 'outline';
     }
   };
 
-  // Determine payout eligibility only if userProfile is loaded
   const canRequestPayout = userProfile ? userProfile.cashbackBalance >= MIN_PAYOUT_THRESHOLD : false;
   const availableBalance = userProfile?.cashbackBalance ?? 0;
   const pendingBalance = userProfile?.pendingCashback ?? 0;
   const lifetimeBalance = userProfile?.lifetimeCashback ?? 0;
-  const balanceDifference = userProfile ? (MIN_PAYOUT_THRESHOLD - userProfile.cashbackBalance) : MIN_PAYOUT_THRESHOLD;
+  const balanceDifference = userProfile ? Math.max(0, MIN_PAYOUT_THRESHOLD - userProfile.cashbackBalance) : MIN_PAYOUT_THRESHOLD;
 
 
   if (authLoading) {
-    return <DashboardSkeleton />; // Show skeleton while auth or profile is loading
+    return <DashboardSkeleton />;
   }
 
   if (!user) {
-     // This case should ideally be handled by the redirect, but added as a fallback
-     // Render minimal state or redirect indicator
-     return <p>Redirecting to login...</p>;
+     return <DashboardSkeleton />; // Or a redirect message
   }
 
 
@@ -118,7 +136,6 @@ export default function DashboardPage() {
             <IndianRupee className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-             {/* Show skeleton if userProfile isn't loaded yet */}
              {!userProfile ? <Skeleton className="h-8 w-1/3 mb-1" /> : <div className="text-2xl font-bold">₹{availableBalance.toFixed(2)}</div>}
             <p className="text-xs text-muted-foreground">Ready for payout</p>
           </CardContent>
@@ -157,7 +174,7 @@ export default function DashboardPage() {
             {!userProfile ? (
                 <Skeleton className="h-4 w-1/2 mb-4" />
             ) : (
-                 <p className="mb-4">Your current available balance is <span className="font-bold">₹{availableBalance.toFixed(2)}</span>.</p>
+                 <p className="mb-4">Your current available balance is <span className="font-bold text-primary">₹{availableBalance.toFixed(2)}</span>.</p>
              )}
            <Button asChild disabled={!canRequestPayout || !userProfile}>
               <Link href="/dashboard/payout">
@@ -166,10 +183,10 @@ export default function DashboardPage() {
            </Button>
             {userProfile && !canRequestPayout && (
               <p className="text-sm text-muted-foreground mt-2">
-                 You need ₹{ balanceDifference > 0 ? balanceDifference.toFixed(2) : '0.00' } more to request a payout.
+                 You need ₹{balanceDifference.toFixed(2)} more to request a payout.
               </p>
             )}
-             {!userProfile && <Skeleton className="h-4 w-1/3 mt-2" />} {/* Skeleton for the needed amount text */}
+             {!userProfile && <Skeleton className="h-4 w-1/3 mt-2" />}
          </CardContent>
           <CardFooter className="text-xs text-muted-foreground">
              Payouts are typically processed within 5-7 business days. Ensure your <Link href="/dashboard/settings" className="underline hover:text-primary">payment details</Link> are up-to-date.
@@ -207,8 +224,7 @@ export default function DashboardPage() {
                 {transactions.map((tx) => (
                   <TableRow key={tx.id}>
                     <TableCell>{format(tx.transactionDate, 'PP')}</TableCell>
-                    {/* TODO: Fetch store name based on tx.storeId */}
-                    <TableCell>{tx.storeId ? tx.storeId.substring(0, 10) + '...' : 'N/A'}</TableCell>
+                    <TableCell>{storesMap.get(tx.storeId) || tx.storeId.substring(0,10)+'...' || 'N/A'}</TableCell> {/* Display store name */}
                     <TableCell className="text-right font-medium">₹{tx.cashbackAmount.toFixed(2)}</TableCell>
                      <TableCell className="text-center">
                        <Badge variant={getStatusBadgeVariant(tx.status)} className="capitalize">
@@ -241,36 +257,18 @@ function DashboardSkeleton() {
 
        {/* Summary Cards Skeleton */}
        <div className="grid gap-4 md:grid-cols-3">
-         <Card>
-           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-             <Skeleton className="h-4 w-2/4" />
-             <Skeleton className="h-4 w-4" />
-           </CardHeader>
-           <CardContent>
-             <Skeleton className="h-8 w-1/3 mb-1" />
-             <Skeleton className="h-3 w-1/2" />
-           </CardContent>
-         </Card>
-         <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <Skeleton className="h-4 w-2/4" />
-              <Skeleton className="h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-8 w-1/3 mb-1" />
-              <Skeleton className="h-3 w-1/2" />
-            </CardContent>
-         </Card>
-          <Card>
-             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-               <Skeleton className="h-4 w-2/4" />
-               <Skeleton className="h-4 w-4" />
-             </CardHeader>
-             <CardContent>
-               <Skeleton className="h-8 w-1/3 mb-1" />
-               <Skeleton className="h-3 w-1/2" />
-             </CardContent>
-          </Card>
+         {[...Array(3)].map((_, i) => (
+             <Card key={i}>
+               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                 <Skeleton className="h-4 w-2/4" />
+                 <Skeleton className="h-4 w-4" />
+               </CardHeader>
+               <CardContent>
+                 <Skeleton className="h-8 w-1/3 mb-1" />
+                 <Skeleton className="h-3 w-1/2" />
+               </CardContent>
+             </Card>
+         ))}
        </div>
 
         {/* Payout Skeleton */}
@@ -282,7 +280,7 @@ function DashboardSkeleton() {
              <CardContent>
                <Skeleton className="h-4 w-1/2 mb-4" />
                <Skeleton className="h-10 w-36" />
-               <Skeleton className="h-4 w-1/3 mt-2" /> {/* Skeleton for needed amount text */}
+               <Skeleton className="h-4 w-1/3 mt-2" />
              </CardContent>
               <CardFooter>
                  <Skeleton className="h-3 w-full" />

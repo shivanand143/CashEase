@@ -4,7 +4,7 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { collection, getDocs, query, orderBy, doc, deleteDoc, getDoc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore'; // Added addDoc, updateDoc, serverTimestamp
+import { collection, getDocs, query, orderBy, doc, deleteDoc, getDoc, addDoc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore'; // Added Timestamp
 import { db } from '@/lib/firebase/config';
 import type { Coupon, Store } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -32,10 +32,18 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger, // Ensure AlertDialogTrigger is imported
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast";
 import AdminGuard from '@/components/guards/admin-guard';
 import CouponForm from '@/components/admin/coupon-form'; // Import the CouponForm component
+
+// Helper to safely convert Timestamps
+const safeToDate = (fieldValue: any): Date | null => {
+    if (fieldValue instanceof Timestamp) return fieldValue.toDate();
+    if (fieldValue instanceof Date) return fieldValue;
+    return null;
+};
 
 // Combined type for display
 interface CouponWithStoreName extends Coupon {
@@ -44,29 +52,28 @@ interface CouponWithStoreName extends Coupon {
 
 function AdminCouponsPageContent() {
   const [coupons, setCoupons] = useState<CouponWithStoreName[]>([]);
-  const [stores, setStores] = useState<Store[]>([]); // State to hold stores for the form
+  const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
-  const [isFormOpen, setIsFormOpen] = useState(false); // State for Add/Edit modal/drawer
-  const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null); // State for editing
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
 
  const fetchCouponsAndStores = async () => {
      setLoading(true);
      setError(null);
      try {
-       // 1. Fetch all stores (needed for the dropdown in CouponForm)
+       // 1. Fetch all stores
        const storesCollection = collection(db, 'stores');
        const storesSnapshot = await getDocs(query(storesCollection, orderBy('name', 'asc')));
        const storesData = storesSnapshot.docs.map(doc => ({
            id: doc.id,
            ...doc.data(),
-            createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : new Date(),
-            updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate() : new Date(),
+            createdAt: safeToDate(doc.data().createdAt) || new Date(),
+            updatedAt: safeToDate(doc.data().updatedAt) || new Date(),
        })) as Store[];
        setStores(storesData);
        const storesMap = new Map<string, string>(storesData.map(s => [s.id, s.name]));
-
 
        // 2. Fetch all coupons ordered by creation date
        const couponsCollection = collection(db, 'coupons');
@@ -75,9 +82,9 @@ function AdminCouponsPageContent() {
        const couponsData = couponsSnapshot.docs.map(doc => ({
            id: doc.id,
            ...doc.data(),
-           expiryDate: doc.data().expiryDate?.toDate ? doc.data().expiryDate.toDate() : null,
-           createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : new Date(),
-           updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate() : new Date(),
+           expiryDate: safeToDate(doc.data().expiryDate),
+           createdAt: safeToDate(doc.data().createdAt) || new Date(),
+           updatedAt: safeToDate(doc.data().updatedAt) || new Date(),
        })) as Coupon[];
 
        // 3. Combine coupon data with store names
@@ -102,13 +109,11 @@ function AdminCouponsPageContent() {
   }, []);
 
    const handleEdit = (coupon: Coupon) => {
-      console.log(`Edit action for coupon: ${coupon.description} (ID: ${coupon.id})`);
       setSelectedCoupon(coupon);
       setIsFormOpen(true);
    };
 
    const handleDelete = async (couponId: string, couponDesc: string) => {
-       console.log(`Attempting to delete coupon: ${couponDesc} (ID: ${couponId})`);
        try {
            await deleteDoc(doc(db, 'coupons', couponId));
            toast({
@@ -128,20 +133,19 @@ function AdminCouponsPageContent() {
    };
 
    const handleAddNew = () => {
-       console.log("Add new coupon action triggered");
-      setSelectedCoupon(null); // Ensure no coupon is selected
+      setSelectedCoupon(null);
       setIsFormOpen(true);
    };
 
    const handleFormSuccess = () => {
        fetchCouponsAndStores();
        setIsFormOpen(false);
-       setSelectedCoupon(null); // Clear selection after success
+       setSelectedCoupon(null);
    };
 
 
   return (
-    <AdminGuard> {/* Wrap content with guard */}
+    <AdminGuard>
        <Card>
          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <div>
@@ -214,11 +218,14 @@ function AdminCouponsPageContent() {
                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
                            <DropdownMenuItem onClick={() => handleEdit(coupon)}>Edit Coupon</DropdownMenuItem>
                             {coupon.link && (
-                                <DropdownMenuItem onClick={() => window.open(coupon.link!, '_blank')}>View Offer Link</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => window.open(coupon.link!, '_blank')}>
+                                    <ExternalLink className="mr-2 h-4 w-4" />View Offer Link
+                                </DropdownMenuItem>
                             )}
                            <DropdownMenuSeparator />
                             <AlertDialog>
                                <AlertDialogTrigger asChild>
+                                    {/* Ensure the trigger button is correctly formatted */}
                                     <Button variant="ghost" className="w-full justify-start px-2 py-1.5 text-sm font-normal text-destructive hover:bg-destructive/10 focus:text-destructive focus:bg-destructive/10 h-auto relative flex cursor-default select-none items-center rounded-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50">
                                         <Trash2 className="mr-2 h-4 w-4"/> Delete Coupon
                                     </Button>
@@ -250,15 +257,13 @@ function AdminCouponsPageContent() {
            ) : (
              <p className="text-center text-muted-foreground py-8">No coupons found. Add your first coupon!</p>
            )}
-           {/* TODO: Add Pagination */}
          </CardContent>
-           {/* Render Add/Edit Form Modal/Drawer */}
            {isFormOpen && (
                <CouponForm
-                   stores={stores} // Pass stores list to the form
+                   stores={stores}
                    coupon={selectedCoupon}
                    onClose={() => setIsFormOpen(false)}
-                   onSuccess={handleFormSuccess} // Use the success handler
+                   onSuccess={handleFormSuccess}
                />
            )}
        </Card>

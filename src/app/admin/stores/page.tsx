@@ -5,15 +5,15 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { collection, getDocs, query, orderBy, deleteDoc, doc, addDoc, updateDoc, serverTimestamp, where, getCountFromServer, writeBatch, limit } from 'firebase/firestore'; // Added limit
+import { collection, getDocs, query, orderBy, deleteDoc, doc, addDoc, updateDoc, serverTimestamp, where, getCountFromServer, writeBatch, limit, Timestamp } from 'firebase/firestore'; // Added limit, Timestamp
 import { db } from '@/lib/firebase/config';
-import type { Store, CashbackType } from '@/lib/types'; // Import CashbackType
+import type { Store, Coupon, CashbackType } from '@/lib/types'; // Import CashbackType
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
-import { AlertCircle, Store as StoreIcon, MoreHorizontal, PlusCircle, ExternalLink, Trash2, DatabaseZap } from 'lucide-react'; // Added DatabaseZap
+import { AlertCircle, Store as StoreIcon, MoreHorizontal, PlusCircle, ExternalLink, Trash2, DatabaseZap } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -36,125 +36,76 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast";
-import AdminGuard from '@/components/guards/admin-guard'; // Ensure page is protected
-import StoreForm from '@/components/admin/store-form'; // Import the StoreForm component
+import AdminGuard from '@/components/guards/admin-guard';
+import StoreForm from '@/components/admin/store-form';
 
 // More detailed mock data for seeding
 const initialStoresData = [
-  { name: 'Amazon IN', logoUrl: 'https://picsum.photos/seed/amazonin/100/50', cashbackRate: 'Up to 5%', dataAiHint: "amazon india logo", affiliateLink: 'https://amazon.in?tag=cashease-21', description: 'Wide range of products from electronics to fashion.', categories: ['Electronics', 'Fashion', 'Home', 'Books', 'Grocery'], isFeatured: true },
-  { name: 'Flipkart', logoUrl: 'https://picsum.photos/seed/flipkart/100/50', cashbackRate: 'Up to 4.5%', dataAiHint: "flipkart logo", affiliateLink: 'https://flipkart.com?affid=cashease', description: 'Leading Indian e-commerce platform for various goods.', categories: ['Electronics', 'Fashion', 'Home', 'Mobiles'], isFeatured: true },
-  { name: 'Myntra', logoUrl: 'https://picsum.photos/seed/myntra/100/50', cashbackRate: 'Flat 6% Cashback', dataAiHint: "myntra logo", affiliateLink: 'https://myntra.com?ref=cashease', description: 'Your destination for fashion and lifestyle products.', categories: ['Fashion', 'Accessories', 'Beauty'], isFeatured: true },
-  { name: 'Ajio', logoUrl: 'https://picsum.photos/seed/ajio/100/50', cashbackRate: 'Up to 8%', dataAiHint: "ajio logo", affiliateLink: 'https://ajio.com?cjevent=cashease', description: 'Curated collection of fashion brands.', categories: ['Fashion', 'Accessories'], isFeatured: false },
-  { name: 'BigBasket', logoUrl: 'https://picsum.photos/seed/bigbasket/100/50', cashbackRate: 'Flat ₹75 on First Order', dataAiHint: "bigbasket logo", affiliateLink: 'https://bigbasket.com?bbref=cashease', description: 'Online grocery shopping and delivery.', categories: ['Grocery', 'Essentials'], isFeatured: false },
-  { name: 'MakeMyTrip', logoUrl: 'https://picsum.photos/seed/makemytrip/100/50', cashbackRate: 'Up to ₹1500 on Flights', dataAiHint: "makemytrip logo", affiliateLink: 'https://makemytrip.com?partner=cashease', description: 'Book flights, hotels, and holiday packages.', categories: ['Travel', 'Flights', 'Hotels'], isFeatured: true },
-  { name: 'Swiggy', logoUrl: 'https://picsum.photos/seed/swiggy/100/50', cashbackRate: 'Flat 20% off', dataAiHint: "swiggy logo", affiliateLink: 'https://swiggy.com?partner=cashease', description: 'Order food online from nearby restaurants.', categories: ['Food', 'Restaurant'], isFeatured: false },
-  { name: 'PharmEasy', logoUrl: 'https://picsum.photos/seed/pharmeasy/100/50', cashbackRate: 'Flat 15% + 5% CB', dataAiHint: "pharmeasy logo", affiliateLink: 'https://pharmeasy.in?partner=cashease', description: 'Online pharmacy and healthcare products.', categories: ['Health', 'Pharmacy', 'Medicine'], isFeatured: false },
-  { name: 'Nykaa', logoUrl: 'https://picsum.photos/seed/nykaa/100/50', cashbackRate: 'Up to 7%', dataAiHint: "nykaa logo", affiliateLink: 'https://nykaa.com?partner=cashease', description: 'Beauty, makeup, and wellness products.', categories: ['Beauty', 'Cosmetics', 'Skincare'], isFeatured: true },
-  { name: 'BookMyShow', logoUrl: 'https://picsum.photos/seed/bookmyshow/100/50', cashbackRate: '₹100 off on Movies', dataAiHint: "bookmyshow logo", affiliateLink: 'https://bookmyshow.com?partner=cashease', description: 'Book movie tickets, events, and plays.', categories: ['Entertainment', 'Movies', 'Events'], isFeatured: false },
+    { name: 'Amazon IN', logoUrl: 'https://picsum.photos/seed/amazonin/100/50', cashbackRate: 'Up to 5% Rewards', dataAiHint: "amazon india logo", affiliateLink: 'https://amazon.in?tag=cashease-21', description: 'Wide range of products from electronics to fashion.', categories: ['Electronics', 'Fashion', 'Home', 'Books', 'Grocery'], isFeatured: true, cashbackType: 'percentage', cashbackRateValue: 5, terms: 'Cashback varies by category. See details.' },
+    { name: 'Flipkart', logoUrl: 'https://picsum.photos/seed/flipkart/100/50', cashbackRate: 'Up to 4.5% Rewards', dataAiHint: "flipkart logo", affiliateLink: 'https://flipkart.com?affid=cashease', description: 'Leading Indian e-commerce platform for various goods.', categories: ['Electronics', 'Fashion', 'Home', 'Mobiles'], isFeatured: true, cashbackType: 'percentage', cashbackRateValue: 4.5 },
+    { name: 'Myntra', logoUrl: 'https://picsum.photos/seed/myntra/100/50', cashbackRate: 'Flat 6% Cashback', dataAiHint: "myntra logo", affiliateLink: 'https://myntra.com?ref=cashease', description: 'Your destination for fashion and lifestyle products.', categories: ['Fashion', 'Accessories', 'Beauty'], isFeatured: true, cashbackType: 'percentage', cashbackRateValue: 6 },
+    { name: 'Ajio', logoUrl: 'https://picsum.photos/seed/ajio/100/50', cashbackRate: 'Up to 8% Cashback', dataAiHint: "ajio logo", affiliateLink: 'https://ajio.com?cjevent=cashease', description: 'Curated collection of fashion brands.', categories: ['Fashion', 'Accessories'], isFeatured: false, cashbackType: 'percentage', cashbackRateValue: 8 },
+    { name: 'BigBasket', logoUrl: 'https://picsum.photos/seed/bigbasket/100/50', cashbackRate: 'Flat ₹75 on First Order', dataAiHint: "bigbasket logo", affiliateLink: 'https://bigbasket.com?bbref=cashease', description: 'Online grocery shopping and delivery.', categories: ['Grocery', 'Essentials'], isFeatured: false, cashbackType: 'fixed', cashbackRateValue: 75, terms: 'New users only. Minimum order value may apply.' },
+    { name: 'MakeMyTrip', logoUrl: 'https://picsum.photos/seed/makemytrip/100/50', cashbackRate: 'Up to ₹1500 on Flights', dataAiHint: "makemytrip logo", affiliateLink: 'https://makemytrip.com?partner=cashease', description: 'Book flights, hotels, and holiday packages.', categories: ['Travel', 'Flights', 'Hotels'], isFeatured: true, cashbackType: 'fixed', cashbackRateValue: 1500 },
+    { name: 'Swiggy', logoUrl: 'https://picsum.photos/seed/swiggy/100/50', cashbackRate: 'Flat 20% off', dataAiHint: "swiggy logo", affiliateLink: 'https://swiggy.com?partner=cashease', description: 'Order food online from nearby restaurants.', categories: ['Food', 'Restaurant'], isFeatured: false, cashbackType: 'percentage', cashbackRateValue: 20 }, // This is likely a discount, not cashback, but kept for example
+    { name: 'PharmEasy', logoUrl: 'https://picsum.photos/seed/pharmeasy/100/50', cashbackRate: 'Flat 15% + 5% CB', dataAiHint: "pharmeasy logo", affiliateLink: 'https://pharmeasy.in?partner=cashease', description: 'Online pharmacy and healthcare products.', categories: ['Health', 'Pharmacy', 'Medicine'], isFeatured: false, cashbackType: 'percentage', cashbackRateValue: 5 }, // Assuming 5% CB
+    { name: 'Nykaa', logoUrl: 'https://picsum.photos/seed/nykaa/100/50', cashbackRate: 'Up to 7% Cashback', dataAiHint: "nykaa logo", affiliateLink: 'https://nykaa.com?partner=cashease', description: 'Beauty, makeup, and wellness products.', categories: ['Beauty', 'Cosmetics', 'Skincare'], isFeatured: true, cashbackType: 'percentage', cashbackRateValue: 7 },
+    { name: 'BookMyShow', logoUrl: 'https://picsum.photos/seed/bookmyshow/100/50', cashbackRate: '₹100 off on Movies', dataAiHint: "bookmyshow logo", affiliateLink: 'https://bookmyshow.com?partner=cashease', description: 'Book movie tickets, events, and plays.', categories: ['Entertainment', 'Movies', 'Events'], isFeatured: false, cashbackType: 'fixed', cashbackRateValue: 100 }, // Discount example
 ];
 
+// Example coupons
+const initialCouponsData = [
+    { storeName: 'Myntra', code: 'MYNTRA200', description: '₹200 Off on Orders Above ₹1499', isFeatured: true, isActive: true },
+    { storeName: 'Amazon IN', code: 'AMZSAVE10', description: '10% off Select Electronics (Max ₹500)', isFeatured: true, isActive: true },
+    { storeName: 'Ajio', description: 'Flat 50-80% Off Top Brands', isFeatured: true, isActive: true, link: 'https://ajio.com/shop/sale' },
+    { storeName: 'Flipkart', code: 'FLIPFIRST', description: '₹100 Off First Order on App', isFeatured: false, isActive: true },
+    { storeName: 'BigBasket', description: 'Up to 50% Off Daily Essentials', isFeatured: false, isActive: true },
+    { storeName: 'MakeMyTrip', code: 'FLYNOW', description: 'Flat ₹500 Off Domestic Flights', isFeatured: true, isActive: true },
+];
 
-function parseCashback(rateString: string): { type: CashbackType, value: number } {
-    let type: CashbackType = 'percentage'; // Default
-    let value = 0;
-
-    // Improved regex to handle various formats like "Up to ₹1500", "Flat ₹75", "Flat 20%", "Up to 5%"
-    const fixedMatch = rateString.match(/(?:flat|up to)\s*₹\s*(\d+(\.\d+)?)/i);
-    if (fixedMatch) {
-      type = 'fixed';
-      value = parseFloat(fixedMatch[1]);
-      return { type, value };
-    }
-
-    const percentageMatch = rateString.match(/(\d+(\.\d+)?)%/);
-    if (percentageMatch) {
-        type = 'percentage';
-        value = parseFloat(percentageMatch[1]);
-        return { type, value };
-    }
-
-    // Handle cases like "Flat 20% off" - treat as percentage
-    const flatPercentageMatch = rateString.match(/flat\s*(\d+(\.\d+)?)\s*%/i);
-    if (flatPercentageMatch) {
-       type = 'percentage';
-       value = parseFloat(flatPercentageMatch[1]);
-       return { type, value };
-    }
-
-    // Handle "CB" as Cashback (treat as percentage if no currency symbol)
-    const cashbackSuffixMatch = rateString.match(/(\d+(\.\d+)?)\s*cb/i);
-    if (cashbackSuffixMatch) {
-        type = 'percentage'; // Assuming CB implies percentage unless ₹ specified elsewhere
-        value = parseFloat(cashbackSuffixMatch[1]);
-        return { type, value };
-    }
-
-
-    console.warn(`Could not parse cashback rate: "${rateString}". Using default 0%.`);
-    return { type: 'percentage', value: 0 }; // Return default if parsing fails
-}
-
-// Use provided categories if available, otherwise infer
-function getCategories(storeData: typeof initialStoresData[0]): string[] {
-    return storeData.categories && storeData.categories.length > 0
-        ? storeData.categories
-        : inferCategories(storeData.name); // Fallback to inference
-}
-
-
-function inferCategories(storeName: string): string[] {
-    const lowerName = storeName.toLowerCase();
-    if (lowerName.includes('amazon') || lowerName.includes('flipkart')) return ['Electronics', 'Fashion', 'Home', 'Books'];
-    if (lowerName.includes('myntra') || lowerName.includes('ajio')) return ['Fashion', 'Accessories'];
-    if (lowerName.includes('bigbasket')) return ['Grocery', 'Essentials'];
-    if (lowerName.includes('makemytrip')) return ['Travel', 'Flights', 'Hotels'];
-    if (lowerName.includes('swiggy')) return ['Food', 'Restaurant'];
-    if (lowerName.includes('pharmeasy')) return ['Health', 'Pharmacy'];
-    if (lowerName.includes('nykaa')) return ['Beauty', 'Cosmetics'];
-    if (lowerName.includes('bookmyshow')) return ['Entertainment', 'Movies'];
-    // Add more category inference rules here
-    return ['General']; // Default category
-}
+// Helper to safely convert Timestamps
+const safeToDate = (fieldValue: any): Date => {
+    if (fieldValue instanceof Timestamp) return fieldValue.toDate();
+    if (fieldValue instanceof Date) return fieldValue;
+    return new Date(); // Fallback
+};
 
 function AdminStoresPageContent() {
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
-  const [isFormOpen, setIsFormOpen] = useState(false); // State for Add/Edit modal/drawer
-  const [selectedStore, setSelectedStore] = useState<Store | null>(null); // State for editing
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [selectedStore, setSelectedStore] = useState<Store | null>(null);
   const [isSeeding, setIsSeeding] = useState(false);
-  const [storesExist, setStoresExist] = useState(true); // Assume stores exist initially
+  const [storesExist, setStoresExist] = useState(true);
 
   const fetchStores = async () => {
       setLoading(true);
       setError(null);
       try {
         const storesCollection = collection(db, 'stores');
-        // Check if stores exist first
         const countSnapshot = await getCountFromServer(query(storesCollection, limit(1)));
         const hasStores = countSnapshot.data().count > 0;
         setStoresExist(hasStores);
 
         if (hasStores) {
-           // Order by name if stores exist
            const q = query(storesCollection, orderBy('name', 'asc'));
            const querySnapshot = await getDocs(q);
            const storesData = querySnapshot.docs.map(doc => ({
              id: doc.id,
              ...doc.data(),
-             createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : new Date(),
-             updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate() : new Date(),
+             createdAt: safeToDate(doc.data().createdAt),
+             updatedAt: safeToDate(doc.data().updatedAt),
            })) as Store[];
            setStores(storesData);
         } else {
-           setStores([]); // No stores found
+           setStores([]);
         }
-
       } catch (err) {
         console.error("Error fetching stores:", err);
         setError("Failed to load stores. Please try again later.");
-        setStoresExist(true); // Reset assumption on error
+        setStoresExist(true);
       } finally {
         setLoading(false);
       }
@@ -164,32 +115,34 @@ function AdminStoresPageContent() {
     fetchStores();
   }, []);
 
-  const handleSeedStores = async () => {
+  const handleSeedData = async () => {
       setIsSeeding(true);
       setError(null);
-      console.log("Seeding initial store data...");
+      console.log("Seeding initial store and coupon data...");
 
       try {
-          // Use a batch write for atomicity
           const batch = writeBatch(db);
           const storesCollection = collection(db, 'stores');
+          const couponsCollection = collection(db, 'coupons');
+          const storeNameToIdMap = new Map<string, string>();
 
+          // Seed Stores
           initialStoresData.forEach(storeData => {
               const docRef = doc(storesCollection); // Auto-generate ID
-              const { type, value } = parseCashback(storeData.cashbackRate);
-              const categories = getCategories(storeData); // Use specific or inferred categories
+              storeNameToIdMap.set(storeData.name, docRef.id); // Map name to ID for coupons
 
               const newStore: Omit<Store, 'id' | 'createdAt' | 'updatedAt'> = {
                   name: storeData.name,
                   logoUrl: storeData.logoUrl,
                   affiliateLink: storeData.affiliateLink,
                   cashbackRate: storeData.cashbackRate,
-                  cashbackRateValue: value,
-                  cashbackType: type,
-                  description: storeData.description || `${storeData.name} deals and offers.`, // Use provided or default description
-                  categories: categories,
+                  cashbackRateValue: storeData.cashbackRateValue,
+                  cashbackType: storeData.cashbackType,
+                  description: storeData.description || `${storeData.name} deals and offers.`,
+                  categories: storeData.categories,
                   isActive: true,
-                  isFeatured: storeData.isFeatured ?? false, // Use provided featured status or default to false
+                  isFeatured: storeData.isFeatured ?? false,
+                  terms: storeData.terms || undefined,
               };
               batch.set(docRef, {
                   ...newStore,
@@ -197,20 +150,46 @@ function AdminStoresPageContent() {
                   updatedAt: serverTimestamp(),
               });
           });
+          console.log("Store seeding prepared.");
+
+          // Seed Coupons
+          initialCouponsData.forEach(couponData => {
+              const storeId = storeNameToIdMap.get(couponData.storeName);
+              if (!storeId) {
+                  console.warn(`Skipping coupon "${couponData.description}" because store "${couponData.storeName}" was not found in the seed data.`);
+                  return;
+              }
+              const couponDocRef = doc(couponsCollection);
+              const newCoupon: Omit<Coupon, 'id' | 'createdAt' | 'updatedAt'> = {
+                  storeId: storeId,
+                  code: couponData.code || null,
+                  description: couponData.description,
+                  link: couponData.link || null,
+                  expiryDate: null, // Can be set later
+                  isFeatured: couponData.isFeatured,
+                  isActive: couponData.isActive,
+              };
+              batch.set(couponDocRef, {
+                  ...newCoupon,
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+              });
+          });
+           console.log("Coupon seeding prepared.");
 
           await batch.commit();
           toast({
-              title: "Stores Seeded",
-              description: `${initialStoresData.length} stores added to the database.`,
+              title: "Data Seeded",
+              description: `${initialStoresData.length} stores and ${initialCouponsData.length} coupons added.`,
           });
-          await fetchStores(); // Refresh the list after seeding
+          await fetchStores(); // Refresh the list
       } catch (err) {
-          console.error("Error seeding stores:", err);
-          setError("Failed to seed initial store data. Please check console.");
+          console.error("Error seeding data:", err);
+          setError("Failed to seed initial data. Please check console.");
           toast({
               variant: "destructive",
               title: "Seeding Failed",
-              description: "Could not add initial stores. See console for details.",
+              description: "Could not add initial data. See console for details.",
           });
       } finally {
           setIsSeeding(false);
@@ -219,20 +198,15 @@ function AdminStoresPageContent() {
 
 
   const handleEdit = (store: Store) => {
-      console.log(`Edit action for store: ${store.name} (ID: ${store.id})`);
       setSelectedStore(store);
       setIsFormOpen(true);
   };
 
   const handleDelete = async (storeId: string, storeName: string) => {
-      console.log(`Attempting to delete store: ${storeName} (ID: ${storeId})`);
-
-       // Check for associated coupons before deleting
        try {
            const couponsCollection = collection(db, 'coupons');
-           const q = query(couponsCollection, where('storeId', '==', storeId), limit(1)); // Just check if any exist
+           const q = query(couponsCollection, where('storeId', '==', storeId), limit(1));
            const querySnapshot = await getDocs(q);
-
 
            if (!querySnapshot.empty) {
                toast({
@@ -240,16 +214,15 @@ function AdminStoresPageContent() {
                    title: "Deletion Blocked",
                    description: `Cannot delete store "${storeName}" as it has associated coupons. Please delete or reassign the coupons first.`,
                });
-               return; // Stop deletion process
+               return;
            }
 
-           // Proceed with deletion if no coupons found
            await deleteDoc(doc(db, 'stores', storeId));
            toast({
                title: "Store Deleted",
                description: `Store "${storeName}" has been successfully deleted.`,
            });
-           fetchStores(); // Refresh stores list
+           fetchStores();
        } catch (err) {
            console.error("Error deleting store or checking coupons:", err);
            toast({
@@ -262,20 +235,19 @@ function AdminStoresPageContent() {
   };
 
   const handleAddNew = () => {
-      console.log("Add new store action triggered");
-      setSelectedStore(null); // Ensure no store is selected for editing
+      setSelectedStore(null);
       setIsFormOpen(true);
   };
 
    const handleFormSuccess = () => {
       fetchStores();
       setIsFormOpen(false);
-      setSelectedStore(null); // Clear selection after success
+      setSelectedStore(null);
    };
 
 
   return (
-     <AdminGuard> {/* Wrap content with guard */}
+     <AdminGuard>
        <Card>
          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <div>
@@ -286,8 +258,8 @@ function AdminStoresPageContent() {
             </div>
              <div className="flex items-center gap-2">
                 {!storesExist && !loading && (
-                   <Button onClick={handleSeedStores} disabled={isSeeding} variant="secondary">
-                      <DatabaseZap className="mr-2 h-4 w-4" /> {isSeeding ? 'Seeding...' : 'Seed Initial Stores'}
+                   <Button onClick={handleSeedData} disabled={isSeeding} variant="secondary">
+                      <DatabaseZap className="mr-2 h-4 w-4" /> {isSeeding ? 'Seeding...' : 'Seed Example Data'}
                    </Button>
                 )}
                  <Button onClick={handleAddNew} disabled={isSeeding}>
@@ -393,8 +365,8 @@ function AdminStoresPageContent() {
            ) : (
              <div className="text-center text-muted-foreground py-8 flex flex-col items-center gap-4">
                  <p>No stores found in the database.</p>
-                 <Button onClick={handleSeedStores} disabled={isSeeding}>
-                     <DatabaseZap className="mr-2 h-4 w-4" /> {isSeeding ? 'Seeding...' : 'Seed Initial Stores'}
+                 <Button onClick={handleSeedData} disabled={isSeeding}>
+                     <DatabaseZap className="mr-2 h-4 w-4" /> {isSeeding ? 'Seeding...' : 'Seed Example Data'}
                  </Button>
              </div>
            )}
@@ -405,7 +377,7 @@ function AdminStoresPageContent() {
               <StoreForm
                   store={selectedStore}
                   onClose={() => setIsFormOpen(false)}
-                  onSuccess={handleFormSuccess} // Use the success handler
+                  onSuccess={handleFormSuccess}
               />
           )}
        </Card>
