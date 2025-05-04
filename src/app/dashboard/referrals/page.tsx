@@ -4,7 +4,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { useAuth } from '@/hooks/use-auth';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'; // Added CardFooter import
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'; // Ensure CardFooter is imported
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
@@ -69,6 +69,9 @@ export default function ReferralsPage() {
     return <ReferralsPageSkeleton />;
   }
 
+  // Get the referral count, defaulting to 0 if not present
+  const referralCount = userProfile?.referralCount ?? 0;
+
   return (
     <div className="space-y-8">
       <h1 className="text-3xl font-bold">Refer & Earn</h1>
@@ -110,8 +113,8 @@ export default function ReferralsPage() {
              <Card className="bg-muted/50">
                 <CardHeader className="pb-2">
                     <CardDescription>Friends Referred</CardDescription>
-                     {/* TODO: Fetch and display actual count */}
-                    <CardTitle className="text-4xl">0</CardTitle>
+                     {/* Display actual count */}
+                    <CardTitle className="text-4xl">{referralCount}</CardTitle>
                  </CardHeader>
                  <CardContent>
                      <p className="text-xs text-muted-foreground">Number of friends who signed up using your link.</p>
@@ -214,4 +217,3 @@ function ReferralsPageSkeleton() {
      </div>
   );
 }
-

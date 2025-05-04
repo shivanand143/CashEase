@@ -10,7 +10,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup, // Import signInWithPopup
 } from 'firebase/auth';
-import { doc, onSnapshot, DocumentData, Timestamp, setDoc, serverTimestamp, getDoc, collection, query, where, limit, getDocs } from 'firebase/firestore'; // Import setDoc and serverTimestamp, query, where, limit, getDocs
+import { doc, onSnapshot, DocumentData, Timestamp, setDoc, serverTimestamp, getDoc, collection, query, where, limit, getDocs, updateDoc, increment } from 'firebase/firestore'; // Added updateDoc, increment
 import { auth, db, firebaseInitializationError } from '@/lib/firebase/config'; // Import error state
 import type { UserProfile } from '@/lib/types';
 import { useToast } from "@/hooks/use-toast"; // Import useToast
@@ -26,7 +26,7 @@ interface AuthContextType {
   loading: boolean;
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<void>; // Add signInWithGoogle method
-  createOrUpdateUserProfile: (userToUpdate: User, referredByCode?: string | null) => Promise<void>; // Expose profile creation function
+  createOrUpdateUserProfile: (userToUpdate: User & { role?: 'admin' | 'user' }, referredByCode?: string | null) => Promise<void>; // Expose profile creation function
   authError?: string | null; // Error related to auth state or profile loading
   initializationError?: string | null; // Error during Firebase init
 }
@@ -43,12 +43,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
    // Function to generate a unique referral code
    const generateReferralCode = (): string => {
       // Simple example: Generate a random alphanumeric code
-      // You might want a more robust generation/checking mechanism
       return uuidv4().substring(0, 8).toUpperCase();
    };
 
   // Function to create/update profile in Firestore (including referral logic)
-  const createOrUpdateUserProfile = useCallback(async (userToUpdate: User, referredByCode?: string | null) => {
+  const createOrUpdateUserProfile = useCallback(async (userToUpdate: User & { role?: 'admin' | 'user' }, referredByCode?: string | null) => {
     if (!userToUpdate || !db) {
         console.error("User or Firestore DB instance is null, cannot create/update profile.");
         return;
@@ -57,6 +56,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     console.log(`Attempting to create/update profile for user: ${userToUpdate.uid}`);
 
     let referredByUid: string | null = null;
+    let referrerDocRef: any = null; // Store referrer doc ref
 
     // If referredByCode is provided, find the referrer's UID
     if (referredByCode) {
@@ -65,20 +65,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const q = query(usersRef, where('referralCode', '==', referredByCode), limit(1));
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
-          referredByUid = querySnapshot.docs[0].id;
+          const referrerDoc = querySnapshot.docs[0];
+          referredByUid = referrerDoc.id;
+          referrerDocRef = referrerDoc.ref; // Get the DocumentReference
           console.log(`Referrer found for code ${referredByCode}: User ID ${referredByUid}`);
         } else {
           console.warn(`Referral code ${referredByCode} not found.`);
         }
       } catch (error) {
         console.error("Error finding referrer by code:", error);
-        // Proceed without referrer if lookup fails
       }
     }
 
 
     try {
-      // Fetch existing data first if merging is important
       const docSnap = await getDoc(userDocRef);
       let existingData: Partial<UserProfile> = {};
       let isNewUser = !docSnap.exists(); // Check if this is a new Firestore user document
@@ -90,48 +90,49 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
          console.log("No existing profile found, creating new one.");
       }
 
-       // Prepare the data, prioritizing existing values for certain fields if needed
-        // Handle role update separately: Allow setting role directly if provided in userToUpdate
-       const roleToSet = (userToUpdate as any).role ?? existingData.role ?? 'user';
+       const roleToSet = userToUpdate.role ?? existingData.role ?? 'user';
 
-      const userProfileData: Omit<UserProfile, 'createdAt' | 'updatedAt' | 'uid'> & { createdAt?: any, updatedAt?: any } = {
-        //uid: userToUpdate.uid, // uid is the doc ID, not stored in the doc itself
+      const userProfileData: Omit<UserProfile, 'uid'> & { createdAt?: any, updatedAt?: any } = {
         email: userToUpdate.email ?? existingData.email ?? null,
-        displayName: userToUpdate.displayName ?? existingData.displayName ?? 'User', // Default display name
+        displayName: userToUpdate.displayName ?? existingData.displayName ?? 'User',
         photoURL: userToUpdate.photoURL ?? existingData.photoURL ?? null,
-        role: roleToSet, // Use role from input or existing, default to 'user'
+        role: roleToSet,
         cashbackBalance: existingData.cashbackBalance ?? 0,
         pendingCashback: existingData.pendingCashback ?? 0,
         lifetimeCashback: existingData.lifetimeCashback ?? 0,
-        // Generate referral code only if it doesn't exist
         referralCode: existingData.referralCode ?? generateReferralCode(),
-         // Set referredBy only if it's a new user and a valid referrer was found
+        referralCount: existingData.referralCount ?? 0, // Initialize referral count
          referredBy: isNewUser && referredByUid ? referredByUid : (existingData.referredBy ?? null),
-         isDisabled: existingData.isDisabled ?? false, // Default isDisabled to false
-         // Set createdAt only if it's a new user
+         isDisabled: existingData.isDisabled ?? false,
          ...(isNewUser && { createdAt: serverTimestamp() }),
-         updatedAt: serverTimestamp(), // Always update updatedAt on write
+         updatedAt: serverTimestamp(),
       };
 
-
-       // Remove createdAt if it's not a new user to avoid overwriting
        if (!isNewUser) {
            delete userProfileData.createdAt;
        }
 
-      // Use setDoc with merge: true to create or update
+      // Create or update the user's profile
       await setDoc(userDocRef, userProfileData, { merge: true });
-      console.log(`User profile successfully created/updated for ${userToUpdate.uid}:`, userProfileData);
+      console.log(`User profile successfully created/updated for ${userToUpdate.uid}`);
 
-       // If a referrer was found and this is a new user, potentially credit the referrer
-       if (isNewUser && referredByUid) {
-           console.log(`TODO: Credit referrer ${referredByUid} for referring user ${userToUpdate.uid}`);
-           // TODO: Implement referral bonus logic (e.g., add a pending transaction or directly credit balance)
+       // Increment referrer's count if applicable
+       if (isNewUser && referredByUid && referrerDocRef) {
+           try {
+               // IMPORTANT: This is a client-side update. For better security and reliability,
+               // this should ideally be handled by a Cloud Function triggered by user creation.
+               await updateDoc(referrerDocRef, {
+                   referralCount: increment(1)
+               });
+               console.log(`Incremented referral count for referrer ${referredByUid}.`);
+           } catch (incrementError) {
+               console.error(`Failed to increment referral count for referrer ${referredByUid}:`, incrementError);
+               // Decide how to handle this error (e.g., log, retry later?)
+           }
        }
 
     } catch (error) {
         console.error(`Error creating/updating user profile for ${userToUpdate.uid}:`, error);
-        // Optionally re-throw or set an error state
         throw error; // Re-throw to be caught by calling function
     }
   }, []); // Added dependency array for useCallback
@@ -190,7 +191,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               cashbackBalance: typeof data.cashbackBalance === 'number' ? data.cashbackBalance : 0,
               pendingCashback: typeof data.pendingCashback === 'number' ? data.pendingCashback : 0,
               lifetimeCashback: typeof data.lifetimeCashback === 'number' ? data.lifetimeCashback : 0,
-              referralCode: data.referralCode ?? null, // Handle undefined/null from DB
+              referralCode: data.referralCode ?? '', // Default to empty string if null/undefined
+              referralCount: typeof data.referralCount === 'number' ? data.referralCount : 0, // Default to 0
               referredBy: data.referredBy ?? null, // Handle undefined/null from DB
               isDisabled: typeof data.isDisabled === 'boolean' ? data.isDisabled : false, // Handle isDisabled field, default false
               createdAt: safeToDate(data.createdAt), // Convert safely
@@ -209,7 +211,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                    setAuthError("Failed to load or create user profile.");
                    setUserProfile(null); // Ensure profile is null if creation fails
                });
-             // Don't set profile to null immediately, let the creation attempt resolve.
           }
           setLoading(false); // Profile loaded or creation attempted
         }, (error) => {

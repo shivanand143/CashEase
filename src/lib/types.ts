@@ -3,10 +3,11 @@ import type { User as FirebaseUser } from 'firebase/auth'; // Import Firebase Us
 import type { Timestamp as FirestoreTimestamp } from 'firebase/firestore'; // Import Firestore Timestamp
 
 // Export Firebase User type along with existing types
-export type User = FirebaseUser;
+export type User = FirebaseUser & { role?: 'user' | 'admin' }; // Add optional role directly to User type used in useAuth
+
 
 export interface UserProfile {
-  uid: string;
+  uid: string; // Firebase Auth UID, matches the document ID
   email: string | null;
   displayName: string | null;
   photoURL?: string | null;
@@ -14,12 +15,19 @@ export interface UserProfile {
   cashbackBalance: number; // Current available cashback balance (confirmed, not paid out)
   pendingCashback: number; // Cashback waiting for confirmation
   lifetimeCashback: number; // Total confirmed cashback earned (including paid out)
-  referralCode: string | null; // Make mandatory for Firestore write, but allow null display
+  referralCode: string; // User's unique referral code (should be generated on creation)
   referredBy?: string | null; // UID of the user who referred this user - allow null
+  referralCount?: number; // Number of users successfully referred by this user
   isDisabled?: boolean; // Optional: Flag to disable user account
   createdAt: Date | FirestoreTimestamp; // Allow both Date and Timestamp initially
   updatedAt?: Date | FirestoreTimestamp; // Allow both Date and Timestamp initially
+  // Add other profile fields as needed, e.g., payout preferences
+  payoutDetails?: {
+      method?: 'paypal' | 'bank_transfer' | 'gift_card'; // Example methods
+      details?: Record<string, string>; // Store details like email or account info securely
+  };
 }
+
 
 export type CashbackType = 'percentage' | 'fixed';
 
