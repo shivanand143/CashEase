@@ -85,14 +85,7 @@
         { "fieldPath": "isFeatured", "order": "DESCENDING" },
         { "fieldPath": "name", "order": "ASCENDING" }
       ]
-    },
-     {
-       "collectionGroup": "users",
-       "queryScope": "COLLECTION",
-       "fields": [
-         { "fieldPath": "referralCode", "order": "ASCENDING" }
-       ]
-     }
+    }
   ],
   "fieldOverrides": []
 }
