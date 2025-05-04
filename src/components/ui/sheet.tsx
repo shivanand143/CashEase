@@ -110,14 +110,32 @@ const SheetDescription = React.forwardRef<
 ));
 SheetDescription.displayName = SheetPrimitive.Description.displayName; // Use DialogPrimitive name
 
-
 // SheetContent implementation with accessibility fix
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
 >(({ side = "right", className, children, ...props }, ref) => {
-  // Generate a unique ID for the default title
-  const titleId = `sheet-title-${React.useId()}`;
+  // Check if children contain an explicit SheetTitle
+  let hasExplicitTitle = false;
+  let explicitTitleId: string | undefined = undefined;
+  React.Children.forEach(children, (child) => {
+    if (React.isValidElement(child) && child.type === SheetHeader) {
+      React.Children.forEach(child.props.children, (headerChild) => {
+        if (React.isValidElement(headerChild) && headerChild.type === SheetTitle) {
+          hasExplicitTitle = true;
+          explicitTitleId = headerChild.props.id; // Attempt to get ID from explicit title
+        }
+      });
+    } else if (React.isValidElement(child) && child.type === SheetTitle) {
+        hasExplicitTitle = true;
+        explicitTitleId = child.props.id; // Attempt to get ID from direct SheetTitle child
+    }
+  });
+
+  // Generate a unique ID for the default title if no explicit title is found
+  const defaultTitleId = `sheet-title-${React.useId()}`;
+  // Use the explicit title's ID if available and valid, otherwise use the default ID
+  const labelledById = explicitTitleId || defaultTitleId;
 
   return (
     <SheetPortal>
@@ -125,16 +143,15 @@ const SheetContent = React.forwardRef<
       <SheetPrimitive.Content
         ref={ref}
         className={cn(sheetVariants({ side }), className)}
-        // Ensure aria-labelledby points to the hidden title
-        aria-labelledby={titleId}
+        aria-labelledby={labelledById} // Use the determined ID
         {...props} // Spread remaining props
       >
-        {/* Always render a hidden title for accessibility */}
-        <VisuallyHidden>
-          <SheetPrimitive.Title id={titleId}>
-            Sheet Menu {/* Default accessible name */}
-          </SheetPrimitive.Title>
-        </VisuallyHidden>
+        {/* Render a hidden default title ONLY if no explicit title was found */}
+        {!hasExplicitTitle && (
+          <VisuallyHidden>
+            <SheetTitle id={defaultTitleId}>Sheet Menu</SheetTitle> {/* Use the generated ID */}
+          </VisuallyHidden>
+        )}
         {/* The user's provided content, which might include a visible SheetHeader/SheetTitle */}
         {children}
         <SheetClose asChild>
