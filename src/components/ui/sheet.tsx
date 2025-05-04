@@ -116,44 +116,8 @@ const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
 >(({ side = "right", className, children, ...props }, ref) => {
-  const generatedTitleId = `sheet-title-${React.useId()}`;
-  const generatedDescriptionId = `sheet-description-${React.useId()}`;
-
-  let explicitTitleId: string | undefined;
-  let explicitDescriptionId: string | undefined;
-
-  // Find explicit title/description IDs from children
-  React.Children.forEach(children, (child) => {
-    if (React.isValidElement(child)) {
-      if (child.type === SheetHeader) {
-        React.Children.forEach(child.props.children, (headerChild) => {
-          if (React.isValidElement(headerChild)) {
-            if (headerChild.type === SheetTitle && headerChild.props.id) {
-              explicitTitleId = headerChild.props.id;
-            }
-            if (headerChild.type === SheetDescription && headerChild.props.id) {
-              explicitDescriptionId = headerChild.props.id;
-            }
-          }
-        });
-      } else {
-        if (child.type === SheetTitle && child.props.id) {
-          explicitTitleId = child.props.id;
-        }
-        if (child.type === SheetDescription && child.props.id) {
-          explicitDescriptionId = child.props.id;
-        }
-      }
-    }
-  });
-
-  // Determine the final IDs to use
-  const finalLabelledById = props['aria-labelledby'] || explicitTitleId || generatedTitleId;
-  const finalDescribedById = props['aria-describedby'] || explicitDescriptionId || generatedDescriptionId;
-
-  // Determine if we need to render the hidden title/description
-  const needsHiddenTitle = finalLabelledById === generatedTitleId;
-  const needsHiddenDescription = finalDescribedById === generatedDescriptionId;
+  // Generate a unique ID for the default title
+  const titleId = `sheet-title-${React.useId()}`;
 
   return (
     <SheetPortal>
@@ -161,26 +125,17 @@ const SheetContent = React.forwardRef<
       <SheetPrimitive.Content
         ref={ref}
         className={cn(sheetVariants({ side }), className)}
-        aria-labelledby={finalLabelledById}
-        aria-describedby={finalDescribedById}
+        // Ensure aria-labelledby points to the hidden title
+        aria-labelledby={titleId}
         {...props} // Spread remaining props
       >
-        {/* Render hidden title only if needed */}
-        {needsHiddenTitle && (
-          <VisuallyHidden>
-            <SheetPrimitive.Title id={generatedTitleId}>
-              Sheet Menu {/* Default accessible name */}
-            </SheetPrimitive.Title>
-          </VisuallyHidden>
-        )}
-        {/* Render hidden description only if needed */}
-        {needsHiddenDescription && (
-          <VisuallyHidden>
-            <SheetPrimitive.Description id={generatedDescriptionId}>
-              Navigation menu and options {/* Default accessible description */}
-            </SheetPrimitive.Description>
-          </VisuallyHidden>
-        )}
+        {/* Always render a hidden title for accessibility */}
+        <VisuallyHidden>
+          <SheetPrimitive.Title id={titleId}>
+            Sheet Menu {/* Default accessible name */}
+          </SheetPrimitive.Title>
+        </VisuallyHidden>
+        {/* The user's provided content, which might include a visible SheetHeader/SheetTitle */}
         {children}
         <SheetClose asChild>
           <button className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
