@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { collection, addDoc, serverTimestamp, writeBatch, doc, getDocs, query, where, updateDoc, Timestamp } from 'firebase/firestore'; // Added Timestamp
+import { collection, addDoc, serverTimestamp, writeBatch, doc, getDocs, query, where, updateDoc, Timestamp, runTransaction, getDoc, limit } from 'firebase/firestore'; // Added runTransaction, getDoc, limit
 import { db } from '@/lib/firebase/config';
 import type { PayoutRequest, Transaction, UserProfile } from '@/lib/types'; // Import UserProfile
 
@@ -27,16 +27,15 @@ import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, Send } from 'lucide-react';
+import { AlertCircle, Send, Loader2, Search } from 'lucide-react'; // Added Loader2, Search
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from "@/lib/utils"; // Ensure cn is imported
 
-const MIN_PAYOUT_THRESHOLD = 2000; // Payout threshold in INR (matches dashboard)
+const MIN_PAYOUT_THRESHOLD = 250; // Payout threshold in INR (matches dashboard info)
 
 const payoutSchema = z.object({
   paymentMethod: z.string().min(1, { message: 'Please select a payment method' }),
   paymentDetails: z.string().min(1, { message: 'Payment details are required' }), // Simple string for now, adjust as needed
-  // The actual amount will be the user's full available balance
 });
 
 type PayoutFormValues = z.infer<typeof payoutSchema>;
@@ -47,6 +46,7 @@ export default function PayoutPage() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Specific state for submission process
 
   const canRequestPayout = userProfile && userProfile.cashbackBalance >= MIN_PAYOUT_THRESHOLD;
   const availableBalance = userProfile?.cashbackBalance ?? 0;
@@ -54,10 +54,10 @@ export default function PayoutPage() {
   const {
     register,
     handleSubmit,
-    control, // For ShadCN Select
+    control,
     formState: { errors },
-     setValue, // To set paymentMethod value
-     watch, // To watch paymentMethod value
+     setValue,
+     watch,
   } = useForm<PayoutFormValues>({
     resolver: zodResolver(payoutSchema),
      defaultValues: {
@@ -77,11 +77,11 @@ export default function PayoutPage() {
        toast({
           variant: "destructive",
           title: "Insufficient Balance",
-          description: `You need at least ₹${MIN_PAYOUT_THRESHOLD} available cashback to request a payout.`,
+          description: `You need at least ₹${MIN_PAYOUT_THRESHOLD} available cashback to request a payout. Your current balance is ₹${availableBalance.toFixed(2)}.`,
        });
        router.push('/dashboard');
     }
-  }, [user, userProfile, authLoading, router, canRequestPayout, toast]);
+  }, [user, userProfile, authLoading, router, canRequestPayout, availableBalance, toast]);
 
 
  const onSubmit = async (data: PayoutFormValues) => {
@@ -90,24 +90,22 @@ export default function PayoutPage() {
        return;
      }
 
-     setLoading(true);
+     setIsSubmitting(true); // Indicate submission process started
      setError(null);
      const payoutAmount = userProfile.cashbackBalance; // Payout the full available balance
      console.log(`Starting payout request for User: ${user.uid}, Amount: ₹${payoutAmount.toFixed(2)}`);
 
-     // Start Firestore batch write
      const batch = writeBatch(db);
 
      try {
        // 1. Find all 'confirmed' transactions for the user that haven't been paid out yet
-       console.log(`Querying 'confirmed' transactions for user ${user.uid}...`);
+       console.log(`Querying 'confirmed' transactions with payoutId == null for user ${user.uid}...`);
        const transactionsCollection = collection(db, 'transactions');
-        // Query for 'confirmed' status WHERE payoutId is null
        const q = query(
          transactionsCollection,
          where('userId', '==', user.uid),
          where('status', '==', 'confirmed'),
-         where('payoutId', '==', null) // Ensure not already linked to a payout
+         where('payoutId', '==', null) // Explicitly check for unpaid transactions
        );
        const querySnapshot = await getDocs(q);
        console.log(`Found ${querySnapshot.size} 'confirmed' transactions with no payoutId.`);
@@ -116,31 +114,35 @@ export default function PayoutPage() {
        let sumOfTransactions = 0;
 
        querySnapshot.forEach((docSnap) => {
-           console.log(`Processing transaction doc ID: ${docSnap.id}, Data:`, docSnap.data()); // Log each transaction found
-           const txData = docSnap.data();
-           // Basic validation for cashbackAmount existence and type
-            if (typeof txData.cashbackAmount !== 'number') {
-               console.warn(`Transaction ${docSnap.id} has missing or invalid cashbackAmount. Skipping.`);
-               return; // Skip this transaction
-            }
-           const tx = txData as Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'transactionDate' | 'confirmationDate'> & {
-              createdAt: Timestamp, updatedAt: Timestamp, transactionDate: Timestamp, confirmationDate?: Timestamp | null
-           };
-           transactionIdsToUpdate.push(docSnap.id);
-           sumOfTransactions += tx.cashbackAmount; // <-- Summing up
-           console.log(`  - Including Tx ID: ${docSnap.id}, Amount: ₹${tx.cashbackAmount.toFixed(2)}`);
+         const txData = docSnap.data();
+         if (typeof txData.cashbackAmount === 'number') {
+             transactionIdsToUpdate.push(docSnap.id);
+             sumOfTransactions += txData.cashbackAmount;
+             console.log(`  - Including Tx ID: ${docSnap.id}, Amount: ₹${txData.cashbackAmount.toFixed(2)}`);
+         } else {
+             console.warn(`Transaction ${docSnap.id} has missing or invalid cashbackAmount. Skipping.`);
+         }
        });
-
 
        console.log(`Total sum of queried 'confirmed' transactions with no payoutId: ₹${sumOfTransactions.toFixed(2)}`);
        console.log(`User profile available balance: ₹${payoutAmount.toFixed(2)}`);
 
-        // Stricter validation: Ensure the sum exactly matches the available balance
-        if (Math.abs(sumOfTransactions - payoutAmount) > 0.01) {
-             // Log more details before throwing error
-              console.error(`Mismatch: Sum of confirmed transactions (₹${sumOfTransactions.toFixed(2)}) does not match available balance (₹${payoutAmount.toFixed(2)}).`);
-             throw new Error("Balance calculation error. There's a mismatch between your confirmed cashback and transaction history. Please contact support.");
+       // Strict validation: Ensure the sum exactly matches the available balance
+       // Allow for minor floating point discrepancies
+       if (Math.abs(sumOfTransactions - payoutAmount) > 0.01) {
+           // Improved error message:
+           const mismatchError = `Balance Mismatch: The sum of your unpaid confirmed transactions (₹${sumOfTransactions.toFixed(2)}) does not match your available balance (₹${payoutAmount.toFixed(2)}). This might indicate a data inconsistency. Please contact support.`;
+           console.error(mismatchError);
+           throw new Error(mismatchError);
+       }
+
+        // If the balance is > threshold, but sum is 0 (and no transactions found), it's an inconsistency
+        if (payoutAmount >= MIN_PAYOUT_THRESHOLD && querySnapshot.empty && sumOfTransactions === 0) {
+            const inconsistencyError = `Data Inconsistency: Your available balance is ₹${payoutAmount.toFixed(2)}, but no corresponding unpaid confirmed transactions were found. Please contact support to resolve this before requesting a payout.`;
+            console.error(inconsistencyError);
+            throw new Error(inconsistencyError);
         }
+
 
        // 2. Create the PayoutRequest document
        const payoutCollection = collection(db, 'payoutRequests');
@@ -149,35 +151,31 @@ export default function PayoutPage() {
        const payoutData: Omit<PayoutRequest, 'id'> = {
          userId: user.uid,
          amount: payoutAmount,
-         status: 'pending', // Initial status
+         status: 'pending',
          requestedAt: serverTimestamp(),
          paymentMethod: data.paymentMethod,
-         paymentDetails: { detail: data.paymentDetails }, // Store details flexibly, adapt schema if needed
+         paymentDetails: { detail: data.paymentDetails }, // Adjust as needed
          transactionIds: transactionIdsToUpdate,
-          adminNotes: null, // Ensure adminNotes is initially null
-          processedAt: null // Ensure processedAt is initially null
+         adminNotes: null,
+         processedAt: null,
        };
        batch.set(newPayoutRequestRef, payoutData);
        console.log(`Prepared PayoutRequest document: ${newPayoutRequestRef.id}`);
-
 
        // 3. Update the user's profile balance
        const userDocRef = doc(db, 'users', user.uid);
        batch.update(userDocRef, {
          cashbackBalance: 0, // Reset available balance
-         // Note: We don't decrease lifetime earnings here
-         updatedAt: serverTimestamp() // Update the profile timestamp
+         updatedAt: serverTimestamp()
        });
        console.log(`Prepared user profile balance update (set to 0).`);
 
-        // 4. Update the status of the included transactions to 'paid' and link them to the payout request
-        transactionIdsToUpdate.forEach(txId => {
-            const txDocRef = doc(db, 'transactions', txId);
-            // Update status to 'paid' and link the payoutId
-            batch.update(txDocRef, { status: 'paid', payoutId: newPayoutRequestRef.id });
-        });
-        console.log(`Prepared to mark ${transactionIdsToUpdate.length} transactions as 'paid' and link to PayoutRequest ${newPayoutRequestRef.id}.`);
-
+       // 4. Update the status of the included transactions to 'paid' and link them
+       transactionIdsToUpdate.forEach(txId => {
+           const txDocRef = doc(db, 'transactions', txId);
+           batch.update(txDocRef, { status: 'paid', payoutId: newPayoutRequestRef.id });
+       });
+       console.log(`Prepared to mark ${transactionIdsToUpdate.length} transactions as 'paid' and link to PayoutRequest ${newPayoutRequestRef.id}.`);
 
        // 5. Commit the batch write
        console.log("Committing batch write...");
@@ -188,7 +186,7 @@ export default function PayoutPage() {
          title: 'Payout Request Submitted',
          description: `Your request for ₹${payoutAmount.toFixed(2)} has been submitted for review.`,
        });
-       router.push('/dashboard'); // Redirect back to dashboard
+       router.push('/dashboard');
 
      } catch (err: any) {
        console.error("Payout request failed:", err);
@@ -196,22 +194,21 @@ export default function PayoutPage() {
        toast({
          variant: "destructive",
          title: 'Payout Failed',
-         description: err.message || "Could not submit payout request. Please try again.",
+         description: err.message || "Could not submit payout request. Please try again or contact support.",
        });
      } finally {
-       setLoading(false);
+       setIsSubmitting(false); // Indicate submission process ended
      }
  };
 
   if (authLoading || (!user && !authLoading)) {
-      // Show loading skeleton or return null while auth is resolving or redirecting
       return <PayoutPageSkeleton />;
   }
 
    if (!canRequestPayout && userProfile) {
        // Should be handled by redirect, but show message just in case
        return (
-           <Card>
+           <Card className="w-full max-w-lg mx-auto">
                <CardHeader>
                    <CardTitle>Request Payout</CardTitle>
                </CardHeader>
@@ -250,12 +247,11 @@ export default function PayoutPage() {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           {/* Payment Method Selection */}
            <div className="space-y-2">
-               <Label htmlFor="paymentMethod">Payment Method</Label>
-                {/* Use ShadCN Select wrapped in Controller */}
+               <Label htmlFor="paymentMethod">Payment Method *</Label>
                  <Select
                     onValueChange={(value) => setValue('paymentMethod', value)} // Update RHF state
                     defaultValue={selectedPaymentMethod}
-                    disabled={loading}
+                    disabled={isSubmitting}
                  >
                      <SelectTrigger id="paymentMethod" aria-invalid={errors.paymentMethod ? "true" : "false"}>
                          <SelectValue placeholder="Select a method" />
@@ -263,22 +259,20 @@ export default function PayoutPage() {
                      <SelectContent>
                          <SelectItem value="paypal">PayPal</SelectItem>
                          <SelectItem value="bank_transfer">Bank Transfer (India - UPI/NEFT)</SelectItem>
-                          {/* Add more methods as needed */}
                          <SelectItem value="gift_card">Gift Card (e.g., Amazon)</SelectItem>
                      </SelectContent>
                  </Select>
                  {errors.paymentMethod && <p className="text-sm text-destructive mt-1">{errors.paymentMethod.message}</p>}
            </div>
 
-
-          {/* Payment Details Input - Contextual based on selected method */}
+          {/* Payment Details Input */}
           {selectedPaymentMethod && (
              <div className="space-y-2">
                <Label htmlFor="paymentDetails">
-                  {selectedPaymentMethod === 'paypal' && 'PayPal Email Address'}
-                  {selectedPaymentMethod === 'bank_transfer' && 'Bank Account Details (Account #, IFSC, Name / UPI ID)'}
-                  {selectedPaymentMethod === 'gift_card' && 'Gift Card Preference (e.g., Amazon Email)'}
-                  {!['paypal', 'bank_transfer', 'gift_card'].includes(selectedPaymentMethod) && 'Payment Details'}
+                  {selectedPaymentMethod === 'paypal' && 'PayPal Email Address *'}
+                  {selectedPaymentMethod === 'bank_transfer' && 'Bank Account Details / UPI ID *'}
+                  {selectedPaymentMethod === 'gift_card' && 'Gift Card Preference / Email *'}
+                  {!['paypal', 'bank_transfer', 'gift_card'].includes(selectedPaymentMethod) && 'Payment Details *'}
                </Label>
                 <Textarea
                    id="paymentDetails"
@@ -289,7 +283,7 @@ export default function PayoutPage() {
                       'Enter necessary payment details'
                    }
                    {...register('paymentDetails')}
-                   disabled={loading}
+                   disabled={isSubmitting}
                    aria-invalid={errors.paymentDetails ? "true" : "false"}
                    rows={3}
                  />
@@ -300,8 +294,12 @@ export default function PayoutPage() {
              </div>
            )}
 
-          <Button type="submit" className="w-full" disabled={loading || !selectedPaymentMethod || !userProfile || !canRequestPayout}>
-            {loading ? 'Submitting Request...' : <> <Send className="mr-2 h-4 w-4" /> Submit Payout Request (₹{availableBalance.toFixed(2)}) </>}
+          <Button type="submit" className="w-full" disabled={isSubmitting || !selectedPaymentMethod || !userProfile || !canRequestPayout}>
+            {isSubmitting ? (
+              <> <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting... </>
+            ) : (
+              <> <Send className="mr-2 h-4 w-4" /> Submit Payout Request (₹{availableBalance.toFixed(2)}) </>
+            )}
           </Button>
         </form>
       </CardContent>
