@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { collection, addDoc, serverTimestamp, writeBatch, doc, getDocs, query, where, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, writeBatch, doc, getDocs, query, where, updateDoc, Timestamp } from 'firebase/firestore'; // Added Timestamp
 import { db } from '@/lib/firebase/config';
 import type { PayoutRequest, Transaction } from '@/lib/types';
 
@@ -80,7 +80,7 @@ export default function PayoutPage() {
        });
        router.push('/dashboard');
     }
-  }, [user, userProfile, authLoading, router, canRequestPayout]);
+  }, [user, userProfile, authLoading, router, canRequestPayout, toast]);
 
 
  const onSubmit = async (data: PayoutFormValues) => {
@@ -92,37 +92,62 @@ export default function PayoutPage() {
      setLoading(true);
      setError(null);
      const payoutAmount = userProfile.cashbackBalance; // Payout the full available balance
+     console.log(`Starting payout request for User: ${user.uid}, Amount: ₹${payoutAmount.toFixed(2)}`);
 
      // Start Firestore batch write
      const batch = writeBatch(db);
 
      try {
        // 1. Find all 'confirmed' transactions for the user that haven't been paid out yet
+       console.log(`Querying 'confirmed' transactions for user ${user.uid}...`);
        const transactionsCollection = collection(db, 'transactions');
        const q = query(
          transactionsCollection,
          where('userId', '==', user.uid),
          where('status', '==', 'confirmed')
+         // Ensure we only grab transactions *not* already part of a payout
+         // where('payoutId', '==', null) // Consider adding this if transactions might be confirmed but already requested
        );
        const querySnapshot = await getDocs(q);
+       console.log(`Found ${querySnapshot.size} confirmed transactions.`);
 
        const transactionIdsToUpdate: string[] = [];
        let sumOfTransactions = 0;
 
        querySnapshot.forEach((docSnap) => {
-          const tx = docSnap.data() as Omit<Transaction, 'id'>;
+          const txData = docSnap.data();
+          // Basic validation for cashbackAmount existence and type
+           if (typeof txData.cashbackAmount !== 'number') {
+              console.warn(`Transaction ${docSnap.id} has missing or invalid cashbackAmount. Skipping.`);
+              return; // Skip this transaction
+           }
+          const tx = txData as Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'transactionDate' | 'confirmationDate'> & {
+             createdAt: Timestamp, updatedAt: Timestamp, transactionDate: Timestamp, confirmationDate?: Timestamp | null
+          };
           transactionIdsToUpdate.push(docSnap.id);
           sumOfTransactions += tx.cashbackAmount;
+          console.log(`  - Including Tx ID: ${docSnap.id}, Amount: ₹${tx.cashbackAmount.toFixed(2)}`);
           // Prepare to update transaction status within the batch
           const txDocRef = doc(db, 'transactions', docSnap.id);
           batch.update(txDocRef, { status: 'paid' }); // Mark as 'paid' immediately
        });
 
+       console.log(`Total sum of queried 'confirmed' transactions: ₹${sumOfTransactions.toFixed(2)}`);
+       console.log(`User profile available balance: ₹${payoutAmount.toFixed(2)}`);
+
        // Basic validation: Ensure the sum matches the available balance
        // Allow for minor floating point discrepancies
         if (Math.abs(sumOfTransactions - payoutAmount) > 0.01) {
-             console.error(`Mismatch: Sum of confirmed transactions (₹${sumOfTransactions.toFixed(2)}) does not match available balance (₹${payoutAmount.toFixed(2)}).`);
-             throw new Error("Balance calculation error. Please contact support.");
+             // Log more details before throwing error
+             console.error("Data mismatch details:", {
+                 userId: user.uid,
+                 calculatedSum: sumOfTransactions,
+                 profileBalance: payoutAmount,
+                 numberOfTransactions: querySnapshot.size,
+                 transactionIds: transactionIdsToUpdate,
+             });
+             console.error(`Mismatch: Sum of confirmed transactions (₹${sumOfTransactions.toFixed(2)}) does not match available balance (₹${payoutAmount.toFixed(2)}).`); // Log the error
+             throw new Error("Balance calculation error. There's a mismatch between your confirmed cashback and transaction history. Please contact support.");
         }
 
 
@@ -140,6 +165,7 @@ export default function PayoutPage() {
          transactionIds: transactionIdsToUpdate,
        };
        batch.set(newPayoutRequestRef, payoutData);
+       console.log(`Prepared PayoutRequest document: ${newPayoutRequestRef.id}`);
 
 
        // 3. Update the user's profile balance
@@ -148,16 +174,20 @@ export default function PayoutPage() {
          cashbackBalance: 0, // Reset available balance
          // Note: We don't decrease lifetime earnings here
        });
+       console.log(`Prepared user profile balance update (set to 0).`);
 
         // Add the payoutId back to the transactions being marked as paid
         transactionIdsToUpdate.forEach(txId => {
             const txDocRef = doc(db, 'transactions', txId);
             batch.update(txDocRef, { payoutId: newPayoutRequestRef.id });
         });
+        console.log(`Prepared to link ${transactionIdsToUpdate.length} transactions to PayoutRequest ${newPayoutRequestRef.id}.`);
 
 
        // 4. Commit the batch write
+       console.log("Committing batch write...");
        await batch.commit();
+       console.log("Batch commit successful.");
 
        toast({
          title: 'Payout Request Submitted',
@@ -274,7 +304,7 @@ export default function PayoutPage() {
              </div>
            )}
 
-          <Button type="submit" className="w-full" disabled={loading || !selectedPaymentMethod}>
+          <Button type="submit" className="w-full" disabled={loading || !selectedPaymentMethod || !userProfile || !canRequestPayout}>
             {loading ? 'Submitting Request...' : <> <Send className="mr-2 h-4 w-4" /> Submit Payout Request (₹{availableBalance.toFixed(2)}) </>}
           </Button>
         </form>
@@ -311,4 +341,3 @@ function PayoutPageSkeleton() {
         </Card>
     );
 }
-
