@@ -33,7 +33,7 @@ const SheetOverlay = React.forwardRef<
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName
 
 const sheetVariants = cva(
-  "fixed z-50 gap-4 bg-background p-6 shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500", // Added default padding p-6
+  "fixed z-50 gap-4 bg-background p-6 shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
   {
     variants: {
       side: {
@@ -129,7 +129,7 @@ const SheetContent = React.forwardRef<
       >
         {/* Always render a hidden title for accessibility */}
         <VisuallyHidden>
-          <SheetTitle id={titleId}>Sheet Content</SheetTitle> {/* Default hidden title */}
+          <SheetTitle id={titleId}>Sheet Menu</SheetTitle> {/* Default hidden title */}
         </VisuallyHidden>
 
         {/* The user's provided content */}
