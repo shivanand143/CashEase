@@ -2,12 +2,12 @@
 "use client"
 
 import * as React from "react"
-import * as SheetPrimitive from "@radix-ui/react-dialog"
+import * as SheetPrimitive from "@radix-ui/react-dialog" // Sheet uses Dialog primitives
 import { cva, type VariantProps } from "class-variance-authority"
 import { X } from "lucide-react"
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden" // Import VisuallyHidden
 
 import { cn } from "@/lib/utils"
-import { VisuallyHidden } from "@radix-ui/react-visually-hidden" // Import VisuallyHidden
 
 const Sheet = SheetPrimitive.Root
 
@@ -90,58 +90,57 @@ const SheetTitle = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof SheetPrimitive.Title>
 >(({ className, ...props }, ref) => (
-  <SheetPrimitive.Title
+  <SheetPrimitive.Title // Use DialogPrimitive.Title
     ref={ref}
     className={cn("text-lg font-semibold text-foreground", className)}
     {...props}
   />
 ));
-SheetTitle.displayName = SheetPrimitive.Title.displayName;
+SheetTitle.displayName = SheetPrimitive.Title.displayName; // Use DialogPrimitive name
 
 const SheetDescription = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Description>,
   React.ComponentPropsWithoutRef<typeof SheetPrimitive.Description>
 >(({ className, ...props }, ref) => (
-  <SheetPrimitive.Description
+  <SheetPrimitive.Description // Use DialogPrimitive.Description
     ref={ref}
     className={cn("text-sm text-muted-foreground", className)}
     {...props}
   />
 ));
-SheetDescription.displayName = SheetPrimitive.Description.displayName;
+SheetDescription.displayName = SheetPrimitive.Description.displayName; // Use DialogPrimitive name
 
-
+// SheetContent implementation with accessibility fix
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
 >(({ side = "right", className, children, ...props }, ref) => {
-  const generatedId = React.useId();
-  // Check if children contain a SheetTitle or SheetHeader with SheetTitle
+  const titleId = `sheet-title-${React.useId()}`; // Generate a unique ID for the title
+  const descriptionId = `sheet-description-${React.useId()}`; // Generate a unique ID for the description
+
+  // Check if children contain explicit SheetTitle or SheetDescription
   let hasExplicitTitle = false;
+  let hasExplicitDescription = false;
   React.Children.forEach(children, (child) => {
-      if (React.isValidElement(child)) {
-          if (child.type === SheetTitle) {
-              hasExplicitTitle = true;
-          } else if (child.type === SheetHeader && React.isValidElement(child.props.children)) {
-               // Check if SheetHeader's children contain SheetTitle
-               React.Children.forEach(child.props.children, (headerChild) => {
-                   if (React.isValidElement(headerChild) && headerChild.type === SheetTitle) {
-                       hasExplicitTitle = true;
-                   }
-               });
-          } else if (child.type === SheetHeader && Array.isArray(child.props.children)) {
-               // Check if SheetHeader's children array contains SheetTitle
-               child.props.children.forEach((headerChild: React.ReactNode) => {
-                   if (React.isValidElement(headerChild) && headerChild.type === SheetTitle) {
-                       hasExplicitTitle = true;
-                   }
-               });
+    if (React.isValidElement(child)) {
+      // Check within SheetHeader as well
+      if (child.type === SheetHeader) {
+        React.Children.forEach(child.props.children, (headerChild) => {
+          if (React.isValidElement(headerChild)) {
+            if (headerChild.type === SheetTitle) hasExplicitTitle = true;
+            if (headerChild.type === SheetDescription) hasExplicitDescription = true;
           }
+        });
+      } else {
+        if (child.type === SheetTitle) hasExplicitTitle = true;
+        if (child.type === SheetDescription) hasExplicitDescription = true;
       }
+    }
   });
 
-  // Determine aria-labelledby. Use provided one if exists, otherwise use generated ID.
-  const labelledById = props['aria-labelledby'] || (hasExplicitTitle ? undefined : generatedId);
+  // Determine the ID to use for aria-labelledby and aria-describedby
+  const labelledById = props['aria-labelledby'] || (hasExplicitTitle ? undefined : titleId);
+  const describedById = props['aria-describedby'] || (hasExplicitDescription ? undefined : descriptionId);
 
   return (
     <SheetPortal>
@@ -149,29 +148,34 @@ const SheetContent = React.forwardRef<
       <SheetPrimitive.Content
         ref={ref}
         className={cn(sheetVariants({ side }), className)}
-        aria-labelledby={labelledById} // Set aria-labelledby
+        aria-labelledby={labelledById} // Use the determined title ID
+        aria-describedby={describedById} // Use the determined description ID
         {...props} // Spread remaining props
       >
-        {/* Render a visually hidden title if no explicit title was found and no aria-labelledby was provided */}
+        {/* Render hidden title/description ONLY if they are not explicitly provided */}
         {!hasExplicitTitle && !props['aria-labelledby'] && (
           <VisuallyHidden asChild>
-            <SheetTitle id={generatedId}>Sheet Menu</SheetTitle>
-             {/* Optional: Add a default description too */}
-             {/* <SheetDescription>Navigation menu and options</SheetDescription> */}
+            <SheetTitle id={titleId}>Sheet Menu</SheetTitle> {/* Use the generated ID */}
+          </VisuallyHidden>
+        )}
+         {!hasExplicitDescription && !props['aria-describedby'] && (
+          <VisuallyHidden asChild>
+             {/* Default description or leave it out */}
+            <SheetDescription id={descriptionId}>Navigation menu and options</SheetDescription> {/* Use the generated ID */}
           </VisuallyHidden>
         )}
         {children}
         <SheetClose asChild>
-            <button className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
-                 <X className="h-4 w-4" />
-                 <span className="sr-only">Close</span>
-            </button>
+          <button className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close</span>
+          </button>
         </SheetClose>
       </SheetPrimitive.Content>
     </SheetPortal>
   );
-})
-SheetContent.displayName = SheetPrimitive.Content.displayName
+});
+SheetContent.displayName = SheetPrimitive.Content.displayName;
 
 
 export {
