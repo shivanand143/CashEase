@@ -105,7 +105,7 @@ function AdminStoresPageContent() {
       } catch (err) {
         console.error("Error fetching stores:", err);
         setError("Failed to load stores. Please try again later.");
-        setStoresExist(true);
+        setStoresExist(true); // Assume stores might exist despite error
       } finally {
         setLoading(false);
       }
@@ -137,7 +137,7 @@ function AdminStoresPageContent() {
                   affiliateLink: storeData.affiliateLink,
                   cashbackRate: storeData.cashbackRate,
                   cashbackRateValue: storeData.cashbackRateValue,
-                  cashbackType: storeData.cashbackType,
+                  cashbackType: storeData.cashbackType as CashbackType, // Ensure correct type
                   description: storeData.description || `${storeData.name} deals and offers.`,
                   categories: storeData.categories,
                   isActive: true,
@@ -365,9 +365,11 @@ function AdminStoresPageContent() {
            ) : (
              <div className="text-center text-muted-foreground py-8 flex flex-col items-center gap-4">
                  <p>No stores found in the database.</p>
-                 <Button onClick={handleSeedData} disabled={isSeeding}>
-                     <DatabaseZap className="mr-2 h-4 w-4" /> {isSeeding ? 'Seeding...' : 'Seed Example Data'}
-                 </Button>
+                 {!loading && ( // Only show seed button if not loading
+                    <Button onClick={handleSeedData} disabled={isSeeding} variant="secondary">
+                        <DatabaseZap className="mr-2 h-4 w-4" /> {isSeeding ? 'Seeding...' : 'Seed Example Data'}
+                    </Button>
+                 )}
              </div>
            )}
            {/* TODO: Add Pagination */}
