@@ -105,30 +105,31 @@ export default function PayoutPage() {
        const q = query(
          transactionsCollection,
          where('userId', '==', user.uid),
-         where('status', '==', 'confirmed')
-         // Ensure we only grab transactions *not* already part of a payout
-         // where('payoutId', '==', null) // Consider adding this if transactions might be confirmed but already requested
+         where('status', '==', 'confirmed'), // Fetch 'confirmed'
+         where('payoutId', '==', null) // Ensure not already linked to a payout
        );
        const querySnapshot = await getDocs(q);
-       console.log(`Found ${querySnapshot.size} confirmed transactions.`);
+       console.log(`Found ${querySnapshot.size} 'confirmed' transactions with no payoutId.`);
 
        const transactionIdsToUpdate: string[] = [];
        let sumOfTransactions = 0;
 
        querySnapshot.forEach((docSnap) => {
-          const txData = docSnap.data();
-          // Basic validation for cashbackAmount existence and type
-           if (typeof txData.cashbackAmount !== 'number') {
-              console.warn(`Transaction ${docSnap.id} has missing or invalid cashbackAmount. Skipping.`);
-              return; // Skip this transaction
-           }
-          const tx = txData as Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'transactionDate' | 'confirmationDate'> & {
-             createdAt: Timestamp, updatedAt: Timestamp, transactionDate: Timestamp, confirmationDate?: Timestamp | null
-          };
-          transactionIdsToUpdate.push(docSnap.id);
-          sumOfTransactions += tx.cashbackAmount;
-          console.log(`  - Including Tx ID: ${docSnap.id}, Amount: ₹${tx.cashbackAmount.toFixed(2)}`);
+           console.log(`Processing transaction doc ID: ${docSnap.id}, Data:`, docSnap.data()); // Log each transaction found
+           const txData = docSnap.data();
+           // Basic validation for cashbackAmount existence and type
+            if (typeof txData.cashbackAmount !== 'number') {
+               console.warn(`Transaction ${docSnap.id} has missing or invalid cashbackAmount. Skipping.`);
+               return; // Skip this transaction
+            }
+           const tx = txData as Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'transactionDate' | 'confirmationDate'> & {
+              createdAt: Timestamp, updatedAt: Timestamp, transactionDate: Timestamp, confirmationDate?: Timestamp | null
+           };
+           transactionIdsToUpdate.push(docSnap.id);
+           sumOfTransactions += tx.cashbackAmount; // <-- Summing up
+           console.log(`  - Including Tx ID: ${docSnap.id}, Amount: ₹${tx.cashbackAmount.toFixed(2)}`);
        });
+
 
        console.log(`Total sum of queried 'confirmed' transactions: ₹${sumOfTransactions.toFixed(2)}`);
        console.log(`User profile available balance: ₹${payoutAmount.toFixed(2)}`);
@@ -136,8 +137,14 @@ export default function PayoutPage() {
        // Basic validation: Ensure the sum matches the available balance
        // Allow for minor floating point discrepancies
         if (Math.abs(sumOfTransactions - payoutAmount) > 0.01) {
-            // Simplified error logging - the specific message is more useful here
-             console.error(`Mismatch: Sum of confirmed transactions (₹${sumOfTransactions.toFixed(2)}) does not match available balance (₹${payoutAmount.toFixed(2)}).`);
+             // Log more details before throwing error
+             console.error("Data mismatch details:", {
+                 userId: user.uid,
+                 calculatedSum: sumOfTransactions,
+                 profileBalance: payoutAmount,
+                 numberOfTransactionsFound: querySnapshot.size,
+                 transactionIdsIncluded: transactionIdsToUpdate // Log IDs included in sum
+             });
              throw new Error("Balance calculation error. There's a mismatch between your confirmed cashback and transaction history. Please contact support.");
         }
 
@@ -167,15 +174,15 @@ export default function PayoutPage() {
        });
        console.log(`Prepared user profile balance update (set to 0).`);
 
-        // Add the payoutId back to the transactions being marked as paid
+        // 4. Update the status of the included transactions to 'paid' and link them to the payout request
         transactionIdsToUpdate.forEach(txId => {
             const txDocRef = doc(db, 'transactions', txId);
             batch.update(txDocRef, { status: 'paid', payoutId: newPayoutRequestRef.id });
         });
-        console.log(`Prepared to link ${transactionIdsToUpdate.length} transactions to PayoutRequest ${newPayoutRequestRef.id}.`);
+        console.log(`Prepared to mark ${transactionIdsToUpdate.length} transactions as 'paid' and link to PayoutRequest ${newPayoutRequestRef.id}.`);
 
 
-       // 4. Commit the batch write
+       // 5. Commit the batch write
        console.log("Committing batch write...");
        await batch.commit();
        console.log("Batch commit successful.");
@@ -333,3 +340,5 @@ function PayoutPageSkeleton() {
         </Card>
     );
 }
+
+    
