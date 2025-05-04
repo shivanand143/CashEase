@@ -121,26 +121,43 @@ const SheetContent = React.forwardRef<
   // Check if children contain explicit SheetTitle or SheetDescription
   let hasExplicitTitle = false;
   let hasExplicitDescription = false;
+  let explicitTitleId: string | undefined;
+  let explicitDescriptionId: string | undefined;
+
   React.Children.forEach(children, (child) => {
     if (React.isValidElement(child)) {
       // Check within SheetHeader as well
       if (child.type === SheetHeader) {
         React.Children.forEach(child.props.children, (headerChild) => {
           if (React.isValidElement(headerChild)) {
-            if (headerChild.type === SheetTitle) hasExplicitTitle = true;
-            if (headerChild.type === SheetDescription) hasExplicitDescription = true;
+            if (headerChild.type === SheetTitle) {
+               hasExplicitTitle = true;
+               explicitTitleId = headerChild.props.id;
+            }
+            if (headerChild.type === SheetDescription) {
+               hasExplicitDescription = true;
+               explicitDescriptionId = headerChild.props.id;
+            }
           }
         });
       } else {
-        if (child.type === SheetTitle) hasExplicitTitle = true;
-        if (child.type === SheetDescription) hasExplicitDescription = true;
+        if (child.type === SheetTitle) {
+           hasExplicitTitle = true;
+           explicitTitleId = child.props.id;
+        }
+        if (child.type === SheetDescription) {
+           hasExplicitDescription = true;
+           explicitDescriptionId = child.props.id;
+        }
       }
     }
   });
 
   // Determine the ID to use for aria-labelledby and aria-describedby
-  const labelledById = props['aria-labelledby'] || (hasExplicitTitle ? undefined : titleId);
-  const describedById = props['aria-describedby'] || (hasExplicitDescription ? undefined : descriptionId);
+  // Prioritize explicitly provided IDs, then the IDs of SheetTitle/SheetDescription children, then generated fallback IDs
+  const labelledById = props['aria-labelledby'] || explicitTitleId || (hasExplicitTitle ? undefined : titleId);
+  const describedById = props['aria-describedby'] || explicitDescriptionId || (hasExplicitDescription ? undefined : descriptionId);
+
 
   return (
     <SheetPortal>
@@ -152,17 +169,16 @@ const SheetContent = React.forwardRef<
         aria-describedby={describedById} // Set aria-describedby
         {...props} // Spread remaining props
       >
-        {/* Render hidden title/description ONLY if they are not explicitly provided */}
+        {/* Render hidden title/description ONLY if they are not explicitly provided and no aria-labelledby/describedby is set*/}
         {!hasExplicitTitle && !props['aria-labelledby'] && (
-          <VisuallyHidden> {/* Removed asChild */}
-            <SheetTitle id={titleId}>Sheet Menu</SheetTitle> {/* Use the generated ID */}
-          </VisuallyHidden>
+           <VisuallyHidden>
+             <SheetPrimitive.Title id={titleId}>Sheet Menu</SheetPrimitive.Title>
+           </VisuallyHidden>
         )}
          {!hasExplicitDescription && !props['aria-describedby'] && (
-          <VisuallyHidden> {/* Removed asChild */}
-             {/* Default description or leave it out */}
-            <SheetDescription id={descriptionId}>Navigation menu and options</SheetDescription> {/* Use the generated ID */}
-          </VisuallyHidden>
+           <VisuallyHidden>
+             <SheetPrimitive.Description id={descriptionId}>Navigation menu and options</SheetPrimitive.Description>
+           </VisuallyHidden>
         )}
         {children}
         <SheetClose asChild>
