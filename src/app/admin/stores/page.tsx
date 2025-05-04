@@ -5,7 +5,7 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { collection, getDocs, query, orderBy, deleteDoc, doc, addDoc, updateDoc, serverTimestamp, where, getCountFromServer, writeBatch } from 'firebase/firestore'; // Added writeBatch
+import { collection, getDocs, query, orderBy, deleteDoc, doc, addDoc, updateDoc, serverTimestamp, where, getCountFromServer, writeBatch, limit } from 'firebase/firestore'; // Added limit
 import { db } from '@/lib/firebase/config';
 import type { Store, CashbackType } from '@/lib/types'; // Import CashbackType
 import { Button } from '@/components/ui/button';
@@ -33,43 +33,74 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger, // Import AlertDialogTrigger
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast";
 import AdminGuard from '@/components/guards/admin-guard'; // Ensure page is protected
 import StoreForm from '@/components/admin/store-form'; // Import the StoreForm component
 
-// Mock data for seeding (if needed)
+// More detailed mock data for seeding
 const initialStoresData = [
-  { name: 'Amazon', logoUrl: 'https://picsum.photos/seed/amazon/100/50', cashbackRate: 'Up to 3%', dataAiHint: "amazon logo", affiliateLink: 'https://amazon.in?tag=cashease-21' },
-  { name: 'Flipkart', logoUrl: 'https://picsum.photos/seed/flipkart/100/50', cashbackRate: 'Up to 2%', dataAiHint: "flipkart logo", affiliateLink: 'https://flipkart.com?affid=cashease' },
-  { name: 'Myntra', logoUrl: 'https://picsum.photos/seed/myntra/100/50', cashbackRate: '1.5% Cashback', dataAiHint: "myntra logo", affiliateLink: 'https://myntra.com?ref=cashease' },
-  { name: 'Ajio', logoUrl: 'https://picsum.photos/seed/ajio/100/50', cashbackRate: 'Up to 4%', dataAiHint: "ajio logo", affiliateLink: 'https://ajio.com?cjevent=cashease' },
-  { name: 'BigBasket', logoUrl: 'https://picsum.photos/seed/bigbasket/100/50', cashbackRate: 'Flat ₹50', dataAiHint: "bigbasket logo", affiliateLink: 'https://bigbasket.com?bbref=cashease' },
-  { name: 'MakeMyTrip', logoUrl: 'https://picsum.photos/seed/makemytrip/100/50', cashbackRate: 'Up to ₹1000', dataAiHint: "makemytrip logo", affiliateLink: 'https://makemytrip.com?partner=cashease' },
+  { name: 'Amazon IN', logoUrl: 'https://picsum.photos/seed/amazonin/100/50', cashbackRate: 'Up to 5%', dataAiHint: "amazon india logo", affiliateLink: 'https://amazon.in?tag=cashease-21', description: 'Wide range of products from electronics to fashion.', categories: ['Electronics', 'Fashion', 'Home', 'Books', 'Grocery'], isFeatured: true },
+  { name: 'Flipkart', logoUrl: 'https://picsum.photos/seed/flipkart/100/50', cashbackRate: 'Up to 4.5%', dataAiHint: "flipkart logo", affiliateLink: 'https://flipkart.com?affid=cashease', description: 'Leading Indian e-commerce platform for various goods.', categories: ['Electronics', 'Fashion', 'Home', 'Mobiles'], isFeatured: true },
+  { name: 'Myntra', logoUrl: 'https://picsum.photos/seed/myntra/100/50', cashbackRate: 'Flat 6% Cashback', dataAiHint: "myntra logo", affiliateLink: 'https://myntra.com?ref=cashease', description: 'Your destination for fashion and lifestyle products.', categories: ['Fashion', 'Accessories', 'Beauty'], isFeatured: true },
+  { name: 'Ajio', logoUrl: 'https://picsum.photos/seed/ajio/100/50', cashbackRate: 'Up to 8%', dataAiHint: "ajio logo", affiliateLink: 'https://ajio.com?cjevent=cashease', description: 'Curated collection of fashion brands.', categories: ['Fashion', 'Accessories'], isFeatured: false },
+  { name: 'BigBasket', logoUrl: 'https://picsum.photos/seed/bigbasket/100/50', cashbackRate: 'Flat ₹75 on First Order', dataAiHint: "bigbasket logo", affiliateLink: 'https://bigbasket.com?bbref=cashease', description: 'Online grocery shopping and delivery.', categories: ['Grocery', 'Essentials'], isFeatured: false },
+  { name: 'MakeMyTrip', logoUrl: 'https://picsum.photos/seed/makemytrip/100/50', cashbackRate: 'Up to ₹1500 on Flights', dataAiHint: "makemytrip logo", affiliateLink: 'https://makemytrip.com?partner=cashease', description: 'Book flights, hotels, and holiday packages.', categories: ['Travel', 'Flights', 'Hotels'], isFeatured: true },
+  { name: 'Swiggy', logoUrl: 'https://picsum.photos/seed/swiggy/100/50', cashbackRate: 'Flat 20% off', dataAiHint: "swiggy logo", affiliateLink: 'https://swiggy.com?partner=cashease', description: 'Order food online from nearby restaurants.', categories: ['Food', 'Restaurant'], isFeatured: false },
+  { name: 'PharmEasy', logoUrl: 'https://picsum.photos/seed/pharmeasy/100/50', cashbackRate: 'Flat 15% + 5% CB', dataAiHint: "pharmeasy logo", affiliateLink: 'https://pharmeasy.in?partner=cashease', description: 'Online pharmacy and healthcare products.', categories: ['Health', 'Pharmacy', 'Medicine'], isFeatured: false },
+  { name: 'Nykaa', logoUrl: 'https://picsum.photos/seed/nykaa/100/50', cashbackRate: 'Up to 7%', dataAiHint: "nykaa logo", affiliateLink: 'https://nykaa.com?partner=cashease', description: 'Beauty, makeup, and wellness products.', categories: ['Beauty', 'Cosmetics', 'Skincare'], isFeatured: true },
+  { name: 'BookMyShow', logoUrl: 'https://picsum.photos/seed/bookmyshow/100/50', cashbackRate: '₹100 off on Movies', dataAiHint: "bookmyshow logo", affiliateLink: 'https://bookmyshow.com?partner=cashease', description: 'Book movie tickets, events, and plays.', categories: ['Entertainment', 'Movies', 'Events'], isFeatured: false },
 ];
+
 
 function parseCashback(rateString: string): { type: CashbackType, value: number } {
     let type: CashbackType = 'percentage'; // Default
     let value = 0;
 
-    const fixedMatch = rateString.match(/(?:Flat|Upto)\s*₹(\d+(\.\d+)?)/i);
+    // Improved regex to handle various formats like "Up to ₹1500", "Flat ₹75", "Flat 20%", "Up to 5%"
+    const fixedMatch = rateString.match(/(?:flat|up to)\s*₹\s*(\d+(\.\d+)?)/i);
     if (fixedMatch) {
       type = 'fixed';
       value = parseFloat(fixedMatch[1]);
       return { type, value };
     }
 
-    const percentageMatch = rateString.match(/(\d+(\.\d+)?)\%/);
-     if (percentageMatch) {
+    const percentageMatch = rateString.match(/(\d+(\.\d+)?)%/);
+    if (percentageMatch) {
+        type = 'percentage';
+        value = parseFloat(percentageMatch[1]);
+        return { type, value };
+    }
+
+    // Handle cases like "Flat 20% off" - treat as percentage
+    const flatPercentageMatch = rateString.match(/flat\s*(\d+(\.\d+)?)\s*%/i);
+    if (flatPercentageMatch) {
        type = 'percentage';
-       value = parseFloat(percentageMatch[1]);
+       value = parseFloat(flatPercentageMatch[1]);
        return { type, value };
-     }
+    }
+
+    // Handle "CB" as Cashback (treat as percentage if no currency symbol)
+    const cashbackSuffixMatch = rateString.match(/(\d+(\.\d+)?)\s*cb/i);
+    if (cashbackSuffixMatch) {
+        type = 'percentage'; // Assuming CB implies percentage unless ₹ specified elsewhere
+        value = parseFloat(cashbackSuffixMatch[1]);
+        return { type, value };
+    }
+
 
     console.warn(`Could not parse cashback rate: "${rateString}". Using default 0%.`);
     return { type: 'percentage', value: 0 }; // Return default if parsing fails
 }
+
+// Use provided categories if available, otherwise infer
+function getCategories(storeData: typeof initialStoresData[0]): string[] {
+    return storeData.categories && storeData.categories.length > 0
+        ? storeData.categories
+        : inferCategories(storeData.name); // Fallback to inference
+}
+
 
 function inferCategories(storeName: string): string[] {
     const lowerName = storeName.toLowerCase();
@@ -77,6 +108,10 @@ function inferCategories(storeName: string): string[] {
     if (lowerName.includes('myntra') || lowerName.includes('ajio')) return ['Fashion', 'Accessories'];
     if (lowerName.includes('bigbasket')) return ['Grocery', 'Essentials'];
     if (lowerName.includes('makemytrip')) return ['Travel', 'Flights', 'Hotels'];
+    if (lowerName.includes('swiggy')) return ['Food', 'Restaurant'];
+    if (lowerName.includes('pharmeasy')) return ['Health', 'Pharmacy'];
+    if (lowerName.includes('nykaa')) return ['Beauty', 'Cosmetics'];
+    if (lowerName.includes('bookmyshow')) return ['Entertainment', 'Movies'];
     // Add more category inference rules here
     return ['General']; // Default category
 }
@@ -142,7 +177,7 @@ function AdminStoresPageContent() {
           initialStoresData.forEach(storeData => {
               const docRef = doc(storesCollection); // Auto-generate ID
               const { type, value } = parseCashback(storeData.cashbackRate);
-              const categories = inferCategories(storeData.name);
+              const categories = getCategories(storeData); // Use specific or inferred categories
 
               const newStore: Omit<Store, 'id' | 'createdAt' | 'updatedAt'> = {
                   name: storeData.name,
@@ -151,10 +186,10 @@ function AdminStoresPageContent() {
                   cashbackRate: storeData.cashbackRate,
                   cashbackRateValue: value,
                   cashbackType: type,
-                  description: `${storeData.name} offers and deals`, // Example description
+                  description: storeData.description || `${storeData.name} deals and offers.`, // Use provided or default description
                   categories: categories,
                   isActive: true,
-                   isFeatured: Math.random() < 0.3, // Randomly feature some stores
+                  isFeatured: storeData.isFeatured ?? false, // Use provided featured status or default to false
               };
               batch.set(docRef, {
                   ...newStore,
@@ -195,14 +230,15 @@ function AdminStoresPageContent() {
        // Check for associated coupons before deleting
        try {
            const couponsCollection = collection(db, 'coupons');
-           const q = query(couponsCollection, where('storeId', '==', storeId));
-           const countSnapshot = await getCountFromServer(q);
+           const q = query(couponsCollection, where('storeId', '==', storeId), limit(1)); // Just check if any exist
+           const querySnapshot = await getDocs(q);
 
-           if (countSnapshot.data().count > 0) {
+
+           if (!querySnapshot.empty) {
                toast({
                    variant: "destructive",
                    title: "Deletion Blocked",
-                   description: `Cannot delete store "${storeName}" as it has ${countSnapshot.data().count} associated coupons. Please delete or reassign the coupons first.`,
+                   description: `Cannot delete store "${storeName}" as it has associated coupons. Please delete or reassign the coupons first.`,
                });
                return; // Stop deletion process
            }
