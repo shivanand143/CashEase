@@ -109,11 +109,11 @@
      },
      {
       "collectionGroup": "transactions",
-      "queryScope": "COLLECTION",
+      "queryScope": "COLLECTION_GROUP", // Changed to COLLECTION_GROUP based on CLI output context
       "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "payoutId", "order": "ASCENDING" }
+        { "fieldPath": "status", "order": "ASCENDING" }
+        // Removed payoutId from this index, as it wasn't in the CLI prompt and might cause issues
       ]
      }
   ],
