@@ -5,7 +5,7 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore'; // Import Timestamp
 import { db } from '@/lib/firebase/config';
 import type { Transaction } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'; // Added CardFooter
@@ -52,11 +52,11 @@ export default function DashboardPage() {
           const transactionsData = querySnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),
-            // Ensure date fields are converted
-            transactionDate: doc.data().transactionDate?.toDate ? doc.data().transactionDate.toDate() : new Date(),
-             confirmationDate: doc.data().confirmationDate?.toDate ? doc.data().confirmationDate.toDate() : null,
-             createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : new Date(),
-             updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate() : new Date(),
+            // Ensure date fields are converted safely
+            transactionDate: doc.data().transactionDate instanceof Timestamp ? doc.data().transactionDate.toDate() : (doc.data().transactionDate || new Date(0)),
+            confirmationDate: doc.data().confirmationDate instanceof Timestamp ? doc.data().confirmationDate.toDate() : null,
+            createdAt: doc.data().createdAt instanceof Timestamp ? doc.data().createdAt.toDate() : (doc.data().createdAt || new Date(0)),
+            updatedAt: doc.data().updatedAt instanceof Timestamp ? doc.data().updatedAt.toDate() : (doc.data().updatedAt || new Date(0)),
           })) as Transaction[];
           setTransactions(transactionsData);
         } catch (err) {
@@ -166,7 +166,7 @@ export default function DashboardPage() {
            </Button>
             {userProfile && !canRequestPayout && (
               <p className="text-sm text-muted-foreground mt-2">
-                 You need ₹{ balanceDifference.toFixed(2) } more to request a payout.
+                 You need ₹{ balanceDifference > 0 ? balanceDifference.toFixed(2) : '0.00' } more to request a payout.
               </p>
             )}
              {!userProfile && <Skeleton className="h-4 w-1/3 mt-2" />} {/* Skeleton for the needed amount text */}

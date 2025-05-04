@@ -69,13 +69,13 @@ export default function SignupPage() {
      // 1. Create user in Firebase Authentication
      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
      const user = userCredential.user;
-      console.log("User created in Firebase Auth:", user.uid);
+     console.log("User created in Firebase Auth:", user.uid);
 
      // 2. Update Firebase Auth profile (optional but good practice)
      await updateProfile(user, {
        displayName: data.displayName,
      });
-      console.log("Firebase Auth profile updated with display name:", data.displayName);
+     console.log("Firebase Auth profile updated with display name:", data.displayName);
 
      // Ensure user object is refreshed to include displayName for profile creation
      // It might not be immediately available, so we pass it directly if needed.
@@ -86,8 +86,9 @@ export default function SignupPage() {
      } as User; // Cast needed as user doesn't initially have all properties
 
      // 3. Create user profile document in Firestore using the function from useAuth
-     await createOrUpdateUserProfile(userWithProfileData, referralCode); // Pass referral code
-      console.log("Firestore profile created/updated via useAuth function.");
+     // Pass the referral code obtained from the URL params
+     await createOrUpdateUserProfile(userWithProfileData, referralCode);
+     console.log("Firestore profile created/updated via useAuth function with referral code:", referralCode);
 
      toast({
        title: 'Signup Successful',
@@ -138,7 +139,7 @@ export default function SignupPage() {
      setLoadingGoogle(true);
      setError(null);
      try {
-         await signInWithGoogle(); // This now handles profile creation/update internally
+         await signInWithGoogle(); // This now handles profile creation/update internally, including referral code from URL
          // No need for toast here, it's handled in useAuth
          router.push('/dashboard'); // Redirect on success
      } catch (err: any) {
@@ -251,5 +252,3 @@ export default function SignupPage() {
     </div>
   );
 }
-
-     

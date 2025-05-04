@@ -57,31 +57,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     let referredByUid: string | null = null;
     let referrerDocRef: any = null; // Store referrer doc ref
-
-    // If referredByCode is provided, find the referrer's UID
-    if (referredByCode) {
-      try {
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef, where('referralCode', '==', referredByCode), limit(1));
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          const referrerDoc = querySnapshot.docs[0];
-          referredByUid = referrerDoc.id;
-          referrerDocRef = referrerDoc.ref; // Get the DocumentReference
-          console.log(`Referrer found for code ${referredByCode}: User ID ${referredByUid}`);
-        } else {
-          console.warn(`Referral code ${referredByCode} not found.`);
-        }
-      } catch (error) {
-        console.error("Error finding referrer by code:", error);
-      }
-    }
-
+    let canUpdateReferrerCount = false; // Flag to ensure we only update if it's a new user being referred
 
     try {
       const docSnap = await getDoc(userDocRef);
       let existingData: Partial<UserProfile> = {};
-      let isNewUser = !docSnap.exists(); // Check if this is a new Firestore user document
+      let isNewUserDocument = !docSnap.exists(); // Check if this is a new Firestore user document
 
       if (docSnap.exists()) {
         existingData = docSnap.data() as Partial<UserProfile>;
@@ -90,8 +71,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
          console.log("No existing profile found, creating new one.");
       }
 
+      // Determine referrer UID only if it's a new document and a code is provided
+      if (isNewUserDocument && referredByCode) {
+         console.log(`New user document, checking referral code: ${referredByCode}`);
+         try {
+           const usersRef = collection(db, 'users');
+           const q = query(usersRef, where('referralCode', '==', referredByCode), limit(1));
+           const querySnapshot = await getDocs(q);
+           if (!querySnapshot.empty) {
+             const referrerDoc = querySnapshot.docs[0];
+             // IMPORTANT: Prevent self-referral
+             if (referrerDoc.id !== userToUpdate.uid) {
+                 referredByUid = referrerDoc.id;
+                 referrerDocRef = referrerDoc.ref; // Get the DocumentReference
+                 canUpdateReferrerCount = true; // Okay to update count
+                 console.log(`Referrer found for code ${referredByCode}: User ID ${referredByUid}`);
+             } else {
+                 console.warn(`User ${userToUpdate.uid} attempted self-referral with code ${referredByCode}. Ignoring.`);
+             }
+           } else {
+             console.warn(`Referral code ${referredByCode} not found or invalid.`);
+           }
+         } catch (error) {
+           console.error("Error finding referrer by code:", error);
+         }
+      }
+
+
        const roleToSet = userToUpdate.role ?? existingData.role ?? 'user';
 
+      // Ensure default values for cashback and referralCount are set if missing
       const userProfileData: Omit<UserProfile, 'uid'> & { createdAt?: any, updatedAt?: any } = {
         email: userToUpdate.email ?? existingData.email ?? null,
         displayName: userToUpdate.displayName ?? existingData.displayName ?? 'User',
@@ -100,24 +109,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         cashbackBalance: existingData.cashbackBalance ?? 0,
         pendingCashback: existingData.pendingCashback ?? 0,
         lifetimeCashback: existingData.lifetimeCashback ?? 0,
-        referralCode: existingData.referralCode ?? generateReferralCode(),
-        referralCount: existingData.referralCount ?? 0, // Initialize referral count
-         referredBy: isNewUser && referredByUid ? referredByUid : (existingData.referredBy ?? null),
+        referralCode: existingData.referralCode || generateReferralCode(), // Assign if missing
+        referralCount: existingData.referralCount ?? 0, // Default to 0
+         // Set referredBy only if it's a new user and a valid referrer was found
+         referredBy: isNewUserDocument && referredByUid ? referredByUid : (existingData.referredBy ?? null),
          isDisabled: existingData.isDisabled ?? false,
-         ...(isNewUser && { createdAt: serverTimestamp() }),
+         ...(isNewUserDocument && { createdAt: serverTimestamp() }), // Set createdAt only if truly new document
          updatedAt: serverTimestamp(),
       };
 
-       if (!isNewUser) {
-           delete userProfileData.createdAt;
-       }
+      // Ensure we don't overwrite createdAt if merging
+      if (!isNewUserDocument) {
+        delete userProfileData.createdAt;
+      }
 
       // Create or update the user's profile
       await setDoc(userDocRef, userProfileData, { merge: true });
       console.log(`User profile successfully created/updated for ${userToUpdate.uid}`);
 
-       // Increment referrer's count if applicable
-       if (isNewUser && referredByUid && referrerDocRef) {
+       // Increment referrer's count ONLY if it's a new user being referred by someone else
+       if (canUpdateReferrerCount && referrerDocRef) {
            try {
                // IMPORTANT: This is a client-side update. For better security and reliability,
                // this should ideally be handled by a Cloud Function triggered by user creation.
@@ -172,15 +183,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const data = docSnap.data() as DocumentData;
              console.log("Raw profile data from Firestore:", data); // Log raw data
              // Helper function to safely convert Firestore Timestamps or existing Dates
-              const safeToDate = (fieldValue: any): Date => {
+              const safeToDate = (fieldValue: any): Date | null => {
                   if (fieldValue instanceof Timestamp) {
                       return fieldValue.toDate();
                   } else if (fieldValue instanceof Date) {
                       return fieldValue;
                   }
-                  // Fallback or default date if the field is missing or invalid
-                  return new Date(); // Or consider returning null/undefined based on needs
+                   // Return null if the field is missing or not a valid date type
+                   return null;
               };
+
+             const createdAtDate = safeToDate(data.createdAt);
+             const updatedAtDate = safeToDate(data.updatedAt);
+
+             if (!createdAtDate) {
+                 console.warn(`User ${docSnap.id} has missing or invalid createdAt field.`);
+             }
 
             const profileData: UserProfile = {
               uid: docSnap.id,
@@ -195,8 +213,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               referralCount: typeof data.referralCount === 'number' ? data.referralCount : 0, // Default to 0
               referredBy: data.referredBy ?? null, // Handle undefined/null from DB
               isDisabled: typeof data.isDisabled === 'boolean' ? data.isDisabled : false, // Handle isDisabled field, default false
-              createdAt: safeToDate(data.createdAt), // Convert safely
-              updatedAt: safeToDate(data.updatedAt), // Convert safely
+              createdAt: createdAtDate || new Date(0), // Use fallback if null
+              updatedAt: updatedAtDate || createdAtDate || new Date(0), // Use fallback if null
             };
             console.log("Processed profile data:", profileData); // Log processed data
             setUserProfile(profileData);
@@ -319,7 +337,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log("Sign out successful via hook call.");
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
       // State updates (user=null, profile=null, loading=false) are handled by onAuthStateChanged
-    } catch (error: any) { // Catch any error
+    } catch (error) { // Catch any error
       console.error('Error signing out:', error);
       const errorMsg = `Sign out error: ${error instanceof Error ? error.message : String(error)}`;
       setAuthError(errorMsg);

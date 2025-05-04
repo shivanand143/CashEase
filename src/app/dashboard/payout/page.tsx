@@ -10,7 +10,7 @@ import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { collection, addDoc, serverTimestamp, writeBatch, doc, getDocs, query, where, updateDoc, Timestamp } from 'firebase/firestore'; // Added Timestamp
 import { db } from '@/lib/firebase/config';
-import type { PayoutRequest, Transaction } from '@/lib/types';
+import type { PayoutRequest, Transaction, UserProfile } from '@/lib/types'; // Import UserProfile
 
 import { Button } from '@/components/ui/button';
 import {
@@ -102,10 +102,11 @@ export default function PayoutPage() {
        // 1. Find all 'confirmed' transactions for the user that haven't been paid out yet
        console.log(`Querying 'confirmed' transactions for user ${user.uid}...`);
        const transactionsCollection = collection(db, 'transactions');
+        // Query for 'confirmed' status WHERE payoutId is null
        const q = query(
          transactionsCollection,
          where('userId', '==', user.uid),
-         where('status', '==', 'confirmed'), // Fetch 'confirmed'
+         where('status', '==', 'confirmed'),
          where('payoutId', '==', null) // Ensure not already linked to a payout
        );
        const querySnapshot = await getDocs(q);
@@ -131,23 +132,15 @@ export default function PayoutPage() {
        });
 
 
-       console.log(`Total sum of queried 'confirmed' transactions: ₹${sumOfTransactions.toFixed(2)}`);
+       console.log(`Total sum of queried 'confirmed' transactions with no payoutId: ₹${sumOfTransactions.toFixed(2)}`);
        console.log(`User profile available balance: ₹${payoutAmount.toFixed(2)}`);
 
-       // Basic validation: Ensure the sum matches the available balance
-       // Allow for minor floating point discrepancies
+        // Stricter validation: Ensure the sum exactly matches the available balance
         if (Math.abs(sumOfTransactions - payoutAmount) > 0.01) {
              // Log more details before throwing error
-             console.error("Data mismatch details:", {
-                 userId: user.uid,
-                 calculatedSum: sumOfTransactions,
-                 profileBalance: payoutAmount,
-                 numberOfTransactionsFound: querySnapshot.size,
-                 transactionIdsIncluded: transactionIdsToUpdate // Log IDs included in sum
-             });
+              console.error(`Mismatch: Sum of confirmed transactions (₹${sumOfTransactions.toFixed(2)}) does not match available balance (₹${payoutAmount.toFixed(2)}).`);
              throw new Error("Balance calculation error. There's a mismatch between your confirmed cashback and transaction history. Please contact support.");
         }
-
 
        // 2. Create the PayoutRequest document
        const payoutCollection = collection(db, 'payoutRequests');
@@ -161,6 +154,8 @@ export default function PayoutPage() {
          paymentMethod: data.paymentMethod,
          paymentDetails: { detail: data.paymentDetails }, // Store details flexibly, adapt schema if needed
          transactionIds: transactionIdsToUpdate,
+          adminNotes: null, // Ensure adminNotes is initially null
+          processedAt: null // Ensure processedAt is initially null
        };
        batch.set(newPayoutRequestRef, payoutData);
        console.log(`Prepared PayoutRequest document: ${newPayoutRequestRef.id}`);
@@ -171,12 +166,14 @@ export default function PayoutPage() {
        batch.update(userDocRef, {
          cashbackBalance: 0, // Reset available balance
          // Note: We don't decrease lifetime earnings here
+         updatedAt: serverTimestamp() // Update the profile timestamp
        });
        console.log(`Prepared user profile balance update (set to 0).`);
 
         // 4. Update the status of the included transactions to 'paid' and link them to the payout request
         transactionIdsToUpdate.forEach(txId => {
             const txDocRef = doc(db, 'transactions', txId);
+            // Update status to 'paid' and link the payoutId
             batch.update(txDocRef, { status: 'paid', payoutId: newPayoutRequestRef.id });
         });
         console.log(`Prepared to mark ${transactionIdsToUpdate.length} transactions as 'paid' and link to PayoutRequest ${newPayoutRequestRef.id}.`);
@@ -340,5 +337,3 @@ function PayoutPageSkeleton() {
         </Card>
     );
 }
-
-    

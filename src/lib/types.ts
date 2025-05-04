@@ -17,7 +17,7 @@ export interface UserProfile {
   lifetimeCashback: number; // Total confirmed cashback earned (including paid out)
   referralCode: string; // User's unique referral code (should be generated on creation)
   referredBy?: string | null; // UID of the user who referred this user - allow null
-  referralCount?: number; // Number of users successfully referred by this user
+  referralCount: number; // Ensure this exists, default to 0
   isDisabled?: boolean; // Optional: Flag to disable user account
   createdAt: Date | FirestoreTimestamp; // Allow both Date and Timestamp initially
   updatedAt?: Date | FirestoreTimestamp; // Allow both Date and Timestamp initially
