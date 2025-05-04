@@ -5,9 +5,9 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { collection, getDocs, query, orderBy, deleteDoc, doc, addDoc, updateDoc, serverTimestamp, where, getCountFromServer, writeBatch, limit, Timestamp } from 'firebase/firestore'; // Added limit, Timestamp
+import { collection, getDocs, query, orderBy, deleteDoc, doc, addDoc, updateDoc, serverTimestamp, where, getCountFromServer, writeBatch, limit, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import type { Store, Coupon, CashbackType } from '@/lib/types'; // Import CashbackType
+import type { Store, Coupon, CashbackType } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -34,7 +34,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import AdminGuard from '@/components/guards/admin-guard';
 import StoreForm from '@/components/admin/store-form';
@@ -78,44 +78,10 @@ function AdminStoresPageContent() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
   const [isSeeding, setIsSeeding] = useState(false);
-  const [storesExist, setStoresExist] = useState(true);
+  const [storesExist, setStoresExist] = useState(true); // Assume stores exist initially
 
-  const fetchStores = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const storesCollection = collection(db, 'stores');
-        const countSnapshot = await getCountFromServer(query(storesCollection, limit(1)));
-        const hasStores = countSnapshot.data().count > 0;
-        setStoresExist(hasStores);
-
-        if (hasStores) {
-           const q = query(storesCollection, orderBy('name', 'asc'));
-           const querySnapshot = await getDocs(q);
-           const storesData = querySnapshot.docs.map(doc => ({
-             id: doc.id,
-             ...doc.data(),
-             createdAt: safeToDate(doc.data().createdAt),
-             updatedAt: safeToDate(doc.data().updatedAt),
-           })) as Store[];
-           setStores(storesData);
-        } else {
-           setStores([]);
-        }
-      } catch (err) {
-        console.error("Error fetching stores:", err);
-        setError("Failed to load stores. Please try again later.");
-        setStoresExist(true); // Assume stores might exist despite error
-      } finally {
-        setLoading(false);
-      }
-  };
-
-  useEffect(() => {
-    fetchStores();
-  }, []);
-
-  const handleSeedData = async () => {
+  // Define handleSeedData within the component scope
+  const handleSeedData = React.useCallback(async () => {
       setIsSeeding(true);
       setError(null);
       console.log("Seeding initial store and coupon data...");
@@ -137,7 +103,7 @@ function AdminStoresPageContent() {
                   affiliateLink: storeData.affiliateLink,
                   cashbackRate: storeData.cashbackRate,
                   cashbackRateValue: storeData.cashbackRateValue,
-                  cashbackType: storeData.cashbackType as CashbackType, // Ensure correct type
+                  cashbackType: storeData.cashbackType as CashbackType,
                   description: storeData.description || `${storeData.name} deals and offers.`,
                   categories: storeData.categories,
                   isActive: true,
@@ -165,7 +131,7 @@ function AdminStoresPageContent() {
                   code: couponData.code || null,
                   description: couponData.description,
                   link: couponData.link || null,
-                  expiryDate: null, // Can be set later
+                  expiryDate: null,
                   isFeatured: couponData.isFeatured,
                   isActive: couponData.isActive,
               };
@@ -182,7 +148,7 @@ function AdminStoresPageContent() {
               title: "Data Seeded",
               description: `${initialStoresData.length} stores and ${initialCouponsData.length} coupons added.`,
           });
-          await fetchStores(); // Refresh the list
+          // No need to call fetchStores here, it will be called by useEffect after seeding
       } catch (err) {
           console.error("Error seeding data:", err);
           setError("Failed to seed initial data. Please check console.");
@@ -194,8 +160,62 @@ function AdminStoresPageContent() {
       } finally {
           setIsSeeding(false);
       }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast]); // Removed fetchStores from deps
 
+  const fetchStores = React.useCallback(async (shouldAutoSeed = false) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const storesCollection = collection(db, 'stores');
+        // Use limit(1) to efficiently check if any store exists
+        const countSnapshot = await getCountFromServer(query(storesCollection, limit(1)));
+        const hasStores = countSnapshot.data().count > 0;
+        setStoresExist(hasStores);
+
+        if (hasStores) {
+           console.log("Stores exist, fetching data...");
+           const q = query(storesCollection, orderBy('name', 'asc'));
+           const querySnapshot = await getDocs(q);
+           const storesData = querySnapshot.docs.map(doc => ({
+             id: doc.id,
+             ...doc.data(),
+             createdAt: safeToDate(doc.data().createdAt),
+             updatedAt: safeToDate(doc.data().updatedAt),
+           })) as Store[];
+           setStores(storesData);
+        } else if (shouldAutoSeed) {
+           console.log("No stores found, attempting to auto-seed...");
+           await handleSeedData();
+           // After seeding, re-check and fetch
+           const q = query(storesCollection, orderBy('name', 'asc'));
+           const querySnapshot = await getDocs(q);
+           const storesData = querySnapshot.docs.map(doc => ({
+             id: doc.id,
+             ...doc.data(),
+             createdAt: safeToDate(doc.data().createdAt),
+             updatedAt: safeToDate(doc.data().updatedAt),
+           })) as Store[];
+           setStores(storesData);
+           setStoresExist(storesData.length > 0); // Update storesExist state
+        } else {
+            console.log("No stores found, and auto-seeding not requested/already attempted.");
+            setStores([]);
+        }
+      } catch (err) {
+        console.error("Error fetching stores:", err);
+        setError("Failed to load stores. Please try again later.");
+        setStoresExist(true); // Assume stores might exist despite error
+      } finally {
+        setLoading(false);
+      }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handleSeedData]); // Include handleSeedData in dependencies
+
+  useEffect(() => {
+    // Fetch stores on mount and trigger auto-seed if empty
+    fetchStores(true);
+  }, [fetchStores]); // Run only once on mount (or when fetchStores changes, which it shouldn't unless deps change)
 
   const handleEdit = (store: Store) => {
       setSelectedStore(store);
@@ -222,7 +242,7 @@ function AdminStoresPageContent() {
                title: "Store Deleted",
                description: `Store "${storeName}" has been successfully deleted.`,
            });
-           fetchStores();
+           fetchStores(); // Refresh list after deletion
        } catch (err) {
            console.error("Error deleting store or checking coupons:", err);
            toast({
@@ -240,7 +260,7 @@ function AdminStoresPageContent() {
   };
 
    const handleFormSuccess = () => {
-      fetchStores();
+      fetchStores(); // Refresh list after adding/editing
       setIsFormOpen(false);
       setSelectedStore(null);
    };
@@ -257,9 +277,10 @@ function AdminStoresPageContent() {
                <CardDescription>Add, edit, or remove stores offering cashback.</CardDescription>
             </div>
              <div className="flex items-center gap-2">
-                {!storesExist && !loading && (
-                   <Button onClick={handleSeedData} disabled={isSeeding} variant="secondary">
-                      <DatabaseZap className="mr-2 h-4 w-4" /> {isSeeding ? 'Seeding...' : 'Seed Example Data'}
+                {/* Conditionally show Seed button only if stores don't exist and not loading/seeding */}
+                {!storesExist && !loading && !isSeeding && (
+                   <Button onClick={handleSeedData} variant="secondary">
+                      <DatabaseZap className="mr-2 h-4 w-4" /> Seed Example Data
                    </Button>
                 )}
                  <Button onClick={handleAddNew} disabled={isSeeding}>
@@ -365,8 +386,9 @@ function AdminStoresPageContent() {
            ) : (
              <div className="text-center text-muted-foreground py-8 flex flex-col items-center gap-4">
                  <p>No stores found in the database.</p>
-                 {!loading && ( // Only show seed button if not loading
-                    <Button onClick={handleSeedData} disabled={isSeeding} variant="secondary">
+                 {/* Show seed button if stores don't exist and not loading/seeding */}
+                 {!loading && !isSeeding && (
+                    <Button onClick={handleSeedData} variant="secondary">
                         <DatabaseZap className="mr-2 h-4 w-4" /> {isSeeding ? 'Seeding...' : 'Seed Example Data'}
                     </Button>
                  )}

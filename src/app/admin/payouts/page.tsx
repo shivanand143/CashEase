@@ -3,7 +3,7 @@
 
 import * as React from 'react';
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, where, orderBy, doc, updateDoc, writeBatch, getDoc, serverTimestamp } from 'firebase/firestore'; // Added serverTimestamp
+import { collection, getDocs, query, where, orderBy, doc, updateDoc, writeBatch, getDoc, serverTimestamp, limit, getCountFromServer, addDoc } from 'firebase/firestore'; // Added getCountFromServer, addDoc
 import { db } from '@/lib/firebase/config';
 import type { PayoutRequest, UserProfile, Transaction } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
-import { AlertCircle, CheckCircle, XCircle, MoreHorizontal, Send } from 'lucide-react';
+import { AlertCircle, CheckCircle, XCircle, MoreHorizontal, Send, DatabaseZap } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -37,6 +37,14 @@ import { Label } from "@/components/ui/label"; // For rejection notes modal
 import { useToast } from "@/hooks/use-toast";
 import AdminGuard from '@/components/guards/admin-guard';
 
+// Example Payout Request Data for Seeding (Use realistic UIDs and transaction IDs if possible)
+// NOTE: This requires users and potentially transactions to exist first.
+const initialPayoutRequestsData = [
+    { userId: 'PLACEHOLDER_USER_ID_1', amount: 275.50, paymentMethod: 'paypal', paymentDetails: { detail: 'user1@example.com' }, status: 'pending' as const, transactionIds: ['PLACEHOLDER_TX_ID_1', 'PLACEHOLDER_TX_ID_2'] },
+    { userId: 'PLACEHOLDER_USER_ID_2', amount: 310.00, paymentMethod: 'bank_transfer', paymentDetails: { detail: 'UPI: user2@bank' }, status: 'pending' as const, transactionIds: ['PLACEHOLDER_TX_ID_3'] },
+];
+
+
 // Combined type for display
 interface PayoutRequestWithUser extends PayoutRequest {
   userDisplayName: string;
@@ -52,57 +60,194 @@ function AdminPayoutsPageContent() {
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [payoutToReject, setPayoutToReject] = useState<PayoutRequestWithUser | null>(null);
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [payoutsExist, setPayoutsExist] = useState(true); // Assume payouts exist initially
+
+  // Define handleSeedData
+  const handleSeedData = React.useCallback(async () => {
+      setIsSeeding(true);
+      setError(null);
+      console.log("Seeding initial payout request data...");
+
+      // IMPORTANT: You need existing user IDs to seed payout requests meaningfully.
+      // Fetch a couple of user IDs first, or use known test UIDs.
+      let userIdsToUse: string[] = [];
+      try {
+          const usersRef = collection(db, 'users');
+          const usersSnapshot = await getDocs(query(usersRef, limit(2))); // Get up to 2 user IDs
+          userIdsToUse = usersSnapshot.docs.map(doc => doc.id);
+          if (userIdsToUse.length === 0) {
+              throw new Error("No users found in the database to create example payout requests for.");
+          }
+           // Replace placeholders in seed data
+            initialPayoutRequestsData.forEach((req, index) => {
+              if (userIdsToUse[index % userIdsToUse.length]) {
+                req.userId = userIdsToUse[index % userIdsToUse.length];
+                // You might also want placeholder transaction IDs if needed for testing logic
+                // req.transactionIds = [...]
+              } else {
+                 console.warn("Not enough unique user IDs found for all example payouts.");
+              }
+           });
+
+      } catch (err) {
+         console.error("Error fetching user IDs for seeding:", err);
+         setError("Could not find users to create example payout requests.");
+         setIsSeeding(false);
+         return;
+      }
 
 
-  const fetchPayouts = async () => {
+      try {
+          const batch = writeBatch(db);
+          const payoutCollection = collection(db, 'payoutRequests');
+          let seededCount = 0;
+
+          initialPayoutRequestsData.forEach(payoutData => {
+              // Skip if userId is still a placeholder
+              if (payoutData.userId.startsWith('PLACEHOLDER')) return;
+
+              const docRef = doc(payoutCollection);
+              const newPayout: Omit<PayoutRequest, 'id' | 'requestedAt' | 'processedAt'> = {
+                 userId: payoutData.userId,
+                 amount: payoutData.amount,
+                 status: payoutData.status,
+                 paymentMethod: payoutData.paymentMethod,
+                 paymentDetails: payoutData.paymentDetails,
+                 transactionIds: payoutData.transactionIds.filter(id => !id.startsWith('PLACEHOLDER')), // Filter placeholder TX IDs if needed
+                 adminNotes: null,
+                 failureReason: null,
+              };
+              batch.set(docRef, {
+                  ...newPayout,
+                  requestedAt: serverTimestamp(),
+              });
+              seededCount++;
+          });
+
+          await batch.commit();
+          toast({
+              title: "Payout Data Seeded",
+              description: `${seededCount} example payout requests added.`,
+          });
+      } catch (err) {
+          console.error("Error seeding payout data:", err);
+          setError("Failed to seed initial payout data. Please check console.");
+          toast({
+              variant: "destructive",
+              title: "Seeding Failed",
+              description: "Could not add initial payout data. See console for details.",
+          });
+      } finally {
+          setIsSeeding(false);
+      }
+  }, [toast]);
+
+
+  const fetchPayouts = React.useCallback(async (shouldAutoSeed = false) => {
       setLoading(true);
       setError(null);
       try {
-        // 1. Fetch pending payout requests
         const payoutsCollection = collection(db, 'payoutRequests');
-        const qPayouts = query(
-          payoutsCollection,
-          where('status', '==', 'pending'), // Only fetch pending requests initially
-          orderBy('requestedAt', 'asc')
-        );
-        const payoutsSnapshot = await getDocs(qPayouts);
-        const payoutsData = payoutsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          requestedAt: doc.data().requestedAt?.toDate ? doc.data().requestedAt.toDate() : new Date(),
-          processedAt: doc.data().processedAt?.toDate ? doc.data().processedAt.toDate() : null,
-        })) as PayoutRequest[];
 
-        // 2. Fetch user details for each payout request
-        const usersMap = new Map<string, Pick<UserProfile, 'displayName' | 'email'>>();
-        const userPromises = payoutsData.map(payout => {
-          if (!usersMap.has(payout.userId)) {
-            return getDoc(doc(db, 'users', payout.userId)).then(userDoc => {
-              if (userDoc.exists()) {
-                usersMap.set(payout.userId, {
-                  displayName: userDoc.data().displayName || 'N/A',
-                  email: userDoc.data().email || null,
-                });
-              } else {
-                usersMap.set(payout.userId, { displayName: 'User Not Found', email: null });
-              }
-            });
-          }
-          return Promise.resolve();
-        });
-        await Promise.all(userPromises);
+        // Check if any payouts exist
+        const countSnapshot = await getCountFromServer(query(payoutsCollection, limit(1)));
+        const hasPayouts = countSnapshot.data().count > 0;
+        setPayoutsExist(hasPayouts);
 
-        // 3. Combine payout data with user details
-        const combinedData = payoutsData.map(payout => {
-          const userInfo = usersMap.get(payout.userId) || { displayName: 'Unknown User', email: null };
-          return {
-            ...payout,
-            userDisplayName: userInfo.displayName,
-            userEmail: userInfo.email,
-          };
-        });
+        if (hasPayouts) {
+          // 1. Fetch pending payout requests
+          const qPayouts = query(
+            payoutsCollection,
+            where('status', '==', 'pending'), // Only fetch pending requests initially
+            orderBy('requestedAt', 'asc')
+          );
+          const payoutsSnapshot = await getDocs(qPayouts);
+          const payoutsData = payoutsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            requestedAt: doc.data().requestedAt?.toDate ? doc.data().requestedAt.toDate() : new Date(),
+            processedAt: doc.data().processedAt?.toDate ? doc.data().processedAt.toDate() : null,
+          })) as PayoutRequest[];
 
-        setPayouts(combinedData);
+          // 2. Fetch user details for each payout request
+          const usersMap = new Map<string, Pick<UserProfile, 'displayName' | 'email'>>();
+          const userPromises = payoutsData.map(payout => {
+            if (!usersMap.has(payout.userId)) {
+              return getDoc(doc(db, 'users', payout.userId)).then(userDoc => {
+                if (userDoc.exists()) {
+                  usersMap.set(payout.userId, {
+                    displayName: userDoc.data().displayName || 'N/A',
+                    email: userDoc.data().email || null,
+                  });
+                } else {
+                  usersMap.set(payout.userId, { displayName: 'User Not Found', email: null });
+                }
+              });
+            }
+            return Promise.resolve();
+          });
+          await Promise.all(userPromises);
+
+          // 3. Combine payout data with user details
+          const combinedData = payoutsData.map(payout => {
+            const userInfo = usersMap.get(payout.userId) || { displayName: 'Unknown User', email: null };
+            return {
+              ...payout,
+              userDisplayName: userInfo.displayName,
+              userEmail: userInfo.email,
+            };
+          });
+          setPayouts(combinedData);
+        } else if (shouldAutoSeed) {
+             console.log("No payouts found, attempting to auto-seed...");
+             await handleSeedData();
+             // Refetch after seeding
+             const qPayouts = query(
+               payoutsCollection,
+               where('status', '==', 'pending'),
+               orderBy('requestedAt', 'asc')
+             );
+             const payoutsSnapshot = await getDocs(qPayouts);
+             const payoutsData = payoutsSnapshot.docs.map(doc => ({
+               id: doc.id,
+               ...doc.data(),
+               requestedAt: doc.data().requestedAt?.toDate ? doc.data().requestedAt.toDate() : new Date(),
+               processedAt: doc.data().processedAt?.toDate ? doc.data().processedAt.toDate() : null,
+             })) as PayoutRequest[];
+
+             const usersMap = new Map<string, Pick<UserProfile, 'displayName' | 'email'>>();
+              const userPromises = payoutsData.map(payout => {
+                 if (!usersMap.has(payout.userId)) {
+                   return getDoc(doc(db, 'users', payout.userId)).then(userDoc => {
+                     if (userDoc.exists()) {
+                       usersMap.set(payout.userId, {
+                         displayName: userDoc.data().displayName || 'N/A',
+                         email: userDoc.data().email || null,
+                       });
+                     } else {
+                       usersMap.set(payout.userId, { displayName: 'User Not Found', email: null });
+                     }
+                   });
+                 }
+                 return Promise.resolve();
+              });
+             await Promise.all(userPromises);
+
+              const combinedData = payoutsData.map(payout => {
+                 const userInfo = usersMap.get(payout.userId) || { displayName: 'Unknown User', email: null };
+                 return {
+                   ...payout,
+                   userDisplayName: userInfo.displayName,
+                   userEmail: userInfo.email,
+                 };
+              });
+              setPayouts(combinedData);
+              setPayoutsExist(combinedData.length > 0);
+        } else {
+             console.log("No payouts found, and auto-seeding not requested/already attempted.");
+             setPayouts([]);
+        }
 
       } catch (err) {
         console.error("Error fetching payout requests:", err);
@@ -110,11 +255,12 @@ function AdminPayoutsPageContent() {
       } finally {
         setLoading(false);
       }
-  };
+  }, [handleSeedData]);
 
   useEffect(() => {
-    fetchPayouts();
-  }, []);
+    fetchPayouts(true); // Fetch on mount, auto-seed if needed
+  }, [fetchPayouts]);
+
 
   const handleApprove = async (payout: PayoutRequestWithUser) => {
       setProcessingId(payout.id);
@@ -232,11 +378,19 @@ function AdminPayoutsPageContent() {
   return (
      <AdminGuard> {/* Wrap content with guard */}
        <Card>
-         <CardHeader>
-           <CardTitle className="text-2xl flex items-center gap-2">
-             <Send className="w-6 h-6"/> Approve Payouts
-           </CardTitle>
-           <CardDescription>Review and approve or reject pending user payout requests.</CardDescription>
+         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+           <div>
+              <CardTitle className="text-2xl flex items-center gap-2">
+                <Send className="w-6 h-6"/> Approve Payouts
+              </CardTitle>
+              <CardDescription>Review and approve or reject pending user payout requests.</CardDescription>
+           </div>
+            {/* Seed button - only show if no payouts exist and not loading/seeding */}
+            {!payoutsExist && !loading && !isSeeding && (
+               <Button onClick={handleSeedData} variant="secondary" disabled={isSeeding}>
+                  <DatabaseZap className="mr-2 h-4 w-4" /> {isSeeding ? 'Seeding...' : 'Seed Example Payouts'}
+               </Button>
+            )}
          </CardHeader>
          <CardContent>
            {error && (
@@ -272,11 +426,15 @@ function AdminPayoutsPageContent() {
                      <TableCell className="hidden lg:table-cell">{payout.paymentMethod}</TableCell>
                      <TableCell className="hidden xl:table-cell text-xs">
                          {/* Display payment details safely */}
-                         {Object.entries(payout.paymentDetails).map(([key, value]) => (
-                             <div key={key} className="truncate" title={`${key}: ${value}`}>
-                                 <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span> {String(value)}
-                             </div>
-                         ))}
+                         {payout.paymentDetails && typeof payout.paymentDetails === 'object' ? (
+                            Object.entries(payout.paymentDetails).map(([key, value]) => (
+                                <div key={key} className="truncate" title={`${key}: ${value}`}>
+                                    <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span> {String(value)}
+                                </div>
+                            ))
+                          ) : (
+                              <span className="text-muted-foreground italic">No details</span>
+                          )}
                      </TableCell>
                       <TableCell className="text-center">
                          <div className="flex items-center justify-center gap-2">
@@ -322,7 +480,15 @@ function AdminPayoutsPageContent() {
                </TableBody>
              </Table>
            ) : (
-             <p className="text-center text-muted-foreground py-8">No pending payout requests.</p>
+             <div className="text-center text-muted-foreground py-8 flex flex-col items-center gap-4">
+                <p>No pending payout requests.</p>
+                {/* Show seed button if no payouts exist and not loading/seeding */}
+                {!loading && !isSeeding && (
+                    <Button onClick={handleSeedData} variant="secondary" disabled={isSeeding}>
+                        <DatabaseZap className="mr-2 h-4 w-4" /> {isSeeding ? 'Seeding...' : 'Seed Example Payouts'}
+                    </Button>
+                )}
+             </div>
            )}
            {/* TODO: Add Pagination and filtering (e.g., view approved/rejected) */}
          </CardContent>
