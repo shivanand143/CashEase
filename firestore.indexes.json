@@ -10,34 +10,6 @@
       ]
     },
     {
-      "collectionGroup": "coupons",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "isActive", "order": "ASCENDING" },
-        { "fieldPath": "isFeatured", "order": "DESCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "coupons",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "storeId", "order": "ASCENDING" },
-        { "fieldPath": "isActive", "order": "ASCENDING" },
-        { "fieldPath": "isFeatured", "order": "DESCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "coupons",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "storeId", "order": "ASCENDING" },
-        { "fieldPath": "isActive", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "payoutRequests",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -46,12 +18,11 @@
       ]
     },
     {
-      "collectionGroup": "stores",
+      "collectionGroup": "transactions",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "isActive", "order": "ASCENDING" },
-        { "fieldPath": "isFeatured", "order": "DESCENDING" },
-        { "fieldPath": "name", "order": "ASCENDING" }
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "transactionDate", "order": "DESCENDING" }
       ]
     },
     {
@@ -72,48 +43,48 @@
       ]
     },
      {
-       "collectionGroup": "users",
-       "queryScope": "COLLECTION",
-       "fields": [
-         { "fieldPath": "referralCode", "order": "ASCENDING" }
-       ]
-     },
-     {
-       "collectionGroup": "users",
-       "queryScope": "COLLECTION",
-       "fields": [
-         { "fieldPath": "email", "order": "ASCENDING" }
-       ]
-     },
-     {
-       "collectionGroup": "users",
-       "queryScope": "COLLECTION",
-       "fields": [
-         { "fieldPath": "createdAt", "order": "DESCENDING" }
-       ]
-     },
-     {
-      "collectionGroup": "transactions",
-      "queryScope": "COLLECTION",
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "transactionDate", "order": "DESCENDING" }
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "isFeatured", "order": "DESCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
       ]
     },
      {
-       "collectionGroup": "transactions",
-       "queryScope": "COLLECTION",
-       "fields": [
-         { "fieldPath": "transactionDate", "order": "DESCENDING" }
-       ]
-     },
+      "collectionGroup": "coupons",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "isFeatured", "order": "DESCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "coupons",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "isFeatured", "order": "DESCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "coupons",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
      {
       "collectionGroup": "transactions",
-      "queryScope": "COLLECTION_GROUP", // Changed to COLLECTION_GROUP based on CLI output context
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
-        // Removed payoutId from this index, as it wasn't in the CLI prompt and might cause issues
       ]
      }
   ],
