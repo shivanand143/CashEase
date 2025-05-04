@@ -5,8 +5,8 @@ import { Facebook, Instagram, Twitter } from "lucide-react";
 
 export default function Footer() {
   return (
-    <footer className="bg-muted text-muted-foreground border-t mt-16"> {/* Added margin-top */}
-      <div className="container py-8 md:py-12">
+    // Removed container class, padding adjusted slightly
+    <footer className="bg-muted text-muted-foreground border-t mt-16 px-4 md:px-6 py-8 md:py-12">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
           {/* Branding Column */}
           <div className="col-span-1 space-y-4">
@@ -80,8 +80,8 @@ export default function Footer() {
                 </nav>
              </div>
              {/* Social Media Links */}
-              <div className="pt-4 border-t border-border/20 md:border-none md:pt-0">
-                 <h4 className="font-semibold text-foreground mb-3">Follow Us</h4>
+              <div className="mt-4 pt-4 border-t border-border/20 md:border-none md:pt-0">
+                 <h4 className="font-semibold text-foreground mb-3 hidden md:block">Follow Us</h4>
                  <div className="flex space-x-4">
                    <Link href="https://facebook.com" target="_blank" rel="noopener noreferrer" aria-label="Facebook" className="text-muted-foreground hover:text-primary transition-colors"><Facebook className="w-5 h-5" /></Link>
                    <Link href="https://twitter.com" target="_blank" rel="noopener noreferrer" aria-label="Twitter" className="text-muted-foreground hover:text-primary transition-colors"><Twitter className="w-5 h-5"/></Link>
@@ -90,8 +90,6 @@ export default function Footer() {
               </div>
            </div>
         </div>
-
-      </div>
     </footer>
   );
 }

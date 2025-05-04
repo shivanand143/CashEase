@@ -78,7 +78,9 @@ export default function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    // Removed sticky positioning
+    <header className="w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      {/* Container remains to align header content within the max-width set in layout.tsx */}
       <div className="container flex h-14 items-center justify-between gap-2 md:gap-4">
         {/* Left Side: Mobile Menu Trigger & Desktop Nav */}
         <div className="flex items-center">
@@ -92,9 +94,10 @@ export default function Header() {
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-full max-w-xs p-0 flex flex-col">
-                <VisuallyHidden>
-                  <SheetTitle>Main Navigation Menu</SheetTitle>
-                </VisuallyHidden>
+                  {/* Always include a visually hidden title for accessibility */}
+                  <VisuallyHidden asChild>
+                    <SheetTitle>Main menu</SheetTitle>
+                  </VisuallyHidden>
                 <SheetHeader className="p-4 border-b flex flex-row items-center justify-between">
                   <Link href="/" className="flex items-center space-x-2">
                     <IndianRupee className="h-6 w-6 text-primary" />

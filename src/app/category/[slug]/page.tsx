@@ -160,8 +160,8 @@ export default function CategoryPage() {
 
 
   return (
-    // Wrap content in a container div with padding
-    <div className="container py-8">
+    // Removed container div
+    <div className="py-8">
       <div className="space-y-8 md:space-y-12">
         <Button variant="outline" onClick={() => router.back()} size="sm" className="mb-4">
           <ArrowLeft className="mr-2 h-4 w-4" /> Back

@@ -163,8 +163,8 @@ export default function SearchPage() {
   };
 
   return (
-    // Wrap content in a container div with padding
-    <div className="container py-8">
+    // Removed container div
+    <div className="py-8">
       <div className="space-y-8 md:space-y-12">
         <section className="pt-8">
           <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center gap-2">
@@ -283,7 +283,7 @@ export default function SearchPage() {
                               width={50}
                               height={30}
                               className="object-contain h-[30px] w-[50px]"
-                              onError={(e) => { e.currentTarget.src = 'https://picsum.photos/seed/placeholder/50/30'; }}
+                              onError={(e) => { e.currentTarget.src = 'https://picsum.photos/seed/placeholder/60/40'; }}
                             />
                           </Link>
                           <div className="flex-grow">
@@ -297,7 +297,7 @@ export default function SearchPage() {
                         <CardFooter className="p-3 border-t sm:border-t-0 sm:border-l w-full sm:w-auto shrink-0 flex items-center justify-center">
                           {coupon.code ? (
                             <Button variant="outline" className="w-full sm:w-auto border-dashed border-accent text-accent hover:bg-accent/10 hover:text-accent" onClick={() => handleCouponClick(coupon)}>
-                              <span className="mr-2 font-mono">{coupon.code}</span>
+                              <span className="mr-2">{coupon.code}</span>
                               <span>Copy</span>
                             </Button>
                           ) : (

@@ -59,8 +59,8 @@ export default function BlogPostPage() {
 
   if (loading) {
     return (
-        // Wrap skeleton in container
-        <div className="container py-8">
+        // Removed container div
+        <div className="py-8">
            <BlogPostSkeleton />
         </div>
     );
@@ -68,8 +68,8 @@ export default function BlogPostPage() {
 
   if (error) {
     return (
-      // Wrap error in container
-      <div className="container py-8">
+      // Removed container div
+      <div className="py-8">
         <div className="space-y-4 max-w-3xl mx-auto text-center py-10">
           <Button variant="outline" onClick={() => router.back()} size="sm" className="mb-4">
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Blog
@@ -86,8 +86,8 @@ export default function BlogPostPage() {
 
   if (!post) {
     return (
-      // Wrap fallback in container
-      <div className="container py-8">
+      // Removed container div
+      <div className="py-8">
         <div className="space-y-4 max-w-3xl mx-auto text-center py-10">
           <Button variant="outline" onClick={() => router.back()} size="sm" className="mb-4">
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Blog
@@ -99,8 +99,8 @@ export default function BlogPostPage() {
   }
 
   return (
-    // Wrap article in container
-    <div className="container py-8">
+    // Removed container div
+    <div className="py-8">
       <article className="max-w-3xl mx-auto py-8 md:py-12">
         <Button variant="outline" onClick={() => router.back()} size="sm" className="mb-6 inline-flex items-center">
           <ArrowLeft className="mr-2 h-4 w-4" /> Back to Blog

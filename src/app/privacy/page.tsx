@@ -3,8 +3,8 @@ import * as React from 'react';
 
 export default function PrivacyPolicyPage() {
   return (
-    // Wrap content in a container div with padding
-    <div className="container py-8">
+    // Removed container div
+    <div className="py-8">
       <div className="prose dark:prose-invert max-w-3xl mx-auto py-8 md:py-12">
         <h1>Privacy Policy</h1>
         <p><strong>Last Updated:</strong> [Insert Date]</p>

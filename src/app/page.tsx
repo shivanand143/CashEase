@@ -9,7 +9,7 @@ import { db } from '@/lib/firebase/config';
 import type { Store, Coupon } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowRight, Tag, Store as StoreIcon, ShoppingBag, Search, Loader2, AlertCircle, IndianRupee, List, BookOpen, Percent, Copy, Sparkles } from 'lucide-react';
+import { ArrowRight, Tag, Store as StoreIcon, ShoppingBag, Search, Loader2, AlertCircle, IndianRupee, List, BookOpen, Percent, Copy, Sparkles, BadgePercent } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import ProductCard from '@/components/product-card';
@@ -18,7 +18,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { logClick } from '@/lib/tracking';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
-import Autoplay from "embla-carousel-autoplay"
+import Autoplay from "embla-carousel-autoplay";
 import { useRouter } from 'next/navigation';
 import { cn } from "@/lib/utils";
 
@@ -130,6 +130,7 @@ export default function Home() {
            collection(db, 'stores'),
            where('isActive', '==', true),
            where('isFeatured', '==', true),
+           orderBy('name', 'asc'), // Add ordering for consistent results
            limit(10)
          );
          const storesSnapshot = await getDocs(storesQuery);
@@ -140,6 +141,7 @@ export default function Home() {
             collection(db, 'coupons'),
             where('isActive', '==', true),
             where('isFeatured', '==', true),
+            orderBy('createdAt', 'desc'), // Order by creation date
             limit(6)
          );
          const couponsSnapshot = await getDocs(couponsQuery);
@@ -243,8 +245,8 @@ export default function Home() {
    };
 
   return (
-    // Wrap content in a container div with padding
-    <div className="container py-8">
+    // Removed container class
+    <div className="py-8">
       <div className="space-y-12 md:space-y-16 lg:space-y-20">
         {/* Hero Section */}
         <section className="text-center pt-12 md:pt-20 lg:pt-24 pb-8 md:pb-16 lg:pb-20 bg-gradient-to-br from-primary/10 via-background to-secondary/10 rounded-lg shadow-sm overflow-hidden relative">
@@ -254,7 +256,7 @@ export default function Home() {
               Shop Smarter, Earn <span className="text-primary">CashEase</span> Back!
             </h1>
             <p className="text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto mb-8">
-              Get real cashback and find the best coupons for thousands of online stores in India. Join free today!
+              Get real cashback and find the best coupons for your online stores in India. Join free today!
             </p>
             <form onSubmit={handleGlobalSearchSubmit} className="relative mb-8 max-w-2xl mx-auto">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground z-20" />
@@ -368,7 +370,7 @@ export default function Home() {
                           onClick={() => handleStoreClick(store)}
                           title={`Shop at ${store.name} and earn cashback`}
                         >
-                          <Percent className="mr-1 h-4 w-4" /> Shop & Earn
+                          <BadgePercent className="mr-1 h-4 w-4" /> Shop & Earn
                         </Button>
                       </CardFooter>
                     </Card>
@@ -416,7 +418,7 @@ export default function Home() {
                       <Link href={`/stores/${coupon.storeId}`}>
                         <CardTitle className="text-md hover:text-primary transition-colors line-clamp-1 mb-1">{coupon.storeName}</CardTitle>
                       </Link>
-                      <CardDescription className="text-base text-foreground leading-snug line-clamp-2 h-[3em]">
+                      <CardDescription className="text-base text-foreground font-semibold leading-snug line-clamp-2 h-[3em]">
                         {coupon.description}
                       </CardDescription>
                     </div>

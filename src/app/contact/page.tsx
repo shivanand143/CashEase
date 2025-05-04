@@ -17,8 +17,8 @@ export default function ContactPage() {
   };
 
   return (
-    // Wrap content in a container div with padding
-    <div className="container py-8">
+    // Removed container div
+    <div className="py-8">
       <div className="space-y-12 py-8 md:py-16">
         <section className="text-center max-w-3xl mx-auto">
           <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-4 text-primary">

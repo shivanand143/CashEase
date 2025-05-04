@@ -26,9 +26,10 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} antialiased`}>
         <AuthProvider>
-          <div className="flex flex-col min-h-screen">
+          {/* Apply max-width and centering to the entire layout structure */}
+          <div className="flex flex-col min-h-screen max-w-screen-lg mx-auto"> {/* Added max-width and mx-auto */}
             <Header />
-            {/* Removed container class from main, apply padding directly or within children */}
+            {/* Remove container class from main, let the outer div handle width */}
             <main className="flex-grow w-full">{children}</main>
             <Footer />
           </div>

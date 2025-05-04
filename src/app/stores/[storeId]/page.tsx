@@ -140,8 +140,8 @@ export default function StoreDetailPage() {
 
   if (loadingStore) {
     return (
-      // Wrap skeleton in container
-      <div className="container py-8">
+      // Removed container div
+      <div className="py-8">
         <div className="space-y-8">
           <Skeleton className="h-8 w-32" />
           <div className="grid md:grid-cols-3 gap-8">
@@ -165,8 +165,8 @@ export default function StoreDetailPage() {
 
   if (error) {
     return (
-      // Wrap error in container
-      <div className="container py-8">
+      // Removed container div
+      <div className="py-8">
         <div className="space-y-4">
           <Button variant="outline" onClick={() => router.back()} size="sm">
             <ArrowLeft className="mr-2 h-4 w-4" /> Back
@@ -183,8 +183,8 @@ export default function StoreDetailPage() {
 
   if (!store) {
     return (
-      // Wrap fallback in container
-      <div className="container py-8">
+      // Removed container div
+      <div className="py-8">
         <div className="space-y-4">
           <Button variant="outline" onClick={() => router.back()} size="sm">
             <ArrowLeft className="mr-2 h-4 w-4" /> Back
@@ -197,8 +197,8 @@ export default function StoreDetailPage() {
 
 
   return (
-    // Wrap content in a container div with padding
-    <div className="container py-8">
+    // Removed container div
+    <div className="py-8">
       <div className="space-y-8">
         <Button variant="outline" onClick={() => router.back()} size="sm" className="mb-4">
           <ArrowLeft className="mr-2 h-4 w-4" /> Back

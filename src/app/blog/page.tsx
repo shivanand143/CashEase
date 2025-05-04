@@ -22,8 +22,8 @@ export default function BlogPage() {
   const [error, setError] = React.useState<string | null>(null);
 
   return (
-    // Wrap content in a container div with padding
-    <div className="container py-8">
+    // Removed container div
+    <div className="py-8">
       <div className="space-y-8 md:space-y-12">
         <section className="text-center pt-8">
           <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center justify-center gap-2">
