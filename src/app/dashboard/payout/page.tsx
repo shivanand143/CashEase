@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react'; // Added useCallback
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -69,6 +69,8 @@ export default function PayoutPage() {
 
    const selectedPaymentMethod = watch('paymentMethod');
 
+  // Use useCallback for fetchUserProfile to stabilize dependencies
+  const stableFetchUserProfile = useCallback(fetchUserProfile, []);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -98,8 +100,8 @@ export default function PayoutPage() {
      let latestUserProfile: UserProfile | null = userProfile; // Use current profile initially
 
       // Add a check right after getting the hook value
-      if (typeof fetchUserProfile !== 'function') {
-          console.error("CRITICAL ERROR: fetchUserProfile is not a function within onSubmit. Value:", fetchUserProfile);
+      if (typeof stableFetchUserProfile !== 'function') {
+          console.error("CRITICAL ERROR: fetchUserProfile is not a function within onSubmit. Value:", stableFetchUserProfile);
           setError("An internal error occurred. Please try again later or contact support. (Error code: FPUPNF)"); // Provide an error code
           setIsSubmitting(false);
           return;
@@ -109,7 +111,7 @@ export default function PayoutPage() {
      // Fetch the latest user profile data just before submitting ONLY IF fetchUserProfile exists
      if (user) { // We already checked fetchUserProfile above
         try {
-           latestUserProfile = await fetchUserProfile(user.uid); // Call the function
+           latestUserProfile = await stableFetchUserProfile(user.uid); // Call the stable function
            if (!latestUserProfile) {
               setError("Could not verify user balance. Please try again.");
               setIsSubmitting(false);
@@ -138,36 +140,33 @@ export default function PayoutPage() {
      const batch = writeBatch(db);
 
      try {
-       // 1. Find all 'confirmed' transactions for the user that haven't been paid out yet
-       console.log(`Querying 'confirmed' transactions with payoutId == null for user ${user.uid}...`);
-       const transactionsCollection = collection(db, 'transactions');
-       const q = query(
-         transactionsCollection,
-         where('userId', '==', user.uid),
-         where('status', '==', 'confirmed')
-         // Removing where('payoutId', '==', null) for now to simplify and see if it fixes the mismatch
-       );
-       const querySnapshot = await getDocs(q);
-       console.log(`Found ${querySnapshot.size} 'confirmed' transactions.`);
+        // 1. Find all 'confirmed' transactions for the user that haven't been paid out yet
+        console.log(`Querying 'confirmed' transactions with payoutId == null for user ${user.uid}...`);
+        const transactionsCollection = collection(db, 'transactions');
+        // Refined query: Explicitly check for payoutId == null
+        const q = query(
+            transactionsCollection,
+            where('userId', '==', user.uid),
+            where('status', '==', 'confirmed'),
+            where('payoutId', '==', null) // Ensure we only get unpaid transactions
+        );
+        const querySnapshot = await getDocs(q);
+        console.log(`Found ${querySnapshot.size} 'confirmed' and unpaid transactions.`);
 
-       const transactionIdsToUpdate: string[] = [];
-       let sumOfTransactions = 0;
+        const transactionIdsToUpdate: string[] = [];
+        let sumOfTransactions = 0;
 
-       querySnapshot.forEach((docSnap) => {
-         const txData = docSnap.data();
-          // Only include transactions that are NOT already paid out
-          if (!txData.payoutId) {
-             if (typeof txData.cashbackAmount === 'number') {
-                 transactionIdsToUpdate.push(docSnap.id);
-                 sumOfTransactions += txData.cashbackAmount;
-                 console.log(`  - Including Unpaid Tx ID: ${docSnap.id}, Amount: ₹${txData.cashbackAmount.toFixed(2)}`);
-             } else {
-                 console.warn(`Transaction ${docSnap.id} has missing or invalid cashbackAmount. Skipping.`);
-             }
-         } else {
-             console.log(`  - Skipping Paid Tx ID: ${docSnap.id} (Payout ID: ${txData.payoutId})`);
-         }
-       });
+        querySnapshot.forEach((docSnap) => {
+            const txData = docSnap.data();
+            // Only include transactions that are NOT already paid out
+            if (typeof txData.cashbackAmount === 'number') {
+                transactionIdsToUpdate.push(docSnap.id);
+                sumOfTransactions += txData.cashbackAmount;
+                console.log(`  - Including Tx ID: ${docSnap.id}, Amount: ₹${txData.cashbackAmount.toFixed(2)}`);
+            } else {
+                console.warn(`Transaction ${docSnap.id} has missing or invalid cashbackAmount. Skipping.`);
+            }
+        });
 
        console.log(`Total sum of queried 'confirmed' AND unpaid transactions: ₹${sumOfTransactions.toFixed(2)}`);
        console.log(`User profile available balance (latest): ₹${payoutAmount.toFixed(2)}`);
@@ -175,7 +174,6 @@ export default function PayoutPage() {
        // Strict validation: Ensure the sum exactly matches the available balance
        // Allow for minor floating point discrepancies
        if (Math.abs(sumOfTransactions - payoutAmount) > 0.01) {
-           // Simplified error logging - the specific message is more useful here
             console.error(`Mismatch: Sum of confirmed transactions (₹${sumOfTransactions.toFixed(2)}) does not match available balance (₹${payoutAmount.toFixed(2)}).`);
             throw new Error("Balance calculation error. There's a mismatch between your confirmed cashback and transaction history. Please contact support.");
        }
