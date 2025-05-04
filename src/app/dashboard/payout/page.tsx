@@ -29,6 +29,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, Send } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from "@/lib/utils"; // Ensure cn is imported
 
 const MIN_PAYOUT_THRESHOLD = 2000; // Payout threshold in INR (matches dashboard)
 
@@ -71,12 +72,12 @@ export default function PayoutPage() {
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login?message=Please login to request a payout');
-    } else if (!authLoading && user && !canRequestPayout) {
+    } else if (!authLoading && user && userProfile && !canRequestPayout) { // Added userProfile check
        // Redirect if they somehow land here without enough balance
        toast({
           variant: "destructive",
           title: "Insufficient Balance",
-          description: `You need at least ₹${MIN_PAYOUT_THRESHOLD} to request a payout.`,
+          description: `You need at least ₹${MIN_PAYOUT_THRESHOLD} available cashback to request a payout.`,
        });
        router.push('/dashboard');
     }
@@ -127,9 +128,6 @@ export default function PayoutPage() {
           transactionIdsToUpdate.push(docSnap.id);
           sumOfTransactions += tx.cashbackAmount;
           console.log(`  - Including Tx ID: ${docSnap.id}, Amount: ₹${tx.cashbackAmount.toFixed(2)}`);
-          // Prepare to update transaction status within the batch
-          const txDocRef = doc(db, 'transactions', docSnap.id);
-          batch.update(txDocRef, { status: 'paid' }); // Mark as 'paid' immediately
        });
 
        console.log(`Total sum of queried 'confirmed' transactions: ₹${sumOfTransactions.toFixed(2)}`);
@@ -138,15 +136,8 @@ export default function PayoutPage() {
        // Basic validation: Ensure the sum matches the available balance
        // Allow for minor floating point discrepancies
         if (Math.abs(sumOfTransactions - payoutAmount) > 0.01) {
-             // Log more details before throwing error
-             console.error("Data mismatch details:", {
-                 userId: user.uid,
-                 calculatedSum: sumOfTransactions,
-                 profileBalance: payoutAmount,
-                 numberOfTransactions: querySnapshot.size,
-                 transactionIds: transactionIdsToUpdate,
-             });
-             console.error(`Mismatch: Sum of confirmed transactions (₹${sumOfTransactions.toFixed(2)}) does not match available balance (₹${payoutAmount.toFixed(2)}).`); // Log the error
+            // Simplified error logging - the specific message is more useful here
+             console.error(`Mismatch: Sum of confirmed transactions (₹${sumOfTransactions.toFixed(2)}) does not match available balance (₹${payoutAmount.toFixed(2)}).`);
              throw new Error("Balance calculation error. There's a mismatch between your confirmed cashback and transaction history. Please contact support.");
         }
 
@@ -179,7 +170,7 @@ export default function PayoutPage() {
         // Add the payoutId back to the transactions being marked as paid
         transactionIdsToUpdate.forEach(txId => {
             const txDocRef = doc(db, 'transactions', txId);
-            batch.update(txDocRef, { payoutId: newPayoutRequestRef.id });
+            batch.update(txDocRef, { status: 'paid', payoutId: newPayoutRequestRef.id });
         });
         console.log(`Prepared to link ${transactionIdsToUpdate.length} transactions to PayoutRequest ${newPayoutRequestRef.id}.`);
 
@@ -228,6 +219,7 @@ export default function PayoutPage() {
                            You need at least ₹{MIN_PAYOUT_THRESHOLD} available cashback to request a payout. Your current balance is ₹{availableBalance.toFixed(2)}.
                        </AlertDescription>
                    </Alert>
+                   <Button onClick={() => router.push('/dashboard')} className="mt-4">Back to Dashboard</Button>
                </CardContent>
            </Card>
        );
@@ -271,7 +263,7 @@ export default function PayoutPage() {
                          <SelectItem value="gift_card">Gift Card (e.g., Amazon)</SelectItem>
                      </SelectContent>
                  </Select>
-                 {errors.paymentMethod && <p className="text-sm text-destructive">{errors.paymentMethod.message}</p>}
+                 {errors.paymentMethod && <p className="text-sm text-destructive mt-1">{errors.paymentMethod.message}</p>}
            </div>
 
 
@@ -297,7 +289,7 @@ export default function PayoutPage() {
                    aria-invalid={errors.paymentDetails ? "true" : "false"}
                    rows={3}
                  />
-                 {errors.paymentDetails && <p className="text-sm text-destructive">{errors.paymentDetails.message}</p>}
+                 {errors.paymentDetails && <p className="text-sm text-destructive mt-1">{errors.paymentDetails.message}</p>}
                   {selectedPaymentMethod === 'bank_transfer' && (
                      <p className='text-xs text-muted-foreground'>Please double-check bank details for accuracy.</p>
                   )}
