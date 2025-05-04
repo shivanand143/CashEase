@@ -1,21 +1,22 @@
 // src/app/stores/page.tsx
-"use client"; // Need client component for data fetching and interaction
+"use client";
 
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { collection, getDocs, query, where, orderBy, limit, startAfter, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore'; // Added pagination imports
+import { collection, getDocs, query, where, orderBy, limit, startAfter, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import type { Store } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter } from '@/components/ui/card'; // Removed Header/Title as they are within content now
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, Search, ShoppingBag } from 'lucide-react';
+import { AlertCircle, Search, ShoppingBag, BadgePercent } from 'lucide-react'; // Use BadgePercent for Shop Now
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { logClick } from '@/lib/tracking'; // Import the tracking function
-import { useAuth } from '@/hooks/use-auth'; // Import useAuth to get user ID
+import { logClick } from '@/lib/tracking';
+import { useAuth } from '@/hooks/use-auth';
+import { cn } from "@/lib/utils"; // Import cn utility
 
 const STORES_PER_PAGE = 16; // Number of stores to load per page
 
@@ -43,6 +44,7 @@ export default function StoresPage() {
         const q = query(
           storesCollection,
           where('isActive', '==', true),
+          orderBy('isFeatured', 'desc'), // Prioritize featured stores
           orderBy('name', 'asc'),
           limit(STORES_PER_PAGE)
         );
@@ -71,6 +73,7 @@ export default function StoresPage() {
         const q = query(
           storesCollection,
           where('isActive', '==', true),
+          orderBy('isFeatured', 'desc'), // Maintain same order
           orderBy('name', 'asc'),
           startAfter(lastVisible),
           limit(STORES_PER_PAGE)
@@ -169,7 +172,7 @@ export default function StoresPage() {
         <Input
           type="search"
           placeholder="Search stores or categories..."
-          className="pl-10 w-full shadow-sm focus:ring-primary focus:border-primary"
+          className="pl-10 w-full shadow-sm focus:ring-primary focus:border-primary h-11 text-base"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           aria-label="Search stores"
@@ -208,7 +211,7 @@ export default function StoresPage() {
            <>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
               {displayedStores.map((store) => (
-                <Card key={store.id} className="group flex flex-col hover:shadow-xl transition-all duration-300 ease-in-out transform hover:-translate-y-1 border border-border rounded-lg overflow-hidden">
+                <Card key={store.id} className="group flex flex-col hover:shadow-xl transition-all duration-300 ease-in-out transform hover:-translate-y-1 border border-border rounded-lg overflow-hidden bg-card">
                    <CardContent className="p-4 flex flex-col items-center justify-center flex-grow h-48"> {/* Fixed height for content */}
                       <Link href={`/stores/${store.id}`} className="block mb-3 flex-grow flex flex-col items-center justify-center" title={`View details for ${store.name}`}>
                          <Image
@@ -220,7 +223,7 @@ export default function StoresPage() {
                            className="object-contain max-h-[60px] mb-4 transition-transform duration-300 group-hover:scale-105" // Max height and hover effect
                            onError={(e) => { e.currentTarget.src = 'https://picsum.photos/seed/placeholder/120/60'; e.currentTarget.alt = 'Placeholder Logo'; }} // Fallback image
                          />
-                         <p className="font-semibold text-center mb-1 group-hover:text-primary transition-colors">{store.name}</p>
+                         <p className="font-semibold text-center mb-1 group-hover:text-primary transition-colors duration-200">{store.name}</p>
                          <p className="text-sm text-primary font-medium text-center">{store.cashbackRate}</p>
                       </Link>
                    </CardContent>
@@ -232,7 +235,7 @@ export default function StoresPage() {
                          onClick={() => handleStoreClick(store)}
                          title={`Shop at ${store.name} and earn cashback`}
                      >
-                       <ShoppingBag className="mr-2 h-4 w-4" /> Shop Now
+                       <BadgePercent className="mr-2 h-4 w-4" /> Shop & Earn
                      </Button>
                   </CardFooter>
                 </Card>
@@ -241,7 +244,7 @@ export default function StoresPage() {
             {/* Load More Button */}
             {hasMore && !searchTerm && ( // Only show load more if not searching and more exist
                  <div className="mt-8 text-center">
-                     <Button onClick={fetchMoreStores} disabled={loadingMore}>
+                     <Button onClick={fetchMoreStores} disabled={loadingMore} size="lg">
                          {loadingMore ? 'Loading...' : 'Load More Stores'}
                      </Button>
                  </div>
@@ -259,11 +262,23 @@ export default function StoresPage() {
              )}
            </>
         ) : (
-          // No Stores Found (Initial Load)
+          // No Stores Found (Initial Load or after filtering everything)
           <div className="text-center py-16 text-muted-foreground">
             <ShoppingBag className="mx-auto h-12 w-12 mb-4 text-gray-400" />
-            <p className="text-lg font-semibold">No stores found.</p>
-            <p>Check back later or contact support if you believe this is an error.</p>
+             {searchTerm ? (
+               <>
+                 <p className="text-lg font-semibold">No stores found matching "{searchTerm}".</p>
+                 <p>Try searching for something else or clear the search.</p>
+                 <Button variant="link" onClick={() => setSearchTerm('')} className="mt-4">
+                    Clear Search
+                 </Button>
+               </>
+             ) : (
+               <>
+                 <p className="text-lg font-semibold">No active stores found.</p>
+                 <p>Check back later or contact support if you believe this is an error.</p>
+               </>
+             )}
           </div>
         )}
       </section>

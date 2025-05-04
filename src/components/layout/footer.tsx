@@ -1,6 +1,6 @@
 // src/components/layout/footer.tsx
 import Link from 'next/link';
-import { IndianRupee } from 'lucide-react'; // Assuming you use lucide-react
+import { IndianRupee } from 'lucide-react';
 import { Facebook, Instagram, Twitter } from "lucide-react";
 
 export default function Footer() {
@@ -9,15 +9,15 @@ export default function Footer() {
       <div className="container py-8 md:py-12">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
           {/* Branding Column */}
-          <div className="col-span-1">
-             <Link href="/" className="flex items-center space-x-2 mb-4">
+          <div className="col-span-1 space-y-4">
+             <Link href="/" className="flex items-center space-x-2 ">
                <IndianRupee className="h-7 w-7 text-primary" />
                <span className="font-bold text-xl text-foreground">CashEase</span>
              </Link>
              <p className="text-sm">
                Shop smarter, earn easier. Your #1 destination for cashback and coupons in India.
              </p>
-             <p className="text-sm mt-4">
+             <p className="text-sm">
                &copy; {new Date().getFullYear()} CashEase. All rights reserved.
              </p>
           </div>
@@ -63,27 +63,29 @@ export default function Footer() {
             </nav>
           </div>
 
-           {/* Legal Column */}
-           <div className="col-span-1">
-             <h4 className="font-semibold text-foreground mb-3">Legal</h4>
-             <nav className="flex flex-col space-y-2">
-               <Link href="/privacy" className="text-sm hover:text-primary transition-colors">
-                 Privacy Policy
-               </Link>
-               <Link href="/terms" className="text-sm hover:text-primary transition-colors">
-                 Terms of Service
-               </Link>
-                {/* <Link href="/disclaimer" className="text-sm hover:text-primary transition-colors">
-                  Disclaimer
-                </Link> */}
-             </nav>
+           {/* Legal & Social Column */}
+           <div className="col-span-1 space-y-4">
+             <div>
+                <h4 className="font-semibold text-foreground mb-3">Legal</h4>
+                <nav className="flex flex-col space-y-2">
+                  <Link href="/privacy" className="text-sm hover:text-primary transition-colors">
+                    Privacy Policy
+                  </Link>
+                  <Link href="/terms" className="text-sm hover:text-primary transition-colors">
+                    Terms of Service
+                  </Link>
+                   {/* <Link href="/disclaimer" className="text-sm hover:text-primary transition-colors">
+                     Disclaimer
+                   </Link> */}
+                </nav>
+             </div>
              {/* Social Media Links */}
-              <div className="mt-4 pt-4 border-t border-border/20 md:border-none md:pt-0">
-                 <h4 className="font-semibold text-foreground mb-3 hidden md:block">Follow Us</h4>
+              <div className="pt-4 border-t border-border/20 md:border-none md:pt-0">
+                 <h4 className="font-semibold text-foreground mb-3">Follow Us</h4>
                  <div className="flex space-x-4">
-                   <Link href="#" aria-label="Facebook" className="text-muted-foreground hover:text-primary transition-colors"><Facebook className="w-5 h-5" /></Link>
-                   <Link href="#" aria-label="Twitter" className="text-muted-foreground hover:text-primary transition-colors"><Twitter className="w-5 h-5"/></Link>
-                   <Link href="#" aria-label="Instagram" className="text-muted-foreground hover:text-primary transition-colors"><Instagram className="w-5 h-5"/></Link>
+                   <Link href="https://facebook.com" target="_blank" rel="noopener noreferrer" aria-label="Facebook" className="text-muted-foreground hover:text-primary transition-colors"><Facebook className="w-5 h-5" /></Link>
+                   <Link href="https://twitter.com" target="_blank" rel="noopener noreferrer" aria-label="Twitter" className="text-muted-foreground hover:text-primary transition-colors"><Twitter className="w-5 h-5"/></Link>
+                   <Link href="https://instagram.com" target="_blank" rel="noopener noreferrer" aria-label="Instagram" className="text-muted-foreground hover:text-primary transition-colors"><Instagram className="w-5 h-5"/></Link>
                  </div>
               </div>
            </div>
