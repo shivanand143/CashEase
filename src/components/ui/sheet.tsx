@@ -114,44 +114,41 @@ const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
 >(({ side = "right", className, children, ...props }, ref) => {
-  const generatedTitleId = React.useId();
-  let hasExplicitTitle = false;
-  let explicitTitleId: string | undefined;
+  const generatedId = React.useId();
+  let hasExplicitTitleOrLabelling = !!props['aria-labelledby'];
 
-  // Check if children contain a SheetHeader with SheetTitle to get its ID
-  React.Children.forEach(children, (child) => {
-    if (React.isValidElement(child) && child.type === SheetHeader) {
-      React.Children.forEach(child.props.children, (headerChild) => {
-        if (React.isValidElement(headerChild) && headerChild.type === SheetTitle) {
-          hasExplicitTitle = true;
-          // Attempt to get ID from the explicit title, if provided
-          explicitTitleId = headerChild.props.id;
+  // Simplified check: Does children directly contain a SheetTitle or SheetHeader containing a SheetTitle?
+   React.Children.forEach(children, (child) => {
+     if (hasExplicitTitleOrLabelling) return; // Stop checking if already labelled
+
+     if (React.isValidElement(child)) {
+        if (child.type === SheetTitle) {
+            hasExplicitTitleOrLabelling = true;
+        } else if (child.type === SheetHeader) {
+             React.Children.forEach(child.props.children, (headerChild) => {
+                 if (React.isValidElement(headerChild) && headerChild.type === SheetTitle) {
+                     hasExplicitTitleOrLabelling = true;
+                 }
+             });
         }
-      });
-    }
-  });
-
-  // Determine the ID to use for aria-labelledby
-  const labelledBy = props['aria-labelledby'] || explicitTitleId || (hasExplicitTitle ? undefined : generatedTitleId);
-
+     }
+   });
 
   return (
     <SheetPortal>
       <SheetOverlay />
       <SheetPrimitive.Content
         ref={ref}
-        aria-labelledby={labelledBy} // Use the determined ID
         className={cn(sheetVariants({ side }), className)}
-        {...props}
+        {...props} // Spread remaining props, including any aria-labelledby
       >
-         {/* Render a hidden title only if no explicit title was found AND no aria-labelledby was provided */}
-         {!hasExplicitTitle && !props['aria-labelledby'] && (
-            <SheetHeader className="sr-only">
-              <SheetTitle id={generatedTitleId}>Sheet</SheetTitle>
-              {/* Optionally add a default hidden description */}
-              {/* <SheetDescription>Sheet content</SheetDescription> */}
-            </SheetHeader>
-         )}
+        {/* Always include a title or ensure it's labelled by something else */}
+        {!hasExplicitTitleOrLabelling && (
+          <SheetHeader className="sr-only">
+            <SheetTitle id={generatedId}>Sheet</SheetTitle>
+            <SheetDescription>Sheet content</SheetDescription>
+          </SheetHeader>
+        )}
         {children}
         <SheetClose asChild>
             <button className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
