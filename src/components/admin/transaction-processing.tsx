@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -206,125 +206,157 @@ export default function TransactionForm({ stores, transaction, onClose, onSucces
   const onSubmit = async (data: TransactionFormValues) => {
     setLoading(true);
     setError(null);
+    console.log("Form submitted with data:", data); // Log form data
 
-     // Re-fetch user details just before submitting to ensure consistency
-     if (!isEditing) {
-        await fetchUserDetails(data.userId);
-        if (!foundUser) {
-           setError("User not found or ID is invalid. Please search and confirm the user.");
-           setLoading(false);
-           return;
-        }
-     }
+    if (!data.userId) {
+        setError("User ID is missing. Please find the user first.");
+        setLoading(false);
+        return;
+    }
 
-     const originalStatus = isEditing && transaction ? transaction.status : null;
-     const newStatus = data.status;
-     const cashbackDiff = isEditing && transaction ? data.cashbackAmount - transaction.cashbackAmount : data.cashbackAmount;
-     const statusChanged = isEditing && originalStatus !== newStatus;
+    const originalStatus = isEditing && transaction ? transaction.status : null;
+    const newStatus = data.status;
+    const cashbackAmount = data.cashbackAmount;
+    const originalCashbackAmount = isEditing && transaction ? transaction.cashbackAmount : 0;
+
+    console.log("Transaction details:", {
+        isEditing,
+        originalStatus,
+        newStatus,
+        cashbackAmount,
+        originalCashbackAmount,
+        userId: data.userId,
+    });
 
     try {
-      // Use Firestore transaction for atomic updates
-      await runTransaction(db, async (dbTransaction) => {
-          const userDocRef = doc(db, 'users', data.userId);
-          const userSnap = await dbTransaction.get(userDocRef);
+        await runTransaction(db, async (dbTransaction) => {
+            const userDocRef = doc(db, 'users', data.userId);
+            const userSnap = await dbTransaction.get(userDocRef);
 
-          if (!userSnap.exists()) {
-              throw new Error("User profile not found.");
-          }
-          const userProfile = userSnap.data() as UserProfile;
-          let updatedProfileData: Partial<UserProfile> = {};
-
-           // Adjust balances based on status changes and amount differences
-            // Example logic (Needs refinement based on exact requirements)
-            if (isEditing) {
-               // Reverting old status impact
-               if (originalStatus === 'pending') updatedProfileData.pendingCashback = (userProfile.pendingCashback || 0) - transaction!.cashbackAmount;
-               else if (originalStatus === 'confirmed') updatedProfileData.cashbackBalance = (userProfile.cashbackBalance || 0) - transaction!.cashbackAmount;
-
-               // Applying new status impact
-               if (newStatus === 'pending') updatedProfileData.pendingCashback = (updatedProfileData.pendingCashback ?? userProfile.pendingCashback || 0) + data.cashbackAmount;
-               else if (newStatus === 'confirmed') updatedProfileData.cashbackBalance = (updatedProfileData.cashbackBalance ?? userProfile.cashbackBalance || 0) + data.cashbackAmount;
-
-                // If status changes TO confirmed, also update lifetime
-                if (statusChanged && newStatus === 'confirmed') {
-                   updatedProfileData.lifetimeCashback = (userProfile.lifetimeCashback || 0) + data.cashbackAmount;
-                }
-                 // Adjust lifetime if cashback amount changed for a confirmed/paid transaction
-                 else if (['confirmed', 'paid'].includes(originalStatus!) && cashbackDiff !== 0) {
-                     updatedProfileData.lifetimeCashback = (userProfile.lifetimeCashback || 0) + cashbackDiff;
-                 }
-
-            } else { // Adding new transaction
-               if (newStatus === 'pending') updatedProfileData.pendingCashback = (userProfile.pendingCashback || 0) + data.cashbackAmount;
-               else if (newStatus === 'confirmed') {
-                   updatedProfileData.cashbackBalance = (userProfile.cashbackBalance || 0) + data.cashbackAmount;
-                   updatedProfileData.lifetimeCashback = (userProfile.lifetimeCashback || 0) + data.cashbackAmount;
-               }
+            if (!userSnap.exists()) {
+                throw new Error("User profile not found.");
             }
 
+            const userProfile = userSnap.data() as UserProfile;
+            console.log("Current user profile data:", userProfile);
 
-          // Ensure balances don't go negative
-          if (updatedProfileData.pendingCashback !== undefined) updatedProfileData.pendingCashback = Math.max(0, updatedProfileData.pendingCashback);
-          if (updatedProfileData.cashbackBalance !== undefined) updatedProfileData.cashbackBalance = Math.max(0, updatedProfileData.cashbackBalance);
-          if (updatedProfileData.lifetimeCashback !== undefined) updatedProfileData.lifetimeCashback = Math.max(0, updatedProfileData.lifetimeCashback);
+            let pendingCashback = userProfile.pendingCashback || 0;
+            let cashbackBalance = userProfile.cashbackBalance || 0;
+            let lifetimeCashback = userProfile.lifetimeCashback || 0;
 
+            console.log("Initial balances:", { pendingCashback, cashbackBalance, lifetimeCashback });
 
-         // Prepare transaction data for Firestore
-         const transactionData = {
-           userId: data.userId,
-           storeId: data.storeId,
-           clickId: data.clickId || null,
-           saleAmount: data.saleAmount,
-           cashbackAmount: data.cashbackAmount,
-           status: data.status,
-           transactionDate: Timestamp.fromDate(data.transactionDate),
-           confirmationDate: data.confirmationDate ? Timestamp.fromDate(data.confirmationDate) : null,
-           adminNotes: data.adminNotes || null,
-           updatedAt: serverTimestamp(),
-         };
+            // Adjust balances based on status changes and amount differences
+            if (isEditing) {
+                console.log("Editing transaction - adjusting balances");
+                // Revert old status impact
+                if (originalStatus === 'pending') pendingCashback -= originalCashbackAmount;
+                else if (originalStatus === 'confirmed') cashbackBalance -= originalCashbackAmount;
 
-        if (isEditing && transaction) {
-          // Update existing transaction
-          const transactionDocRef = doc(db, 'transactions', transaction.id);
-           dbTransaction.update(transactionDocRef, transactionData);
-           if (Object.keys(updatedProfileData).length > 0) {
-               dbTransaction.update(userDocRef, updatedProfileData);
-           }
-          toast({
-            title: "Transaction Updated",
-            description: `Transaction ID ${transaction.id} has been successfully updated.`,
-          });
-        } else {
-          // Add new transaction
-          const transactionsCollection = collection(db, 'transactions');
-           dbTransaction.set(doc(transactionsCollection), { // Use set with auto-ID for new doc
-             ...transactionData,
-             createdAt: serverTimestamp(), // Add createdAt for new
-           });
-           if (Object.keys(updatedProfileData).length > 0) {
-               dbTransaction.update(userDocRef, updatedProfileData);
-           }
-          toast({
-            title: "Transaction Added",
-            description: `New transaction has been successfully added for user ${data.userId}.`,
-          });
-        }
-      }); // End Firestore transaction
+                 // Also revert lifetime if it was previously confirmed/paid
+                 if (['confirmed', 'paid'].includes(originalStatus || '')) {
+                     lifetimeCashback -= originalCashbackAmount;
+                 }
 
-      onSuccess(); // Call success callback (refetch list, close form)
+                console.log("Balances after reverting old status:", { pendingCashback, cashbackBalance, lifetimeCashback });
+
+                 // Applying new status impact
+                 if (newStatus === 'pending') pendingCashback += cashbackAmount;
+                 else if (newStatus === 'confirmed') {
+                     cashbackBalance += cashbackAmount;
+                     lifetimeCashback += cashbackAmount; // Add to lifetime when confirmed
+                 } else if (newStatus === 'paid') {
+                     // Usually 'paid' status doesn't change balance directly here,
+                     // it should be handled by payout logic.
+                     // But if editing TO 'paid' from something else, ensure lifetime is updated if needed.
+                     if (!['confirmed', 'paid'].includes(originalStatus || '')) {
+                         lifetimeCashback += cashbackAmount;
+                     }
+                 }
+                 // If status changed TO 'rejected' from confirmed/paid, balance was already subtracted.
+                 // If changed TO 'rejected' from pending, pending was already subtracted.
+
+            } else { // Adding new transaction
+                 console.log("Adding new transaction - adjusting balances");
+                 if (newStatus === 'pending') pendingCashback += cashbackAmount;
+                 else if (newStatus === 'confirmed') {
+                     cashbackBalance += cashbackAmount;
+                     lifetimeCashback += cashbackAmount;
+                 }
+                 // 'rejected' or 'paid' status for a NEW transaction usually means no balance change initially.
+            }
+
+            // Ensure balances don't go negative
+            pendingCashback = Math.max(0, pendingCashback);
+            cashbackBalance = Math.max(0, cashbackBalance);
+            lifetimeCashback = Math.max(0, lifetimeCashback); // Lifetime should generally not decrease unless correcting errors
+
+            const updatedProfileData: Partial<UserProfile> = {
+                pendingCashback,
+                cashbackBalance,
+                lifetimeCashback,
+                updatedAt: serverTimestamp()
+            };
+            console.log("Calculated updated profile data:", updatedProfileData);
+
+            // Prepare transaction data for Firestore
+            const transactionData = {
+                userId: data.userId,
+                storeId: data.storeId,
+                clickId: data.clickId || null,
+                saleAmount: data.saleAmount,
+                cashbackAmount: cashbackAmount,
+                status: newStatus,
+                transactionDate: Timestamp.fromDate(data.transactionDate),
+                confirmationDate: data.confirmationDate ? Timestamp.fromDate(data.confirmationDate) : null,
+                adminNotes: data.adminNotes || null,
+                updatedAt: serverTimestamp(),
+            };
+
+            if (isEditing && transaction) {
+                // Update existing transaction
+                const transactionDocRef = doc(db, 'transactions', transaction.id);
+                console.log("Updating existing transaction:", transaction.id, transactionData);
+                console.log("Updating user profile with:", updatedProfileData);
+                dbTransaction.update(transactionDocRef, transactionData);
+                dbTransaction.update(userDocRef, updatedProfileData);
+                toast({
+                    title: "Transaction Updated",
+                    description: `Transaction ID ${transaction.id} has been successfully updated.`,
+                });
+            } else {
+                // Add new transaction
+                 const newTransactionRef = doc(collection(db, 'transactions')); // Generate new doc ref
+                console.log("Adding new transaction:", newTransactionRef.id, transactionData);
+                console.log("Updating user profile with:", updatedProfileData);
+                dbTransaction.set(newTransactionRef, {
+                    ...transactionData,
+                    createdAt: serverTimestamp(), // Add createdAt for new
+                });
+                dbTransaction.update(userDocRef, updatedProfileData);
+                toast({
+                    title: "Transaction Added",
+                    description: `New transaction has been successfully added for user ${data.userId}.`,
+                });
+            }
+        }); // End Firestore transaction
+
+        console.log("Firestore transaction committed successfully.");
+        onSuccess(); // Call success callback (refetch list, close form)
+
     } catch (err: any) {
-      console.error("Error saving transaction:", err);
-      const errorMessage = err.message || "An unexpected error occurred.";
-      setError(errorMessage);
-      toast({
-        variant: "destructive",
-        title: "Save Failed",
-        description: errorMessage,
-      });
+        console.error("Error saving transaction:", err);
+        const errorMessage = err.message || "An unexpected error occurred.";
+        setError(errorMessage);
+        toast({
+            variant: "destructive",
+            title: "Save Failed",
+            description: errorMessage,
+        });
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  };
+};
 
 
   return (

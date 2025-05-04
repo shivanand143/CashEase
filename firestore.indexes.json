@@ -15,7 +15,7 @@
       "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "payoutId", "order": "ASCENDING" } // Added for payout query
+        { "fieldPath": "payoutId", "order": "ASCENDING" }
       ]
     },
     {
@@ -84,14 +84,14 @@
       "collectionGroup": "users",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "referralCode", "order": "ASCENDING" } // For finding referrer
+        { "fieldPath": "referralCode", "order": "ASCENDING" }
       ]
     },
      {
        "collectionGroup": "users",
        "queryScope": "COLLECTION",
        "fields": [
-         { "fieldPath": "email", "order": "ASCENDING" } // For admin user search
+         { "fieldPath": "email", "order": "ASCENDING" } 
        ]
      }
   ],

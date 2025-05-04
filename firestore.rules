@@ -3,99 +3,71 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if user is authenticated
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // Helper function to check if the user is the owner of the document
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-
     // Helper function to check if the user is an admin
-    // Assumes 'role' custom claim or field is set on the user's profile/token
     function isAdmin() {
-       // Check custom claim first (more secure if set by backend)
-       // return request.auth.token.role == 'admin';
-       // Fallback to checking Firestore profile (less secure if client can write role)
-       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // ==== Users ====
+    // Default deny all reads/writes unless explicitly allowed
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Users Collection
+    // - Authenticated users can read their own profile
+    // - Authenticated users can update their own profile (except role)
+    // - Admins can read/write any user profile
     match /users/{userId} {
-      // Allow reading own profile, admins can read all
-      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
-      // Allow creating own profile (signup)
-      allow create: if isAuthenticated() && isOwner(userId);
-      // Allow updating own profile (specific fields), admins can update all
-      allow update: if isAuthenticated() && (
-                    (isOwner(userId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'payoutDetails', 'updatedAt'])) ||
-                    isAdmin()
-                   );
-      // Allow admins to delete users (consider implications)
-      allow delete: if isAuthenticated() && isAdmin();
-
-       // Subcollection rules (if needed)
-       // match /payoutMethods/{payoutId} {
-       //   allow read, write: if isAuthenticated() && isOwner(userId);
-       // }
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow create: if request.auth != null; // Allow creation on signup
+      allow update: if request.auth != null &&
+                       (request.auth.uid == userId && request.resource.data.role == resource.data.role) || // User can update own profile (but not role)
+                       isAdmin(); // Admins can update anything
+      allow delete: if isAdmin(); // Only admins can delete users
     }
 
-    // ==== Stores ====
+    // Stores Collection
+    // - All authenticated users can read stores
+    // - Only admins can create, update, or delete stores
     match /stores/{storeId} {
-      // Allow anyone to read stores
-      allow read: if true;
-      // Allow only admins to create, update, or delete stores
-      allow create, update, delete: if isAuthenticated() && isAdmin();
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && isAdmin(); // Includes create, update, delete
     }
 
-    // ==== Coupons ====
+    // Coupons Collection
+    // - All authenticated users can read coupons
+    // - Only admins can create, update, or delete coupons
     match /coupons/{couponId} {
-      // Allow anyone to read active coupons
-      allow read: if resource.data.isActive == true;
-      // Allow admins to read all coupons
-      allow read: if isAuthenticated() && isAdmin();
-      // Allow only admins to create, update, or delete coupons
-      allow create, update, delete: if isAuthenticated() && isAdmin();
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && isAdmin(); // Includes create, update, delete
     }
 
-    // ==== Clicks ====
-    match /clicks/{clickId} {
-      // Allow users to create their own click logs
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      // Allow users to read their own click logs (optional, maybe admin only?)
-      // allow read: if isAuthenticated() && isOwner(request.resource.data.userId);
-      // Allow admins to read all click logs
-      allow read: if isAuthenticated() && isAdmin();
-      // Generally don't allow updating/deleting click logs
-      allow update, delete: if false;
-    }
-
-    // ==== Transactions ====
+    // Transactions Collection
+    // - Authenticated users can read their own transactions
+    // - Only admins can create, update, or delete transactions (important for balance integrity)
     match /transactions/{transactionId} {
-      // Allow users to read their own transactions
-      allow read: if isAuthenticated() && isOwner(resource.data.userId);
-      // Allow only admins to create, update, or delete transactions
-      // (Assuming transactions are added/managed by backend/admin, not directly by users)
-      allow create, update, delete: if isAuthenticated() && isAdmin();
+       allow read: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
+       allow create, update, delete: if request.auth != null && isAdmin();
     }
 
-    // ==== Payout Requests ====
-    match /payoutRequests/{requestId} {
-      // Allow users to create their own payout requests
-      allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
-      // Allow users to read their own payout requests
-      allow read: if isAuthenticated() && isOwner(resource.data.userId);
-      // Allow admins to read all and update status/notes
-      allow read, update: if isAuthenticated() && isAdmin();
-      // Generally don't allow deleting payout requests (keep history)
-      allow delete: if false;
+    // Payout Requests Collection
+    // - Authenticated users can read their own payout requests
+    // - Authenticated users can create their own payout requests
+    // - Only admins can update (approve/reject) or delete payout requests
+    match /payoutRequests/{payoutRequestId} {
+        allow read: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
+        allow create: if request.auth != null && request.resource.data.userId == request.auth.uid; // User creates own request
+        allow update, delete: if request.auth != null && isAdmin(); // Admin manages status
     }
 
-     // Default deny all other access
-     match /{document=**} {
-       allow read, write: if false;
+     // Clicks Collection (Tracking)
+     // - Authenticated users can create their own click logs
+     // - Admins can read click logs (for analytics/debugging)
+     match /clicks/{clickId} {
+        allow read: if request.auth != null && isAdmin(); // Only admins read click logs directly
+        allow create: if request.auth != null && request.resource.data.userId == request.auth.uid; // User creates own click log
+        // Generally, don't allow update/delete on click logs
+        allow update, delete: if false;
      }
   }
 }
