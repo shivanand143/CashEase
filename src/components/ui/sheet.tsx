@@ -127,8 +127,8 @@ const SheetContent = React.forwardRef<
         aria-labelledby={titleId} // Always link to the hidden title's ID
         {...props} // Spread remaining props
       >
-        {/* Always render a hidden title for accessibility */}
-        <VisuallyHidden>
+       {/* Always render a hidden title for accessibility */}
+       <VisuallyHidden>
           <SheetTitle id={titleId}>Sheet Menu</SheetTitle> {/* Default hidden title */}
         </VisuallyHidden>
 
