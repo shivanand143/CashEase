@@ -22,7 +22,7 @@ const SheetOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SheetPrimitive.Overlay
     className={cn(
-      "fixed inset-0 z-50 bg-black/80  data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className
     )}
     {...props}
@@ -53,40 +53,6 @@ const sheetVariants = cva(
 interface SheetContentProps
   extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
     VariantProps<typeof sheetVariants> {}
-
-const SheetContent = React.forwardRef<
-  React.ElementRef<typeof SheetPrimitive.Content>,
-  SheetContentProps
->(({ side = "right", className, children, ...props }, ref) => {
-    // Generate a unique ID for accessibility linking if not provided
-    const titleId = React.useId();
-
-    return (
-        <SheetPortal>
-          <SheetOverlay />
-          <SheetPrimitive.Content
-            ref={ref}
-            role="dialog" // Explicitly set role
-            aria-labelledby={props['aria-labelledby'] || titleId} // Link to title
-            className={cn(sheetVariants({ side }), className)}
-            {...props}
-          >
-            {children}
-            {/* Ensure a visually hidden title exists if not provided explicitly */}
-            {!props['aria-labelledby'] && (
-              <SheetHeader className="sr-only">
-                <SheetTitle id={titleId}>Sheet Content</SheetTitle>
-              </SheetHeader>
-            )}
-            <SheetPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
-              <X className="h-4 w-4" />
-              <span className="sr-only">Close</span>
-            </SheetPrimitive.Close>
-          </SheetPrimitive.Content>
-        </SheetPortal>
-    )
-})
-SheetContent.displayName = SheetPrimitive.Content.displayName
 
 const SheetHeader = ({
   className,
@@ -139,6 +105,58 @@ const SheetDescription = React.forwardRef<
   />
 ))
 SheetDescription.displayName = SheetPrimitive.Description.displayName
+
+
+const SheetContent = React.forwardRef<
+  React.ElementRef<typeof SheetPrimitive.Content>,
+  SheetContentProps
+>(({ side = "right", className, children, ...props }, ref) => {
+  // Generate a unique ID for accessibility linking if not provided
+  const generatedTitleId = React.useId();
+  // Check if the children contain a SheetHeader with a SheetTitle
+  let hasExplicitTitle = false;
+  React.Children.forEach(children, (child) => {
+    if (React.isValidElement(child) && child.type === SheetHeader) {
+      React.Children.forEach(child.props.children, (headerChild) => {
+        if (React.isValidElement(headerChild) && headerChild.type === SheetTitle) {
+          hasExplicitTitle = true;
+        }
+      });
+    }
+  });
+
+  const labelledBy = props['aria-labelledby'] || (hasExplicitTitle ? undefined : generatedTitleId);
+
+  return (
+    <SheetPortal>
+      <SheetOverlay />
+      <SheetPrimitive.Content
+        ref={ref}
+        role="dialog" // Explicitly set role
+        aria-labelledby={labelledBy}
+        aria-describedby={props['aria-describedby']}
+        className={cn(sheetVariants({ side }), className)}
+        {...props}
+      >
+        {/* Conditionally render a hidden title if no explicit title/labelledby is found */}
+        {!labelledBy && !hasExplicitTitle && (
+           <SheetHeader className="sr-only">
+             <SheetTitle id={generatedTitleId}>Sheet</SheetTitle>
+             {/* Add a default description if needed, though title is the primary requirement */}
+             {/* <SheetDescription>Sheet content</SheetDescription> */}
+           </SheetHeader>
+         )}
+        {children}
+        <SheetPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
+        </SheetPrimitive.Close>
+      </SheetPrimitive.Content>
+    </SheetPortal>
+  );
+})
+SheetContent.displayName = SheetPrimitive.Content.displayName
+
 
 export {
   Sheet,
