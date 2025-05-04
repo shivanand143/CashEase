@@ -1,6 +1,7 @@
 // src/components/layout/header.tsx
 "use client";
 
+import * as React from 'react'; // Import React for state
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -23,12 +24,11 @@ import {
 import { LogIn, LogOut, User, IndianRupee, ShoppingBag, LayoutDashboard, Settings, Menu, Home, Tag, ShieldCheck, Gift, History, Send, X, List, HelpCircle, BookOpen, Search as SearchIcon } from 'lucide-react'; // Added icons for new sections
 import { useAuth } from '@/hooks/use-auth';
 import { Skeleton } from '@/components/ui/skeleton';
-import { usePathname } from 'next/navigation'; // Import usePathname
+import { usePathname, useRouter } from 'next/navigation'; // Import usePathname & useRouter
 import { cn } from '@/lib/utils'; // Import cn utility
 import { Separator } from "@/components/ui/separator";
 import { Input } from '@/components/ui/input'; // Import Input for search
-import * as React from 'react'; // Import React for state
-import { useRouter } from 'next/navigation'; // Use Next.js router
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden"; // Import VisuallyHidden
 
 export default function Header() {
   const { user, userProfile, loading, signOut } = useAuth();
@@ -73,6 +73,8 @@ export default function Header() {
       if (!searchTerm.trim()) return;
       // Navigate to search page with query parameter using Next.js router
       router.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`);
+      // Close the sheet if it's open after search (optional)
+      // Find a way to access sheet close function if needed, or pass it down
    };
 
   return (
@@ -88,6 +90,10 @@ export default function Header() {
                    </Button>
                </SheetTrigger>
                <SheetContent side="left" className="w-full max-w-xs p-0 flex flex-col">
+                    {/* Explicitly add a visually hidden title for accessibility */}
+                    <VisuallyHidden>
+                        <SheetTitle>Main Navigation Menu</SheetTitle>
+                    </VisuallyHidden>
                    <SheetHeader className="p-4 border-b flex flex-row items-center justify-between">
                        <Link href="/" className="flex items-center space-x-2">
                            <IndianRupee className="h-6 w-6 text-primary" />
@@ -101,7 +107,7 @@ export default function Header() {
                         </SheetClose>
                    </SheetHeader>
                     {/* Mobile Search Bar */}
-                    <form onSubmit={handleSearchSubmit} className="p-4 border-b">
+                     <form onSubmit={(e) => { handleSearchSubmit(e); /* Add SheetClose here if possible */ }} className="p-4 border-b">
                          <div className="relative">
                            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                            <Input

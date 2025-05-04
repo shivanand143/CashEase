@@ -5,8 +5,6 @@ import * as React from "react"
 import * as SheetPrimitive from "@radix-ui/react-dialog" // Sheet uses Dialog primitives
 import { cva, type VariantProps } from "class-variance-authority"
 import { X } from "lucide-react"
-import { VisuallyHidden } from "@radix-ui/react-visually-hidden" // Import VisuallyHidden
-
 import { cn } from "@/lib/utils"
 
 const Sheet = SheetPrimitive.Root
@@ -110,43 +108,33 @@ const SheetDescription = React.forwardRef<
 ));
 SheetDescription.displayName = SheetPrimitive.Description.displayName; // Use DialogPrimitive name
 
-// SheetContent implementation with accessibility fix
+// Reverted SheetContent to a simpler structure.
+// Consumers MUST provide a SheetTitle (visible or hidden using VisuallyHidden)
+// inside SheetContent for accessibility.
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
 >(({ side = "right", className, children, ...props }, ref) => {
-  // Generate a unique ID for the hidden title.
-  const titleId = `sheet-title-${React.useId()}`;
-
   return (
     <SheetPortal>
       <SheetOverlay />
       <SheetPrimitive.Content
         ref={ref}
         className={cn(sheetVariants({ side }), className)}
-        aria-labelledby={titleId} // Always link to the hidden title's ID
-        {...props} // Spread remaining props
+        {...props}
       >
-       {/* Always render a hidden title for accessibility */}
-       <VisuallyHidden>
-          <SheetTitle id={titleId}>Sheet Menu</SheetTitle> {/* Default hidden title */}
-        </VisuallyHidden>
-
-        {/* The user's provided content */}
         {children}
-
-        {/* Close button */}
-        <SheetClose asChild>
-          <button className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
-            <X className="h-4 w-4" />
-            <span className="sr-only">Close</span>
-          </button>
+        <SheetClose
+          className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary"
+        >
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
         </SheetClose>
       </SheetPrimitive.Content>
     </SheetPortal>
-  );
-});
-SheetContent.displayName = SheetPrimitive.Content.displayName;
+  )
+})
+SheetContent.displayName = SheetPrimitive.Content.displayName
 
 
 export {
