@@ -110,54 +110,50 @@ const SheetDescription = React.forwardRef<
 ));
 SheetDescription.displayName = SheetPrimitive.Description.displayName; // Use DialogPrimitive name
 
+
 // SheetContent implementation with accessibility fix
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
 >(({ side = "right", className, children, ...props }, ref) => {
-  const titleId = `sheet-title-${React.useId()}`; // Generate a unique ID for the title
-  const descriptionId = `sheet-description-${React.useId()}`; // Generate a unique ID for the description
+  const generatedTitleId = `sheet-title-${React.useId()}`;
+  const generatedDescriptionId = `sheet-description-${React.useId()}`;
 
-  // Check if children contain explicit SheetTitle or SheetDescription
-  let hasExplicitTitle = false;
-  let hasExplicitDescription = false;
   let explicitTitleId: string | undefined;
   let explicitDescriptionId: string | undefined;
 
+  // Find explicit title/description IDs from children
   React.Children.forEach(children, (child) => {
     if (React.isValidElement(child)) {
-      // Check within SheetHeader as well
       if (child.type === SheetHeader) {
         React.Children.forEach(child.props.children, (headerChild) => {
           if (React.isValidElement(headerChild)) {
-            if (headerChild.type === SheetTitle) {
-               hasExplicitTitle = true;
-               explicitTitleId = headerChild.props.id;
+            if (headerChild.type === SheetTitle && headerChild.props.id) {
+              explicitTitleId = headerChild.props.id;
             }
-            if (headerChild.type === SheetDescription) {
-               hasExplicitDescription = true;
-               explicitDescriptionId = headerChild.props.id;
+            if (headerChild.type === SheetDescription && headerChild.props.id) {
+              explicitDescriptionId = headerChild.props.id;
             }
           }
         });
       } else {
-        if (child.type === SheetTitle) {
-           hasExplicitTitle = true;
-           explicitTitleId = child.props.id;
+        if (child.type === SheetTitle && child.props.id) {
+          explicitTitleId = child.props.id;
         }
-        if (child.type === SheetDescription) {
-           hasExplicitDescription = true;
-           explicitDescriptionId = child.props.id;
+        if (child.type === SheetDescription && child.props.id) {
+          explicitDescriptionId = child.props.id;
         }
       }
     }
   });
 
-  // Determine the ID to use for aria-labelledby and aria-describedby
-  // Prioritize explicitly provided IDs, then the IDs of SheetTitle/SheetDescription children, then generated fallback IDs
-  const labelledById = props['aria-labelledby'] || explicitTitleId || (hasExplicitTitle ? undefined : titleId);
-  const describedById = props['aria-describedby'] || explicitDescriptionId || (hasExplicitDescription ? undefined : descriptionId);
+  // Determine the final IDs to use
+  const finalLabelledById = props['aria-labelledby'] || explicitTitleId || generatedTitleId;
+  const finalDescribedById = props['aria-describedby'] || explicitDescriptionId || generatedDescriptionId;
 
+  // Determine if we need to render the hidden title/description
+  const needsHiddenTitle = finalLabelledById === generatedTitleId;
+  const needsHiddenDescription = finalDescribedById === generatedDescriptionId;
 
   return (
     <SheetPortal>
@@ -165,20 +161,25 @@ const SheetContent = React.forwardRef<
       <SheetPrimitive.Content
         ref={ref}
         className={cn(sheetVariants({ side }), className)}
-        aria-labelledby={labelledById} // Set aria-labelledby
-        aria-describedby={describedById} // Set aria-describedby
+        aria-labelledby={finalLabelledById}
+        aria-describedby={finalDescribedById}
         {...props} // Spread remaining props
       >
-        {/* Render hidden title/description ONLY if they are not explicitly provided and no aria-labelledby/describedby is set*/}
-        {!hasExplicitTitle && !props['aria-labelledby'] && (
-           <VisuallyHidden>
-             <SheetPrimitive.Title id={titleId}>Sheet Menu</SheetPrimitive.Title>
-           </VisuallyHidden>
+        {/* Render hidden title only if needed */}
+        {needsHiddenTitle && (
+          <VisuallyHidden>
+            <SheetPrimitive.Title id={generatedTitleId}>
+              Sheet Menu {/* Default accessible name */}
+            </SheetPrimitive.Title>
+          </VisuallyHidden>
         )}
-         {!hasExplicitDescription && !props['aria-describedby'] && (
-           <VisuallyHidden>
-             <SheetPrimitive.Description id={descriptionId}>Navigation menu and options</SheetPrimitive.Description>
-           </VisuallyHidden>
+        {/* Render hidden description only if needed */}
+        {needsHiddenDescription && (
+          <VisuallyHidden>
+            <SheetPrimitive.Description id={generatedDescriptionId}>
+              Navigation menu and options {/* Default accessible description */}
+            </SheetPrimitive.Description>
+          </VisuallyHidden>
         )}
         {children}
         <SheetClose asChild>
