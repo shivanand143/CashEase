@@ -1,10 +1,10 @@
 // src/app/how-it-works/page.tsx
 import * as React from 'react';
 import Image from 'next/image';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card'; // Removed unused CardHeader, CardContent, CardTitle
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Search, MousePointerClick, ShoppingCart, IndianRupee, Gift } from 'lucide-react'; // Added Gift for Payout
+import { Search, MousePointerClick, ShoppingCart, IndianRupee, Gift } from 'lucide-react';
 
 export default function HowItWorksPage() {
   const steps = [
@@ -42,7 +42,7 @@ export default function HowItWorksPage() {
     },
     {
       step: 5,
-      icon: Gift, // Using Gift icon for Payout
+      icon: Gift,
       title: "Get Paid",
       desc: "Once your cashback is 'Confirmed' (after the return period) and reaches the minimum threshold (e.g., ₹250), you can withdraw it to your bank account or as gift cards!",
       img: "https://picsum.photos/seed/how-step5/500/300",
@@ -51,68 +51,72 @@ export default function HowItWorksPage() {
   ];
 
   return (
-    <div className="space-y-12 py-8 md:py-16">
-      <section className="text-center max-w-3xl mx-auto">
-        <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-4 text-primary">
-          How CashEase Works
-        </h1>
-        <p className="text-lg md:text-xl text-muted-foreground">
-          Earning cashback on your online shopping is simple! Follow these easy steps:
-        </p>
-      </section>
+    // Wrap content in a container div with padding
+    <div className="container py-8">
+      <div className="space-y-12 py-8 md:py-16">
+        <section className="text-center max-w-3xl mx-auto">
+          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-4 text-primary">
+            How CashEase Works
+          </h1>
+          <p className="text-lg md:text-xl text-muted-foreground">
+            Earning cashback on your online shopping is simple! Follow these easy steps:
+          </p>
+        </section>
 
-      <section className="container px-4 md:px-6 space-y-10">
-        {steps.map((item, index) => (
-          <Card
-            key={item.step}
-            className={`overflow-hidden shadow-lg border border-border/50 flex flex-col ${index % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'}`} // Alternate layout
-          >
-            <div className="relative h-64 md:h-auto md:w-1/2">
-              <Image
-                data-ai-hint={item.hint}
-                src={item.img}
-                alt={item.title}
-                layout="fill"
-                objectFit="cover"
-              />
-            </div>
-            <div className="p-8 md:p-12 flex flex-col justify-center md:w-1/2 space-y-3">
-               <div className="flex items-center gap-3 mb-2">
+        <section className="px-4 md:px-6 space-y-10">
+          {steps.map((item, index) => (
+            <Card
+              key={item.step}
+              className={`overflow-hidden shadow-lg border border-border/50 flex flex-col ${index % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'}`}
+            >
+              <div className="relative h-64 md:h-auto md:w-1/2">
+                <Image
+                  data-ai-hint={item.hint}
+                  src={item.img}
+                  alt={item.title}
+                  layout="fill"
+                  objectFit="cover"
+                />
+              </div>
+              <div className="p-8 md:p-12 flex flex-col justify-center md:w-1/2 space-y-3">
+                <div className="flex items-center gap-3 mb-2">
                   <span className="flex items-center justify-center w-10 h-10 rounded-full bg-primary text-primary-foreground font-bold text-xl shrink-0">
                     {item.step}
                   </span>
-                  <CardTitle className="text-2xl md:text-3xl flex items-center gap-2">
+                  {/* Using h3 instead of CardTitle for semantic correctness */}
+                  <h3 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
                     <item.icon className="w-7 h-7 text-primary shrink-0" />
                     {item.title}
-                  </CardTitle>
-               </div>
-              <p className="text-muted-foreground leading-relaxed">
-                {item.desc}
-              </p>
-               {item.step === 1 && ( // Add button only for the first step
+                  </h3>
+                </div>
+                <p className="text-muted-foreground leading-relaxed">
+                  {item.desc}
+                </p>
+                {item.step === 1 && (
                   <Button asChild size="sm" className="w-fit">
-                      <Link href="/signup">Sign Up Free</Link>
+                    <Link href="/signup">Sign Up Free</Link>
                   </Button>
-               )}
-                {item.step === 5 && ( // Add button for the last step
+                )}
+                {item.step === 5 && (
                   <Button asChild size="sm" className="w-fit">
-                      <Link href="/dashboard">View My Earnings</Link>
+                    <Link href="/dashboard">View My Earnings</Link>
                   </Button>
-               )}
-            </div>
-          </Card>
-        ))}
-      </section>
+                )}
+              </div>
+            </Card>
+          ))}
+        </section>
 
-       <section className="container px-4 md:px-6 text-center bg-secondary/10 py-12 rounded-lg">
+        <section className="px-4 md:px-6 text-center bg-secondary/10 py-12 rounded-lg">
           <h2 className="text-3xl font-bold mb-4">Ready to Start Saving?</h2>
           <p className="text-muted-foreground max-w-xl mx-auto mb-6">
-             Join thousands of smart shoppers earning real money back on their purchases.
+            Join thousands of smart shoppers earning real money back on their purchases.
           </p>
           <Button size="lg" asChild className="shadow-md hover:shadow-lg transition-shadow bg-secondary hover:bg-secondary/90 text-secondary-foreground">
-             <Link href="/stores">Browse Stores & Start Earning!</Link>
+            <Link href="/stores">Browse Stores & Start Earning!</Link>
           </Button>
-       </section>
+        </section>
+      </div>
     </div>
   );
 }

@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowRight, BookOpen } from 'lucide-react';
 
-// Mock Blog Posts - Replace with data fetching logic
 const blogPosts = [
     { id: 'b1', title: 'Top 5 Summer Fashion Trends to Follow', excerpt: 'Stay cool and stylish this summer with these must-have fashion trends...', img: 'https://picsum.photos/seed/blog1/400/250', link: '/blog/summer-trends', date: 'May 1, 2024', category: 'Fashion' },
     { id: 'b2', title: 'Maximize Your Cashback: Pro Tips for Smart Shoppers', excerpt: 'Learn the secrets to earning more cashback on your everyday online shopping...', img: 'https://picsum.photos/seed/blog2/400/250', link: '/blog/cashback-tips', date: 'April 28, 2024', category: 'Tips & Tricks' },
@@ -19,68 +18,64 @@ const blogPosts = [
 ];
 
 export default function BlogPage() {
-  // Add state for loading and error handling if fetching data dynamically
-  const [loading, setLoading] = React.useState(false); // Set to true if fetching
+  const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // useEffect hook for data fetching would go here if needed
-
   return (
-    <div className="space-y-8 md:space-y-12">
-      <section className="text-center pt-8">
-        <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center justify-center gap-2">
-           <BookOpen className="w-8 h-8" /> CashEase Blog
-        </h1>
-        <p className="text-lg text-muted-foreground">Shopping tips, guides, news, and more.</p>
-      </section>
+    // Wrap content in a container div with padding
+    <div className="container py-8">
+      <div className="space-y-8 md:space-y-12">
+        <section className="text-center pt-8">
+          <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center justify-center gap-2">
+            <BookOpen className="w-8 h-8" /> CashEase Blog
+          </h1>
+          <p className="text-lg text-muted-foreground">Shopping tips, guides, news, and more.</p>
+        </section>
 
-      {/* Add error handling display here if needed */}
-      {error && <p className="text-red-500 text-center">Error: {error}</p>}
+        {error && <p className="text-red-500 text-center">Error: {error}</p>}
 
-      <section>
-        {loading ? (
-          // Skeleton Loading State
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-            {[...Array(6)].map((_, index) => (
-               <Card key={index} className="overflow-hidden">
+        <section>
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+              {[...Array(6)].map((_, index) => (
+                <Card key={index} className="overflow-hidden">
                   <Skeleton className="aspect-[16/9] w-full bg-muted/80" />
                   <CardContent className="p-4 space-y-2">
-                      <Skeleton className="h-5 w-3/4 bg-muted/80" />
-                      <Skeleton className="h-4 w-full bg-muted/80" />
-                       <Skeleton className="h-4 w-2/3 bg-muted/80" />
+                    <Skeleton className="h-5 w-3/4 bg-muted/80" />
+                    <Skeleton className="h-4 w-full bg-muted/80" />
+                    <Skeleton className="h-4 w-2/3 bg-muted/80" />
                   </CardContent>
-                   <CardFooter className="p-4 pt-0">
-                       <Skeleton className="h-6 w-24 bg-muted/80" />
-                   </CardFooter>
-               </Card>
-            ))}
-          </div>
-        ) : (
-          // Display Blog Posts
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-            {blogPosts.map((post) => (
-               <Card key={post.id} className="group flex flex-col overflow-hidden hover:shadow-xl transition-shadow duration-300 border border-border rounded-lg">
-                   <Link href={post.link} className="block overflow-hidden">
-                       <Image data-ai-hint={`blog post ${post.title}`} src={post.img} alt={post.title} width={400} height={250} className="object-cover aspect-[16/9] w-full group-hover:scale-105 transition-transform duration-300" />
-                   </Link>
-                   <CardContent className="p-4 flex-grow">
-                       <p className="text-xs text-muted-foreground mb-1">{post.date} • {post.category}</p>
-                       <Link href={post.link}>
-                          <CardTitle className="text-lg mb-2 line-clamp-2 group-hover:text-primary transition-colors">{post.title}</CardTitle>
-                       </Link>
-                       <CardDescription className="text-sm line-clamp-3">{post.excerpt}</CardDescription>
-                    </CardContent>
-                    <CardFooter className="p-4 pt-0">
-                        <Button variant="link" asChild className="p-0 h-auto text-primary">
-                           <Link href={post.link}>Read More <ArrowRight className="ml-1 h-4 w-4" /></Link>
-                        </Button>
-                    </CardFooter>
+                  <CardFooter className="p-4 pt-0">
+                    <Skeleton className="h-6 w-24 bg-muted/80" />
+                  </CardFooter>
                 </Card>
-            ))}
-          </div>
-        )}
-        {/* Add Pagination if needed */}
-      </section>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+              {blogPosts.map((post) => (
+                <Card key={post.id} className="group flex flex-col overflow-hidden hover:shadow-xl transition-shadow duration-300 border border-border rounded-lg">
+                  <Link href={post.link} className="block overflow-hidden">
+                    <Image data-ai-hint={`blog post ${post.title}`} src={post.img} alt={post.title} width={400} height={250} className="object-cover aspect-[16/9] w-full group-hover:scale-105 transition-transform duration-300" />
+                  </Link>
+                  <CardContent className="p-4 flex-grow">
+                    <p className="text-xs text-muted-foreground mb-1">{post.date} • {post.category}</p>
+                    <Link href={post.link}>
+                      <CardTitle className="text-lg mb-2 line-clamp-2 group-hover:text-primary transition-colors">{post.title}</CardTitle>
+                    </Link>
+                    <CardDescription className="text-sm line-clamp-3">{post.excerpt}</CardDescription>
+                  </CardContent>
+                  <CardFooter className="p-4 pt-0">
+                    <Button variant="link" asChild className="p-0 h-auto text-primary">
+                      <Link href={post.link}>Read More <ArrowRight className="ml-1 h-4 w-4" /></Link>
+                    </Button>
+                  </CardFooter>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

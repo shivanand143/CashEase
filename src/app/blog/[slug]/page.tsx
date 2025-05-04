@@ -7,14 +7,12 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, ArrowLeft, CalendarDays, User } from 'lucide-react'; // Added icons
+import { AlertCircle, ArrowLeft, CalendarDays, User } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge'; // Import Badge
+import { Badge } from '@/components/ui/badge';
 
-// Mock Blog Post Data - Replace with actual data fetching based on slug
 const getMockPost = (slug: string) => {
-  // In a real app, fetch this from a CMS or database based on the slug
   const posts = [
       { slug: 'summer-trends', title: 'Top 5 Summer Fashion Trends to Follow', content: '<p>Stay cool and stylish this summer with these must-have fashion trends...</p><p><strong>1. Linen Everything:</strong> Breathable and effortlessly chic.</p><p><strong>2. Bright Colors:</strong> Dopamine dressing is in!</p><p><em>More content here...</em></p>', img: 'https://picsum.photos/seed/blog1/800/400', date: 'May 1, 2024', author: 'CashEase Editor', category: 'Fashion' },
       { slug: 'cashback-tips', title: 'Maximize Your Cashback: Pro Tips for Smart Shoppers', content: '<p>Learn the secrets to earning more cashback...</p><ul><li>Always start your shopping journey from CashEase.</li><li>Check for coupon codes in addition to cashback.</li></ul>', img: 'https://picsum.photos/seed/blog2/800/400', date: 'April 28, 2024', author: 'CashEase Team', category: 'Tips & Tricks' },
@@ -30,7 +28,7 @@ export default function BlogPostPage() {
   const router = useRouter();
   const slug = params.slug as string;
 
-  const [post, setPost] = React.useState<any>(null); // Use a proper type/interface later
+  const [post, setPost] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -40,8 +38,7 @@ export default function BlogPostPage() {
       setLoading(true);
       setError(null);
       try {
-        // Simulate fetching data
-        await new Promise(resolve => setTimeout(resolve, 300)); // Simulate network delay
+        await new Promise(resolve => setTimeout(resolve, 300));
         const fetchedPost = getMockPost(slug);
 
         if (fetchedPost) {
@@ -61,124 +58,124 @@ export default function BlogPostPage() {
   }, [slug]);
 
   if (loading) {
-    return <BlogPostSkeleton />;
+    return (
+        // Wrap skeleton in container
+        <div className="container py-8">
+           <BlogPostSkeleton />
+        </div>
+    );
   }
 
   if (error) {
     return (
-      <div className="space-y-4 max-w-3xl mx-auto text-center py-10">
-         <Button variant="outline" onClick={() => router.back()} size="sm" className="mb-4">
+      // Wrap error in container
+      <div className="container py-8">
+        <div className="space-y-4 max-w-3xl mx-auto text-center py-10">
+          <Button variant="outline" onClick={() => router.back()} size="sm" className="mb-4">
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Blog
-         </Button>
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
+          </Button>
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        </div>
       </div>
     );
   }
 
   if (!post) {
-    // This case might be covered by the error state, but good to have
-     return (
+    return (
+      // Wrap fallback in container
+      <div className="container py-8">
         <div className="space-y-4 max-w-3xl mx-auto text-center py-10">
-            <Button variant="outline" onClick={() => router.back()} size="sm" className="mb-4">
-                <ArrowLeft className="mr-2 h-4 w-4" /> Back to Blog
-            </Button>
-            <p>Blog post not found.</p>
+          <Button variant="outline" onClick={() => router.back()} size="sm" className="mb-4">
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Blog
+          </Button>
+          <p>Blog post not found.</p>
         </div>
-     )
+      </div>
+    )
   }
 
   return (
-    <article className="max-w-3xl mx-auto py-8 md:py-12">
-       <Button variant="outline" onClick={() => router.back()} size="sm" className="mb-6 inline-flex items-center">
-           <ArrowLeft className="mr-2 h-4 w-4" /> Back to Blog
-       </Button>
+    // Wrap article in container
+    <div className="container py-8">
+      <article className="max-w-3xl mx-auto py-8 md:py-12">
+        <Button variant="outline" onClick={() => router.back()} size="sm" className="mb-6 inline-flex items-center">
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Blog
+        </Button>
 
-       {/* Post Header */}
-       <header className="mb-8">
-         <Badge variant="secondary" className="mb-2">{post.category}</Badge>
-         <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold leading-tight mb-3">
-           {post.title}
-         </h1>
-         <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-           <div className="flex items-center gap-1.5">
-             <CalendarDays className="w-4 h-4"/>
-             <span>{post.date}</span>
-           </div>
-           <div className="flex items-center gap-1.5">
-              <User className="w-4 h-4"/>
+        <header className="mb-8">
+          <Badge variant="secondary" className="mb-2">{post.category}</Badge>
+          <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold leading-tight mb-3">
+            {post.title}
+          </h1>
+          <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <CalendarDays className="w-4 h-4" />
+              <span>{post.date}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <User className="w-4 h-4" />
               <span>By {post.author}</span>
-           </div>
-         </div>
-       </header>
+            </div>
+          </div>
+        </header>
 
-       {/* Featured Image */}
-       {post.img && (
-         <Image
-           data-ai-hint={`blog post featured image ${post.title}`}
-           src={post.img}
-           alt={post.title}
-           width={800}
-           height={400}
-           className="w-full h-auto rounded-lg shadow-md mb-8 object-cover aspect-[16/8]" // Adjusted aspect ratio
-           priority // Load main image faster
-         />
-       )}
-
-       <Separator className="my-8" />
-
-       {/* Post Content */}
-       {/* Using dangerouslySetInnerHTML for mock HTML content. */}
-       {/* In a real app using a CMS, you'd use a proper Markdown/HTML renderer (e.g., react-markdown, MDX) */}
-       <div
-         className="prose prose-lg dark:prose-invert max-w-none prose-headings:font-bold prose-a:text-primary hover:prose-a:underline prose-img:rounded-md"
-         dangerouslySetInnerHTML={{ __html: post.content }}
-       />
+        {post.img && (
+          <Image
+            data-ai-hint={`blog post featured image ${post.title}`}
+            src={post.img}
+            alt={post.title}
+            width={800}
+            height={400}
+            className="w-full h-auto rounded-lg shadow-md mb-8 object-cover aspect-[16/8]"
+            priority
+          />
+        )}
 
         <Separator className="my-8" />
 
-        {/* Add share buttons or related posts section here if needed */}
+        <div
+          className="prose prose-lg dark:prose-invert max-w-none prose-headings:font-bold prose-a:text-primary hover:prose-a:underline prose-img:rounded-md"
+          dangerouslySetInnerHTML={{ __html: post.content }}
+        />
+
+        <Separator className="my-8" />
+
         <div className="text-center">
-           <p className="text-muted-foreground">Enjoyed this post? Share it!</p>
-           {/* Add social sharing buttons */}
+          <p className="text-muted-foreground">Enjoyed this post? Share it!</p>
+          {/* Add social sharing buttons */}
         </div>
 
-    </article>
+      </article>
+    </div>
   );
 }
 
 function BlogPostSkeleton() {
   return (
     <div className="max-w-3xl mx-auto py-8 md:py-12 space-y-8 animate-pulse">
-       <Skeleton className="h-8 w-32" /> {/* Back button */}
-
-       {/* Header Skeleton */}
-       <div className="space-y-3">
-          <Skeleton className="h-6 w-24" /> {/* Badge */}
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-8 w-3/4" />
-          <div className="flex space-x-4">
-             <Skeleton className="h-4 w-32" />
-             <Skeleton className="h-4 w-32" />
-          </div>
-       </div>
-
-       {/* Image Skeleton */}
-       <Skeleton className="w-full aspect-[16/8] rounded-lg" />
-
-        <Separator className="my-8" />
-
-       {/* Content Skeleton */}
-       <div className="space-y-4">
-          <Skeleton className="h-6 w-full" />
-          <Skeleton className="h-6 w-full" />
-          <Skeleton className="h-6 w-5/6" />
-          <Skeleton className="h-6 w-full" />
-          <Skeleton className="h-6 w-3/4" />
-       </div>
+      <Skeleton className="h-8 w-32" />
+      <div className="space-y-3">
+        <Skeleton className="h-6 w-24" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-8 w-3/4" />
+        <div className="flex space-x-4">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+      </div>
+      <Skeleton className="w-full aspect-[16/8] rounded-lg" />
+      <Separator className="my-8" />
+      <div className="space-y-4">
+        <Skeleton className="h-6 w-full" />
+        <Skeleton className="h-6 w-full" />
+        <Skeleton className="h-6 w-5/6" />
+        <Skeleton className="h-6 w-full" />
+        <Skeleton className="h-6 w-3/4" />
+      </div>
     </div>
   );
 }

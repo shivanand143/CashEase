@@ -28,7 +28,8 @@ export default function RootLayout({
         <AuthProvider>
           <div className="flex flex-col min-h-screen">
             <Header />
-            <main className="flex-grow container py-8">{children}</main>
+            {/* Removed container class from main, apply padding directly or within children */}
+            <main className="flex-grow w-full">{children}</main>
             <Footer />
           </div>
           <Toaster /> {/* Add Toaster here */}

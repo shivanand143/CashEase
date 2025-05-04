@@ -2,12 +2,11 @@
 "use client";
 
 import * as React from 'react';
-import Link from 'next/link'; // Import Link
+import Link from 'next/link';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Button } from '@/components/ui/button'; // Import Button
+import { Button } from '@/components/ui/button';
 import { HelpCircle } from 'lucide-react';
 
-// FAQ Data - Replace with your actual FAQ content
 const faqs = [
   {
     id: 'faq-1',
@@ -48,38 +47,41 @@ const faqs = [
 
 export default function FaqPage() {
   return (
-    <div className="space-y-8 md:space-y-12 max-w-3xl mx-auto">
-      <section className="text-center pt-8">
-        <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center justify-center gap-2">
+    // Wrap content in a container div with padding
+    <div className="container py-8">
+      <div className="space-y-8 md:space-y-12 max-w-3xl mx-auto">
+        <section className="text-center pt-8">
+          <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center justify-center gap-2">
             <HelpCircle className="w-8 h-8" /> Frequently Asked Questions
-        </h1>
-        <p className="text-lg text-muted-foreground">Find answers to common questions about CashEase.</p>
-      </section>
+          </h1>
+          <p className="text-lg text-muted-foreground">Find answers to common questions about CashEase.</p>
+        </section>
 
-      <section>
-        <Accordion type="single" collapsible className="w-full">
-          {faqs.map((faq) => (
-            <AccordionItem key={faq.id} value={faq.id}>
-              <AccordionTrigger className="text-left font-semibold text-lg hover:text-primary">
-                {faq.question}
-              </AccordionTrigger>
-              <AccordionContent className="text-base text-muted-foreground leading-relaxed">
-                {faq.answer}
-              </AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
-      </section>
+        <section>
+          <Accordion type="single" collapsible className="w-full">
+            {faqs.map((faq) => (
+              <AccordionItem key={faq.id} value={faq.id}>
+                <AccordionTrigger className="text-left font-semibold text-lg hover:text-primary">
+                  {faq.question}
+                </AccordionTrigger>
+                <AccordionContent className="text-base text-muted-foreground leading-relaxed">
+                  {faq.answer}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </section>
 
-       <section className="text-center py-8 border-t">
+        <section className="text-center py-8 border-t">
           <h2 className="text-xl font-semibold mb-2">Still have questions?</h2>
           <p className="text-muted-foreground mb-4">
-             Contact our support team, and we'll be happy to help.
+            Contact our support team, and we'll be happy to help.
           </p>
-           <Button asChild>
-              <Link href="/contact">Contact Support</Link>
-           </Button>
-       </section>
+          <Button asChild>
+            <Link href="/contact">Contact Support</Link>
+          </Button>
+        </section>
+      </div>
     </div>
   );
 }
