@@ -148,18 +148,18 @@ const SheetContent = React.forwardRef<
       <SheetPrimitive.Content
         ref={ref}
         className={cn(sheetVariants({ side }), className)}
-        aria-labelledby={labelledById} // Use the determined title ID
-        aria-describedby={describedById} // Use the determined description ID
+        aria-labelledby={labelledById} // Set aria-labelledby
+        aria-describedby={describedById} // Set aria-describedby
         {...props} // Spread remaining props
       >
         {/* Render hidden title/description ONLY if they are not explicitly provided */}
         {!hasExplicitTitle && !props['aria-labelledby'] && (
-          <VisuallyHidden asChild>
+          <VisuallyHidden> {/* Removed asChild */}
             <SheetTitle id={titleId}>Sheet Menu</SheetTitle> {/* Use the generated ID */}
           </VisuallyHidden>
         )}
          {!hasExplicitDescription && !props['aria-describedby'] && (
-          <VisuallyHidden asChild>
+          <VisuallyHidden> {/* Removed asChild */}
              {/* Default description or leave it out */}
             <SheetDescription id={descriptionId}>Navigation menu and options</SheetDescription> {/* Use the generated ID */}
           </VisuallyHidden>
