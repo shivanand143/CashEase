@@ -71,38 +71,14 @@
         { "fieldPath": "name", "order": "ASCENDING" }
       ]
     },
-    {
-      "collectionGroup": "transactions",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "payoutId", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "transactions",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "transactionDate", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "transactions",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "transactionDate", "order": "DESCENDING" }
-      ]
-    },
-    {
+     {
        "collectionGroup": "users",
        "queryScope": "COLLECTION",
        "fields": [
          { "fieldPath": "referralCode", "order": "ASCENDING" }
        ]
      },
-    {
+     {
        "collectionGroup": "users",
        "queryScope": "COLLECTION",
        "fields": [
@@ -115,6 +91,30 @@
        "fields": [
          { "fieldPath": "createdAt", "order": "DESCENDING" }
        ]
+     },
+     {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "transactionDate", "order": "DESCENDING" }
+      ]
+    },
+     {
+       "collectionGroup": "transactions",
+       "queryScope": "COLLECTION",
+       "fields": [
+         { "fieldPath": "transactionDate", "order": "DESCENDING" }
+       ]
+     },
+     {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "payoutId", "order": "ASCENDING" }
+      ]
      }
   ],
   "fieldOverrides": []

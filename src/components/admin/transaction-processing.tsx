@@ -206,7 +206,7 @@ export default function TransactionForm({ stores, transaction, onClose, onSucces
   const onSubmit = async (data: TransactionFormValues) => {
     setLoading(true);
     setError(null);
-    console.log("Form submitted with data:", data); // Log form data
+    console.log("Admin Transaction Form - Submitting data:", data); // Log form data
 
     if (!data.userId) {
         setError("User ID is missing. Please find the user first.");
@@ -219,7 +219,7 @@ export default function TransactionForm({ stores, transaction, onClose, onSucces
     const cashbackAmount = data.cashbackAmount;
     const originalCashbackAmount = isEditing && transaction ? transaction.cashbackAmount : 0;
 
-    console.log("Transaction details:", {
+    console.log("Admin Transaction - Details:", {
         isEditing,
         originalStatus,
         newStatus,
@@ -234,59 +234,79 @@ export default function TransactionForm({ stores, transaction, onClose, onSucces
             const userSnap = await dbTransaction.get(userDocRef);
 
             if (!userSnap.exists()) {
-                throw new Error("User profile not found.");
+                throw new Error(`User profile not found for ID: ${data.userId}`);
             }
 
             const userProfile = userSnap.data() as UserProfile;
-            console.log("Current user profile data:", userProfile);
+            console.log("Admin Transaction - Current user profile:", userProfile);
 
-            let pendingCashback = userProfile.pendingCashback || 0;
-            let cashbackBalance = userProfile.cashbackBalance || 0;
-            let lifetimeCashback = userProfile.lifetimeCashback || 0;
+            // Initialize balances safely
+            let pendingCashback = userProfile.pendingCashback ?? 0;
+            let cashbackBalance = userProfile.cashbackBalance ?? 0;
+            let lifetimeCashback = userProfile.lifetimeCashback ?? 0;
 
-            console.log("Initial balances:", { pendingCashback, cashbackBalance, lifetimeCashback });
+            console.log("Admin Transaction - Initial balances:", { pendingCashback, cashbackBalance, lifetimeCashback });
 
-            // Adjust balances based on status changes and amount differences
+            // --- Balance Adjustment Logic ---
             if (isEditing) {
-                console.log("Editing transaction - adjusting balances");
-                // Revert old status impact
-                if (originalStatus === 'pending') pendingCashback -= originalCashbackAmount;
-                else if (originalStatus === 'confirmed') cashbackBalance -= originalCashbackAmount;
+                console.log("Admin Transaction - Editing existing transaction");
+                // 1. Revert the effect of the original status and amount
+                if (originalStatus === 'pending') {
+                    pendingCashback -= originalCashbackAmount;
+                    console.log(`Reverted pending: -${originalCashbackAmount}`);
+                } else if (originalStatus === 'confirmed') {
+                    cashbackBalance -= originalCashbackAmount;
+                    lifetimeCashback -= originalCashbackAmount; // Also revert lifetime
+                    console.log(`Reverted confirmed: CB -${originalCashbackAmount}, LT -${originalCashbackAmount}`);
+                } else if (originalStatus === 'paid') {
+                    // 'Paid' status means it was previously confirmed, so revert lifetime
+                    lifetimeCashback -= originalCashbackAmount;
+                    console.log(`Reverted paid: LT -${originalCashbackAmount}`);
+                    // Note: 'paid' doesn't affect current cashbackBalance directly, it's handled by payout
+                }
+                // 'rejected' has no balance impact to revert.
 
-                 // Also revert lifetime if it was previously confirmed/paid
-                 if (['confirmed', 'paid'].includes(originalStatus || '')) {
-                     lifetimeCashback -= originalCashbackAmount;
-                 }
+                console.log("Admin Transaction - Balances after reverting old:", { pendingCashback, cashbackBalance, lifetimeCashback });
 
-                console.log("Balances after reverting old status:", { pendingCashback, cashbackBalance, lifetimeCashback });
+                // 2. Apply the effect of the new status and amount
+                if (newStatus === 'pending') {
+                    pendingCashback += cashbackAmount;
+                    console.log(`Applying new pending: +${cashbackAmount}`);
+                } else if (newStatus === 'confirmed') {
+                    cashbackBalance += cashbackAmount;
+                    lifetimeCashback += cashbackAmount; // Add to lifetime when confirmed
+                    console.log(`Applying new confirmed: CB +${cashbackAmount}, LT +${cashbackAmount}`);
+                } else if (newStatus === 'paid') {
+                    // If changing *to* 'paid' from a state that wasn't confirmed/paid, update lifetime
+                    if (originalStatus !== 'confirmed' && originalStatus !== 'paid') {
+                        lifetimeCashback += cashbackAmount;
+                        console.log(`Applying new paid (from non-confirmed): LT +${cashbackAmount}`);
+                    } else {
+                        console.log("Applying new paid (already confirmed/paid): No LT change needed");
+                    }
+                    // 'paid' status itself doesn't directly change cashbackBalance here
+                } else if (newStatus === 'rejected') {
+                     console.log("Applying new rejected: No balance changes needed now (reverted above if necessary)");
+                }
 
-                 // Applying new status impact
-                 if (newStatus === 'pending') pendingCashback += cashbackAmount;
-                 else if (newStatus === 'confirmed') {
-                     cashbackBalance += cashbackAmount;
-                     lifetimeCashback += cashbackAmount; // Add to lifetime when confirmed
-                 } else if (newStatus === 'paid') {
-                     // Usually 'paid' status doesn't change balance directly here,
-                     // it should be handled by payout logic.
-                     // But if editing TO 'paid' from something else, ensure lifetime is updated if needed.
-                     if (!['confirmed', 'paid'].includes(originalStatus || '')) {
-                         lifetimeCashback += cashbackAmount;
-                     }
-                 }
-                 // If status changed TO 'rejected' from confirmed/paid, balance was already subtracted.
-                 // If changed TO 'rejected' from pending, pending was already subtracted.
-
-            } else { // Adding new transaction
-                 console.log("Adding new transaction - adjusting balances");
-                 if (newStatus === 'pending') pendingCashback += cashbackAmount;
-                 else if (newStatus === 'confirmed') {
-                     cashbackBalance += cashbackAmount;
-                     lifetimeCashback += cashbackAmount;
-                 }
-                 // 'rejected' or 'paid' status for a NEW transaction usually means no balance change initially.
+            } else { // Adding a new transaction
+                console.log("Admin Transaction - Adding new transaction");
+                if (newStatus === 'pending') {
+                    pendingCashback += cashbackAmount;
+                    console.log(`Applying new pending: +${cashbackAmount}`);
+                } else if (newStatus === 'confirmed') {
+                    cashbackBalance += cashbackAmount;
+                    lifetimeCashback += cashbackAmount; // Add to lifetime when confirmed
+                    console.log(`Applying new confirmed: CB +${cashbackAmount}, LT +${cashbackAmount}`);
+                } else if (newStatus === 'paid') {
+                    // Adding directly as 'paid' implies it was confirmed somewhere, add to lifetime
+                    lifetimeCashback += cashbackAmount;
+                    console.log(`Applying new paid directly: LT +${cashbackAmount}`);
+                }
+                 // 'rejected' status for a NEW transaction usually means no balance change initially.
             }
 
-            // Ensure balances don't go negative
+            // Ensure balances don't go negative after adjustments
             pendingCashback = Math.max(0, pendingCashback);
             cashbackBalance = Math.max(0, cashbackBalance);
             lifetimeCashback = Math.max(0, lifetimeCashback); // Lifetime should generally not decrease unless correcting errors
@@ -297,7 +317,7 @@ export default function TransactionForm({ stores, transaction, onClose, onSucces
                 lifetimeCashback,
                 updatedAt: serverTimestamp()
             };
-            console.log("Calculated updated profile data:", updatedProfileData);
+            console.log("Admin Transaction - Calculated updated profile data:", updatedProfileData);
 
             // Prepare transaction data for Firestore
             const transactionData = {
@@ -316,8 +336,8 @@ export default function TransactionForm({ stores, transaction, onClose, onSucces
             if (isEditing && transaction) {
                 // Update existing transaction
                 const transactionDocRef = doc(db, 'transactions', transaction.id);
-                console.log("Updating existing transaction:", transaction.id, transactionData);
-                console.log("Updating user profile with:", updatedProfileData);
+                console.log("Admin Transaction - Updating existing transaction:", transaction.id, transactionData);
+                console.log("Admin Transaction - Updating user profile with:", updatedProfileData);
                 dbTransaction.update(transactionDocRef, transactionData);
                 dbTransaction.update(userDocRef, updatedProfileData);
                 toast({
@@ -327,8 +347,8 @@ export default function TransactionForm({ stores, transaction, onClose, onSucces
             } else {
                 // Add new transaction
                  const newTransactionRef = doc(collection(db, 'transactions')); // Generate new doc ref
-                console.log("Adding new transaction:", newTransactionRef.id, transactionData);
-                console.log("Updating user profile with:", updatedProfileData);
+                console.log("Admin Transaction - Adding new transaction:", newTransactionRef.id, transactionData);
+                console.log("Admin Transaction - Updating user profile with:", updatedProfileData);
                 dbTransaction.set(newTransactionRef, {
                     ...transactionData,
                     createdAt: serverTimestamp(), // Add createdAt for new
@@ -341,7 +361,7 @@ export default function TransactionForm({ stores, transaction, onClose, onSucces
             }
         }); // End Firestore transaction
 
-        console.log("Firestore transaction committed successfully.");
+        console.log("Admin Transaction - Firestore transaction committed successfully.");
         onSuccess(); // Call success callback (refetch list, close form)
 
     } catch (err: any) {
