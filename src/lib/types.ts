@@ -1,4 +1,3 @@
-
 import type { Timestamp } from 'firebase/firestore';
 
 // Basic user type from Firebase Auth
@@ -42,6 +41,7 @@ export interface Transaction {
   id: string; // Firestore document ID
   userId: string;
   storeId: string;
+  storeName?: string; // Denormalized for easier display
   clickId?: string | null; // ID from the click tracking system
   saleAmount: number;
   cashbackAmount: number;
@@ -56,18 +56,22 @@ export interface Transaction {
 }
 
 // For logging user clicks on affiliate links
-export interface TrackClickData {
+export interface Click {
+    id: string; // Firestore document ID
     userId: string;
     storeId: string;
-    couponId?: string; // Optional: if the click was on a specific coupon
+    storeName?: string; // Optional: Denormalized store name
+    couponId?: string | null; // Optional: if the click was on a specific coupon
+    affiliateLink: string; // The link clicked
     timestamp: Date | Timestamp; // Firestore server timestamp preferred
     userAgent?: string; // Optional: User agent string
-    // Add other relevant details if needed, e.g., source page
+    // Add other relevant details if needed, e.g., source page, IP address (handle privacy)
 }
 
 
 export type CashbackType = 'percentage' | 'fixed';
 export type PayoutMethod = 'paypal' | 'bank_transfer' | 'gift_card'; // Allow customization
+export type PayoutStatus = 'pending' | 'approved' | 'processing' | 'paid' | 'rejected' | 'failed';
 
 
 // Store information
@@ -80,12 +84,16 @@ export interface Store {
   cashbackRateValue: number; // The numeric value for calculations
   cashbackType: CashbackType; // 'percentage' or 'fixed'
   description: string;
-  categories: string[]; // Array of category names
-  terms?: string; // Specific terms and conditions for offers
+  categories: string[]; // Array of category slugs or names
+  terms?: string | null; // Specific terms and conditions for offers
   isFeatured: boolean; // Highlighted store
   isActive: boolean; // Whether the store is active on the platform
+  dataAiHint?: string | null; // Optional hint for AI image generation/search
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
+  // Potentially add click/transaction counts if needed for performance sorting
+  // clickCount?: number;
+  // transactionCount?: number;
 }
 
 // Coupon information
@@ -102,12 +110,40 @@ export interface Coupon {
   updatedAt: Date | Timestamp;
 }
 
+// Category information
+export interface Category {
+    id: string; // Firestore document ID (often same as slug for simplicity)
+    name: string;
+    slug: string; // URL-friendly identifier (e.g., 'electronics', 'mens-fashion')
+    description?: string | null;
+    imageUrl?: string | null; // Optional image for the category
+    order: number; // For custom sorting of categories
+    createdAt: Date | Timestamp;
+    updatedAt: Date | Timestamp;
+}
+
+// Banner information
+export interface Banner {
+    id: string; // Firestore document ID
+    title?: string | null;
+    subtitle?: string | null;
+    imageUrl: string;
+    link?: string | null; // URL the banner links to
+    altText: string; // For accessibility
+    dataAiHint?: string | null; // Optional hint for AI image generation/search
+    order: number; // Display order
+    isActive: boolean; // Whether the banner is currently displayed
+    createdAt: Date | Timestamp;
+    updatedAt: Date | Timestamp;
+}
+
+
 // Payout Request
 export interface PayoutRequest {
   id: string; // Firestore document ID
   userId: string;
   amount: number; // Amount requested
-  status: 'pending' | 'approved' | 'rejected' | 'processing' | 'failed';
+  status: PayoutStatus;
   requestedAt: Date | Timestamp;
   processedAt?: Date | Timestamp | null; // Timestamp when status changed from pending
   paymentMethod: PayoutMethod;
@@ -115,4 +151,9 @@ export interface PayoutRequest {
   transactionIds: string[]; // IDs of the 'confirmed' transactions included in this payout
   adminNotes?: string | null; // Notes from admin (e.g., reason for rejection, transaction ID)
   failureReason?: string | null; // If status is 'failed'
+}
+
+// Helper type for combining Coupon and Store data
+export interface CouponWithStore extends Coupon {
+  store?: Store; // Optional nested store data
 }
