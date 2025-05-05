@@ -1,0 +1,58 @@
+The error "Connection reset by peer (os error 104)" during CSS processing with Turbopack usually points to issues with resources or compilation processes being interrupted. Here's a breakdown of potential causes and solutions:
+
+1.  **Resource Limits:**
+    *   **Cause:**  The compilation process (PostCSS, etc.) might be exceeding available memory or CPU resources, especially when using Turbopack.
+    *   **Solution:**  Try limiting the number of parallel tasks Turbopack uses or increase the resources available to your development environment.
+
+2.  **Large CSS Files:**
+    *   **Cause:** Extremely large or complex CSS files can overwhelm the PostCSS processor, causing it to crash.
+    *   **Solution:** Split large CSS files into smaller, more manageable chunks. Consider using CSS modules for component-level styling.
+
+3.  **PostCSS Configuration:**
+    *   **Cause:** Incorrect or incompatible PostCSS plugins might be causing the compilation to fail.
+    *   **Solution:**  Review your `postcss.config.js` file. Ensure your plugins are compatible and properly configured. Try temporarily removing plugins to isolate the issue. In particular, pay attention to plugins that process large files or perform complex transformations.
+
+4.  **Corrupted Cache:**
+    *   **Cause:** Turbopack or Next.js's cache might be corrupted.
+    *   **Solution:**  Clear the Next.js cache:
+        ```bash
+        npm run dev --clearConsole
+        ```
+
+5.  **Turbopack Issues**
+    *   **Cause:** There might be specific bugs or limitations in Turbopack that are causing issues with your CSS.
+    *   **Solution:** If none of the above steps work, try switching back to the standard Webpack compiler in Next.js to see if the problem goes away. This will help you isolate whether the issue is with Turbopack.
+
+6.  **File System Watcher Limits:**
+    *   **Cause:**  The operating system's file watcher limits may be too low, preventing Next.js from tracking changes to your CSS files.
+    *   **Solution:**  Increase the file watcher limits on your system.
+
+7.  **Operating System Issues:** In rare cases, the operating system configuration may need to be optimized.
+
+8.  **Import Optimization Issues:** Sometimes circular imports can cause confusing errors. Check your CSS and JS code for this.
+
+*If none of these helped. The problem may be local and try to restart the IDE.*
+
+Here's how to reduce the parallel tasks
+
+```json
+{
+  "cache": true,
+  "maxWorkers": 2,
+  "memory": true
+}
+```
+This configuration may improve system performance.
+
+To switch to the standard Webpack compiler (for diagnostic purposes):
+
+In `next.config.js` or `next.config.ts`, temporarily remove the line that enables Turbopack (if you have one). Or you can add this instruction
+```js
+  compiler: {
+    // see https://styled-components.com/docs/tooling#babel-plugin
+    styledComponents: true,
+  },
+```
+If you had Turbopack enabled via the command line (e.g., `next dev --turbo`), remove the `--turbo` flag.
+
+Then, run `npm run dev` again. This will use Webpack instead of Turbopack.
