@@ -1,16 +1,17 @@
+
 "use client";
 
 import * as React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Users, Store, Tag, CreditCard, ArrowRight, Activity, AlertCircle } from 'lucide-react';
+import { Users, Store, Tag, CreditCard, ArrowRight, Activity, AlertCircle, BadgePercent, Building2 } from 'lucide-react';
 import Link from 'next/link';
 import AdminGuard from '@/components/guards/admin-guard'; // Import AdminGuard
-import { collection, getDocs, query, where, limit } from 'firebase/firestore';
+import { collection, getDocs, query, where, limit, getCountFromServer } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils'; // Assuming you have a currency formatting utility
 
 interface StatCardProps {
   title: string;
@@ -78,12 +79,9 @@ function AdminOverviewPageContent() {
 
       const fetchCollectionCount = async (collectionName: string) => {
         try {
-          const q = query(collection(db, collectionName), limit(1000)); // Limit for performance, adjust if needed
-          const snapshot = await getDocs(q);
-          // Consider using countFromServer() for very large collections, but it costs reads
-          // const snapshot = await getCountFromServer(collection(db, collectionName));
-          // return snapshot.data().count;
-          return snapshot.size; // More efficient for smaller counts
+          // Use getCountFromServer for better performance on large collections
+          const snapshot = await getCountFromServer(collection(db, collectionName));
+          return snapshot.data().count;
         } catch (error: any) {
           console.error(`Error fetching ${collectionName} count:`, error);
           return { error: error.message || `Failed to load ${collectionName}` };
@@ -93,10 +91,8 @@ function AdminOverviewPageContent() {
       const fetchPendingPayoutsCount = async () => {
         try {
            const q = query(collection(db, 'payoutRequests'), where('status', '==', 'pending'));
-           const snapshot = await getDocs(q);
-           // const snapshot = await getCountFromServer(q); // Use countFromServer if needed
-           // return snapshot.data().count;
-           return snapshot.size;
+           const snapshot = await getCountFromServer(q); // Use countFromServer
+           return snapshot.data().count;
         } catch (error: any) {
             console.error('Error fetching pending payouts count:', error);
             return { error: error.message || 'Failed to load pending payouts' };
@@ -124,8 +120,8 @@ function AdminOverviewPageContent() {
   const statCards = [
     { title: "Total Users", value: stats.users.value, icon: Users, link: "/admin/users", linkText: "Manage Users", isLoading: stats.users.isLoading, error: stats.users.error },
     { title: "Total Stores", value: stats.stores.value, icon: Store, link: "/admin/stores", linkText: "Manage Stores", isLoading: stats.stores.isLoading, error: stats.stores.error },
-    { title: "Total Coupons", value: stats.coupons.value, icon: Tag, link: "/admin/coupons", linkText: "Manage Coupons", isLoading: stats.coupons.isLoading, error: stats.coupons.error },
-    { title: "Pending Payouts", value: stats.pendingPayouts.value, icon: CreditCard, link: "/admin/payouts", linkText: "View Payouts", isLoading: stats.pendingPayouts.isLoading, error: stats.pendingPayouts.error },
+    { title: "Total Coupons", value: stats.coupons.value, icon: BadgePercent, link: "/admin/coupons", linkText: "Manage Coupons", isLoading: stats.coupons.isLoading, error: stats.coupons.error },
+    { title: "Pending Payouts", value: stats.pendingPayouts.value, icon: CreditCard, link: "/admin/payouts?status=pending", linkText: "View Payouts", isLoading: stats.pendingPayouts.isLoading, error: stats.pendingPayouts.error },
   ];
 
   return (
@@ -150,40 +146,37 @@ function AdminOverviewPageContent() {
         ))}
       </div>
 
-      {/* Quick Actions or Recent Activity Placeholder */}
+      {/* Quick Actions Card */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Activity className="w-5 h-5"/> Quick Actions</CardTitle>
           <CardDescription>Common administrative tasks.</CardDescription>
         </CardHeader>
         <CardContent className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+           {/* Updated Links */}
            <Button asChild variant="outline">
-             <Link href="/admin/stores/new">Add New Store</Link>
+             <Link href="/admin/stores/new"> <Store className="mr-2 h-4 w-4"/>Add New Store</Link>
            </Button>
            <Button asChild variant="outline">
-             <Link href="/admin/coupons/new">Add New Coupon</Link>
+             <Link href="/admin/coupons/new"><BadgePercent className="mr-2 h-4 w-4"/>Add New Coupon/Offer</Link>
            </Button>
            <Button asChild variant="outline">
-             <Link href="/admin/users">Search Users</Link>
+             <Link href="/admin/banners"><Building2 className="mr-2 h-4 w-4"/>Manage Banners</Link>
            </Button>
            <Button asChild variant="outline">
-             <Link href="/admin/payouts?status=pending">Review Pending Payouts</Link>
+             <Link href="/admin/users"><Users className="mr-2 h-4 w-4"/>Search Users</Link>
            </Button>
-           {/* Add more relevant actions */}
+           <Button asChild variant="outline">
+             <Link href="/admin/payouts?status=pending"><CreditCard className="mr-2 h-4 w-4"/>Review Pending Payouts</Link>
+           </Button>
+           <Button asChild variant="outline">
+             <Link href="/admin/categories"><Building2 className="mr-2 h-4 w-4"/>Manage Categories</Link>
+           </Button>
         </CardContent>
       </Card>
 
-       {/* Placeholder for system status or logs */}
-       {/* <Card>
-         <CardHeader>
-           <CardTitle>System Status</CardTitle>
-           <CardDescription>Monitor system health and recent logs.</CardDescription>
-         </CardHeader>
-         <CardContent>
-           <p className="text-muted-foreground">System status information will be displayed here.</p>
-           {/* TODO: Implement system monitoring/log display */}
-         {/* </CardContent>
-       </Card> */}
+       {/* Placeholder for system status or logs (can be added later) */}
+       {/* <Card>...</Card> */}
 
     </div>
   );
@@ -197,3 +190,4 @@ export default function AdminOverviewPage() {
     </AdminGuard>
   );
 }
+
