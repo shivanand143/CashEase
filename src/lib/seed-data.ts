@@ -1,4 +1,5 @@
-import type { Store, Coupon, CashbackType, Category, Banner, Transaction, PayoutRequest } from '@/lib/types';
+
+import type { Store, Coupon, CashbackType, Category, Banner, Transaction, PayoutRequest, Click, UserProfile, PayoutDetails } from '@/lib/types';
 import { collection, writeBatch, serverTimestamp, doc, getDocs, query, where, limit, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { useToast } from '@/hooks/use-toast'; // Assuming useToast works in this context
@@ -28,9 +29,8 @@ const storesData: Omit<Store, 'id' | 'createdAt' | 'updatedAt'>[] = [
   { name: 'Ajio', logoUrl: 'https://picsum.photos/seed/ajio/100/50', cashbackRate: 'Up to 8% Cashback', dataAiHint: "ajio logo", affiliateLink: 'https://ajio.com?cjevent=cashease', description: 'Curated fashion brands.', categories: ['fashion', 'accessories'], isFeatured: false, isActive: true, cashbackType: 'percentage', cashbackRateValue: 8 },
   { name: 'MakeMyTrip', logoUrl: 'https://picsum.photos/seed/makemytrip/100/50', cashbackRate: 'Up to ₹1500 on Flights', dataAiHint: "makemytrip logo", affiliateLink: 'https://makemytrip.com?partner=cashease', description: 'Book flights, hotels.', categories: ['travel', 'flights', 'hotels'], isFeatured: true, isActive: true, cashbackType: 'fixed', cashbackRateValue: 1500 },
   { name: 'Nykaa', logoUrl: 'https://picsum.photos/seed/nykaa/100/50', cashbackRate: 'Up to 7% Cashback', dataAiHint: "nykaa logo", affiliateLink: 'https://nykaa.com?partner=cashease', description: 'Beauty, makeup, wellness.', categories: ['beauty', 'cosmetics', 'skincare'], isFeatured: true, isActive: true, cashbackType: 'percentage', cashbackRateValue: 7 },
-  // Add a few more stores for variety
-   { name: 'Tata CLiQ', logoUrl: 'https://picsum.photos/seed/tatacliq/100/50', cashbackRate: 'Up to 5% Cashback', dataAiHint: "tata cliq logo", affiliateLink: 'https://tatacliq.com?partner=cashease', description: 'Electronics, Fashion & more.', categories: ['electronics', 'fashion', 'home'], isFeatured: false, isActive: true, cashbackType: 'percentage', cashbackRateValue: 5 },
-   { name: 'BigBasket', logoUrl: 'https://picsum.photos/seed/bigbasket/100/50', cashbackRate: 'Flat ₹50 Cashback', dataAiHint: "bigbasket logo", affiliateLink: 'https://bigbasket.com?partner=cashease', description: 'Online grocery store.', categories: ['grocery'], isFeatured: false, isActive: true, cashbackType: 'fixed', cashbackRateValue: 50 },
+  { name: 'Tata CLiQ', logoUrl: 'https://picsum.photos/seed/tatacliq/100/50', cashbackRate: 'Up to 5% Cashback', dataAiHint: "tata cliq logo", affiliateLink: 'https://tatacliq.com?partner=cashease', description: 'Electronics, Fashion & more.', categories: ['electronics', 'fashion', 'home'], isFeatured: false, isActive: true, cashbackType: 'percentage', cashbackRateValue: 5 },
+  { name: 'BigBasket', logoUrl: 'https://picsum.photos/seed/bigbasket/100/50', cashbackRate: 'Flat ₹50 Cashback', dataAiHint: "bigbasket logo", affiliateLink: 'https://bigbasket.com?partner=cashease', description: 'Online grocery store.', categories: ['grocery'], isFeatured: false, isActive: true, cashbackType: 'fixed', cashbackRateValue: 50 },
 ];
 
 const couponsData: { storeName: string; data: Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'storeId'> }[] = [
@@ -50,6 +50,86 @@ const bannersData: Omit<Banner, 'id' | 'createdAt' | 'updatedAt'>[] = [
    { title: 'Travel Deals', subtitle: 'Book your next vacation and save big!', imageUrl: 'https://picsum.photos/seed/banner-travel/1200/400', link: '/category/travel', altText: 'Travel Deals Banner', order: 2, isActive: true, dataAiHint: 'travel vacation airplane destination' },
 ];
 
+// --- NEW: Example User Data ---
+// IMPORTANT: Replace placeholder UIDs with actual UIDs from your Firebase Authentication
+// if you want the data to be associated with real users.
+const TEST_USER_ID_1 = 'PLACEHOLDER_UID_1'; // e.g., 'user1_from_firebase_auth'
+const TEST_USER_ID_2 = 'PLACEHOLDER_UID_2'; // e.g., 'user2_from_firebase_auth'
+const ADMIN_USER_ID = process.env.NEXT_PUBLIC_INITIAL_ADMIN_UID || 'ADMIN_PLACEHOLDER_UID'; // Use admin UID from env if set
+
+const usersData: Omit<UserProfile, 'createdAt' | 'updatedAt' | 'lastPayoutRequestAt' | 'payoutDetails'>[] = [
+  {
+    uid: TEST_USER_ID_1,
+    email: 'testuser1@example.com',
+    displayName: 'Test User One',
+    photoURL: `https://i.pravatar.cc/150?u=${TEST_USER_ID_1}`,
+    role: 'user',
+    cashbackBalance: 350.75,
+    pendingCashback: 120.50,
+    lifetimeCashback: 850.25,
+    referralCode: 'USERONE123',
+    referralCount: 2,
+    referralBonusEarned: 100,
+    referredBy: null,
+    isDisabled: false,
+  },
+  {
+    uid: TEST_USER_ID_2,
+    email: 'testuser2@example.com',
+    displayName: 'Test User Two',
+    photoURL: `https://i.pravatar.cc/150?u=${TEST_USER_ID_2}`,
+    role: 'user',
+    cashbackBalance: 150.00,
+    pendingCashback: 45.00,
+    lifetimeCashback: 195.00,
+    referralCode: 'USERTWO456',
+    referralCount: 0,
+    referralBonusEarned: 0,
+    referredBy: 'USERONE123', // Referred by user one
+    isDisabled: false,
+  },
+  {
+    uid: ADMIN_USER_ID,
+    email: 'admin@example.com',
+    displayName: 'Admin User',
+    photoURL: `https://i.pravatar.cc/150?u=${ADMIN_USER_ID}`,
+    role: 'admin',
+    cashbackBalance: 0,
+    pendingCashback: 0,
+    lifetimeCashback: 0,
+    referralCode: 'ADMIN789',
+    referralCount: 0,
+    referralBonusEarned: 0,
+    referredBy: null,
+    isDisabled: false,
+  },
+];
+
+// --- NEW: Example Transaction Data ---
+const transactionsData: { userId: string; storeName: string; data: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'userId' | 'storeId' | 'storeName'> }[] = [
+  { userId: TEST_USER_ID_1, storeName: 'Amazon IN', data: { saleAmount: 1000, cashbackAmount: 50, status: 'confirmed', transactionDate: Timestamp.fromDate(new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)), confirmationDate: Timestamp.fromDate(new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)) } },
+  { userId: TEST_USER_ID_1, storeName: 'Myntra', data: { saleAmount: 2000, cashbackAmount: 120, status: 'confirmed', transactionDate: Timestamp.fromDate(new Date(Date.now() - 15 * 24 * 60 * 60 * 1000)), confirmationDate: Timestamp.fromDate(new Date(Date.now() - 5 * 24 * 60 * 60 * 1000)) } },
+  { userId: TEST_USER_ID_1, storeName: 'Flipkart', data: { saleAmount: 500, cashbackAmount: 22.50, status: 'confirmed', transactionDate: Timestamp.fromDate(new Date(Date.now() - 20 * 24 * 60 * 60 * 1000)), confirmationDate: Timestamp.fromDate(new Date(Date.now() - 8 * 24 * 60 * 60 * 1000)) } },
+  { userId: TEST_USER_ID_1, storeName: 'Nykaa', data: { saleAmount: 800, cashbackAmount: 56, status: 'pending', transactionDate: Timestamp.fromDate(new Date(Date.now() - 5 * 24 * 60 * 60 * 1000)) } }, // Pending
+  { userId: TEST_USER_ID_2, storeName: 'Amazon IN', data: { saleAmount: 3000, cashbackAmount: 150, status: 'confirmed', transactionDate: Timestamp.fromDate(new Date(Date.now() - 12 * 24 * 60 * 60 * 1000)), confirmationDate: Timestamp.fromDate(new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)) } },
+  { userId: TEST_USER_ID_2, storeName: 'Ajio', data: { saleAmount: 1500, cashbackAmount: 120, status: 'rejected', transactionDate: Timestamp.fromDate(new Date(Date.now() - 25 * 24 * 60 * 60 * 1000)), adminNotes: 'Returned item' } }, // Rejected
+  { userId: TEST_USER_ID_2, storeName: 'BigBasket', data: { saleAmount: 600, cashbackAmount: 50, status: 'pending', transactionDate: Timestamp.fromDate(new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)) } }, // Pending
+];
+
+// --- NEW: Example Payout Request Data ---
+const payoutRequestsData: { userId: string; data: Omit<PayoutRequest, 'id' | 'requestedAt' | 'processedAt' | 'userId' | 'transactionIds'> }[] = [
+  { userId: TEST_USER_ID_1, data: { amount: 250, status: 'paid', paymentMethod: 'bank_transfer', paymentDetails: { method: 'bank_transfer', detail: 'userone@okbank' }, adminNotes: 'Processed via UPI', failureReason: null } }, // Paid
+  { userId: TEST_USER_ID_1, data: { amount: 300, status: 'pending', paymentMethod: 'gift_card', paymentDetails: { method: 'gift_card', detail: 'userone@example.com' }, adminNotes: null, failureReason: null } }, // Pending
+];
+
+// --- NEW: Example Click Data ---
+const clicksData: { userId: string; storeName: string; data: Omit<Click, 'id' | 'timestamp' | 'userId' | 'storeId' | 'storeName'> }[] = [
+  { userId: TEST_USER_ID_1, storeName: 'Amazon IN', data: { couponId: null, affiliateLink: 'https://amazon.in?tag=cashease-21&subid=CLICK1', clickId: 'CLICK1' } },
+  { userId: TEST_USER_ID_1, storeName: 'Myntra', data: { couponId: 'MYNTRA200_COUPON_ID', affiliateLink: 'https://myntra.com?ref=cashease&subid=CLICK2', clickId: 'CLICK2' } },
+  { userId: TEST_USER_ID_2, storeName: 'Flipkart', data: { couponId: null, affiliateLink: 'https://flipkart.com?affid=cashease&subid=CLICK3', clickId: 'CLICK3' } },
+];
+
+
 // --- Seeding Function ---
 
 export async function seedDatabase() {
@@ -67,19 +147,27 @@ export async function seedDatabase() {
   const storesCollection = collection(db, 'stores');
   const couponsCollection = collection(db, 'coupons');
   const bannersCollection = collection(db, 'banners');
-  // Add collections for Transactions and Payouts if needed for sample data
-  // const transactionsCollection = collection(db, 'transactions');
-  // const payoutRequestsCollection = collection(db, 'payoutRequests');
+  const usersCollection = collection(db, 'users');
+  const transactionsCollection = collection(db, 'transactions');
+  const payoutRequestsCollection = collection(db, 'payoutRequests');
+  const clicksCollection = collection(db, 'clicks');
+
 
   const storeNameToIdMap = new Map<string, string>();
+  const userPlaceholderIdMap = new Map<string, string>([
+     [TEST_USER_ID_1, TEST_USER_ID_1 === 'PLACEHOLDER_UID_1' ? `seed_user_${Date.now()}_1` : TEST_USER_ID_1],
+     [TEST_USER_ID_2, TEST_USER_ID_2 === 'PLACEHOLDER_UID_2' ? `seed_user_${Date.now()}_2` : TEST_USER_ID_2],
+     [ADMIN_USER_ID, ADMIN_USER_ID === 'ADMIN_PLACEHOLDER_UID' ? `seed_admin_${Date.now()}` : ADMIN_USER_ID],
+  ]);
+
 
   try {
     // 0. Check if data already exists (optional, prevents re-seeding)
     const storesCheckQuery = query(storesCollection, limit(1));
     const storesSnapshot = await getDocs(storesCheckQuery);
     if (!storesSnapshot.empty) {
-      console.log("Database already contains data. Skipping seeding.");
-      toast({ title: "Seeding Skipped", description: "Database already contains data." });
+      console.log("Database already contains stores. Skipping seeding (assuming data exists).");
+      toast({ title: "Seeding Skipped", description: "Database appears to contain data." });
       return;
     }
 
@@ -87,25 +175,22 @@ export async function seedDatabase() {
     console.log("Seeding categories...");
     let categoryCount = 0;
     for (const categoryData of categoriesData) {
-        // Use slug as document ID for categories
-        const categoryDocRef = doc(categoriesCollection, categoryData.slug);
-        batch.set(categoryDocRef, {
-            ...categoryData,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-        });
-        categoryCount++;
+      const categoryDocRef = doc(categoriesCollection, categoryData.slug);
+      batch.set(categoryDocRef, {
+        ...categoryData,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      categoryCount++;
     }
-    console.log(`Prepared ${categoryCount} categories for batch write.`);
-
+    console.log(`Prepared ${categoryCount} categories.`);
 
     // 2. Seed Stores and build name-to-ID map
     console.log("Seeding stores...");
     let storeCount = 0;
     for (const storeData of storesData) {
-      // Auto-generate ID for stores
       const storeDocRef = doc(storesCollection);
-      storeNameToIdMap.set(storeData.name, storeDocRef.id);
+      storeNameToIdMap.set(storeData.name, storeDocRef.id); // Map name to the generated ID
       batch.set(storeDocRef, {
         ...storeData,
         createdAt: serverTimestamp(),
@@ -113,7 +198,7 @@ export async function seedDatabase() {
       });
       storeCount++;
     }
-    console.log(`Prepared ${storeCount} stores for batch write.`);
+    console.log(`Prepared ${storeCount} stores.`);
 
     // 3. Seed Coupons using the store ID map
     console.log("Seeding coupons...");
@@ -123,10 +208,9 @@ export async function seedDatabase() {
       const storeId = storeNameToIdMap.get(storeName);
       if (storeId) {
         const couponDocRef = doc(couponsCollection);
-        // Convert expiryDate string to Timestamp if necessary (assuming current format is ok for seed)
         const expiryTimestamp = couponData.expiryDate instanceof Date
            ? Timestamp.fromDate(couponData.expiryDate)
-           : couponData.expiryDate; // Keep as null if already null
+           : couponData.expiryDate;
 
         batch.set(couponDocRef, {
           ...couponData,
@@ -141,13 +225,13 @@ export async function seedDatabase() {
         console.warn(`Skipping coupon for "${storeName}" as store ID was not found.`);
       }
     }
-    console.log(`Prepared ${couponCount} coupons for batch write. Skipped ${skippedCoupons}.`);
+    console.log(`Prepared ${couponCount} coupons. Skipped ${skippedCoupons}.`);
 
     // 4. Seed Banners
      console.log("Seeding banners...");
      let bannerCount = 0;
      for (const bannerData of bannersData) {
-       const bannerDocRef = doc(bannersCollection); // Auto-generate ID
+       const bannerDocRef = doc(bannersCollection);
        batch.set(bannerDocRef, {
          ...bannerData,
          createdAt: serverTimestamp(),
@@ -155,49 +239,118 @@ export async function seedDatabase() {
        });
        bannerCount++;
      }
-     console.log(`Prepared ${bannerCount} banners for batch write.`);
+     console.log(`Prepared ${bannerCount} banners.`);
+
+     // 5. Seed Users
+      console.log("Seeding users...");
+      let userCount = 0;
+      for (const userData of usersData) {
+          const finalUserId = userPlaceholderIdMap.get(userData.uid) || userData.uid; // Use mapped ID or original
+          // Skip seeding if placeholder wasn't replaced and it's not the admin placeholder
+          if (finalUserId.startsWith('PLACEHOLDER_') || (finalUserId === 'ADMIN_PLACEHOLDER_UID' && process.env.NEXT_PUBLIC_INITIAL_ADMIN_UID === 'ADMIN_PLACEHOLDER_UID')) {
+              console.warn(`Skipping user seeding for placeholder UID: ${userData.uid}. Replace placeholders or set NEXT_PUBLIC_INITIAL_ADMIN_UID.`);
+              continue;
+          }
+          const userDocRef = doc(usersCollection, finalUserId);
+          batch.set(userDocRef, {
+              ...userData,
+              uid: finalUserId, // Ensure the correct final UID is saved
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+              lastPayoutRequestAt: null, // Initialize as null
+              payoutDetails: null, // Initialize as null
+          });
+          userCount++;
+      }
+      console.log(`Prepared ${userCount} users.`);
 
 
-    // 5. (Optional) Seed Sample Transactions & Payouts for testing
-    // These would typically require existing user IDs.
-    // Example (replace 'TEST_USER_ID' with an actual UID if testing):
-    /*
-    const testUserId = 'TEST_USER_ID'; // Replace with a valid user ID from your auth
-    if (testUserId !== 'TEST_USER_ID') { // Only seed if a real UID is provided
-        const transactionDocRef = doc(transactionsCollection);
-        batch.set(transactionDocRef, {
-            userId: testUserId,
-            storeId: storeNameToIdMap.get('Amazon IN'), // Example
-            storeName: 'Amazon IN',
-            saleAmount: 500,
-            cashbackAmount: 25, // Example calculation
-            status: 'pending',
-            transactionDate: Timestamp.fromDate(new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)), // 3 days ago
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-        });
-        console.log("Prepared sample transaction.");
+      // 6. Seed Transactions
+       console.log("Seeding transactions...");
+       let transactionCount = 0;
+       let skippedTransactions = 0;
+       for (const { userId, storeName, data: txData } of transactionsData) {
+           const finalUserId = userPlaceholderIdMap.get(userId);
+           const storeId = storeNameToIdMap.get(storeName);
+           if (finalUserId && storeId) {
+               const transactionDocRef = doc(transactionsCollection);
+               batch.set(transactionDocRef, {
+                   ...txData,
+                   userId: finalUserId,
+                   storeId: storeId,
+                   storeName: storeName, // Denormalized name
+                   payoutId: null, // Initialize payoutId as null
+                   createdAt: serverTimestamp(),
+                   updatedAt: serverTimestamp(),
+               });
+               transactionCount++;
+           } else {
+               skippedTransactions++;
+               console.warn(`Skipping transaction for user placeholder "${userId}" or store "${storeName}" as ID was not found.`);
+           }
+       }
+       console.log(`Prepared ${transactionCount} transactions. Skipped ${skippedTransactions}.`);
 
-        const payoutRequestDocRef = doc(payoutRequestsCollection);
-        batch.set(payoutRequestDocRef, {
-            userId: testUserId,
-            amount: 250,
-            status: 'pending',
-            requestedAt: serverTimestamp(),
-            paymentMethod: 'bank_transfer',
-            paymentDetails: { method: 'bank_transfer', detail: 'testuser@upi' },
-            transactionIds: [] // Normally link real transaction IDs here
-        });
-        console.log("Prepared sample payout request.");
-    } else {
-        console.log("Skipping sample transaction/payout seeding (TEST_USER_ID not replaced).");
-    }
-    */
 
-    // 6. Commit the batch
+      // 7. Seed Payout Requests
+       console.log("Seeding payout requests...");
+       let payoutRequestCount = 0;
+       let skippedPayoutRequests = 0;
+       for (const { userId, data: payoutData } of payoutRequestsData) {
+            const finalUserId = userPlaceholderIdMap.get(userId);
+            if (finalUserId) {
+               const payoutRequestDocRef = doc(payoutRequestsCollection);
+                // Mock linking transaction IDs - In real seeding, query relevant transactions
+               const mockTransactionIds: string[] = []; // Populate if needed for testing relations
+               batch.set(payoutRequestDocRef, {
+                   ...payoutData,
+                   userId: finalUserId,
+                   transactionIds: mockTransactionIds,
+                   requestedAt: serverTimestamp(), // Set request time
+                   processedAt: payoutData.status === 'paid' ? serverTimestamp() : null, // Set process time if paid
+                   createdAt: serverTimestamp(), // Add createdAt
+                   updatedAt: serverTimestamp(), // Add updatedAt
+               });
+               payoutRequestCount++;
+           } else {
+                skippedPayoutRequests++;
+               console.warn(`Skipping payout request for user placeholder "${userId}" as ID was not found.`);
+           }
+       }
+       console.log(`Prepared ${payoutRequestCount} payout requests. Skipped ${skippedPayoutRequests}.`);
+
+
+      // 8. Seed Clicks
+       console.log("Seeding clicks...");
+       let clickCount = 0;
+       let skippedClicks = 0;
+       for (const { userId, storeName, data: clickData } of clicksData) {
+           const finalUserId = userPlaceholderIdMap.get(userId);
+           const storeId = storeNameToIdMap.get(storeName);
+           if (finalUserId && storeId) {
+               // Use the provided clickId as the document ID
+               const clickDocRef = doc(clicksCollection, clickData.clickId || `seed_click_${Date.now()}_${clickCount}`);
+               batch.set(clickDocRef, {
+                   ...clickData,
+                   userId: finalUserId,
+                   storeId: storeId,
+                   storeName: storeName,
+                   timestamp: serverTimestamp(),
+               });
+               clickCount++;
+           } else {
+               skippedClicks++;
+               console.warn(`Skipping click for user placeholder "${userId}" or store "${storeName}" as ID was not found.`);
+           }
+       }
+       console.log(`Prepared ${clickCount} clicks. Skipped ${skippedClicks}.`);
+
+
+    // 9. Commit the batch
+    console.log("Committing batch write...");
     await batch.commit();
     console.log("Database seeding completed successfully.");
-    toast({ title: "Seeding Complete", description: `${storeCount} stores, ${couponCount} coupons, ${categoryCount} categories, and ${bannerCount} banners added.` });
+    toast({ title: "Seeding Complete", description: `Added: ${categoryCount} categories, ${storeCount} stores, ${couponCount} coupons, ${bannerCount} banners, ${userCount} users, ${transactionCount} transactions, ${payoutRequestCount} payouts, ${clickCount} clicks.` });
 
   } catch (error) {
     console.error("Error during database seeding:", error);
@@ -205,7 +358,7 @@ export async function seedDatabase() {
   }
 }
 
-// Optional: Function to check if seeding is needed
+// Optional: Function to check if seeding is needed (checks stores collection)
 export async function needsSeeding(): Promise<boolean> {
    if (!db) return false;
    try {
@@ -218,3 +371,5 @@ export async function needsSeeding(): Promise<boolean> {
        return false;
    }
 }
+
+  
