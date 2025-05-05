@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Building, Target, Users, TrendingUp, HandCoins } from 'lucide-react';
+import { Building, Target, Users, TrendingUp, HandCoins, IndianRupee, BadgePercent } from 'lucide-react'; // Import IndianRupee and BadgePercent
 
 export default function AboutPage() {
   return (
@@ -86,7 +86,7 @@ export default function AboutPage() {
         <h2 className="text-3xl font-bold text-center mb-10">Meet the Team</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
           {/* Add Team Member Cards here */}
-        {/*  <p className="text-center col-span-full text-muted-foreground">(Team section content coming soon!)</p>
+      {/*  <p className="text-center col-span-full text-muted-foreground">(Team section content coming soon!)</p>
         </div>
       </section> */}
 
