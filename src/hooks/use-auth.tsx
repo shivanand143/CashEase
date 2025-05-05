@@ -26,7 +26,7 @@ interface AuthContextType {
   user: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
-  error: string | null;
+  error: string | null; // General profile/DB errors
   authError: string | null; // Separate state for auth-specific errors
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -369,7 +369,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           case 'auth/unauthorized-domain':
              // Provide more specific guidance for this error
              console.warn(`[Auth/Unauthorized Domain] Attempted sign-in from: ${currentDomain}`); // Log the domain
-             errorMessage = `This domain (${currentDomain}) is not authorized for Firebase Authentication. Please add it EXACTLY in the Firebase Console -> Authentication -> Settings -> Authorized domains. Check for port numbers or typos.`;
+             // Reverted detailed explanation, focusing on core Firebase issue
+             errorMessage = `This domain (${currentDomain}) is not authorized for Firebase Authentication. Check your Firebase Console settings.`;
              break;
           default:
             errorMessage = `Google Sign-In error (${err.code}): ${err.message}`;
@@ -444,5 +445,3 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     </AuthContext.Provider>
   );
 };
-
-    
