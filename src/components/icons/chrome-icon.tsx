@@ -1,4 +1,4 @@
-// src/components/icons/chrome-icon.tsx
+
 import React from 'react';
 
 export function ChromeIcon(props: React.SVGProps<SVGSVGElement>) {
@@ -23,5 +23,3 @@ export function ChromeIcon(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
-
-      

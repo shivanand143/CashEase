@@ -1,4 +1,4 @@
-// src/app/(auth)/login/page.tsx
+
 "use client";
 
 import * as React from 'react';
@@ -9,6 +9,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import { FirebaseError } from 'firebase/app';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -22,12 +23,11 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/lib/firebase/config';
+import { auth } from '@/lib/firebase/config'; // Ensure config is correctly imported
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, LogIn } from 'lucide-react'; // Use a generic Chrome icon or create a Google SVG
+import { AlertCircle, LogIn } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth'; // Import useAuth for Google Sign-In
 import { ChromeIcon } from '@/components/icons/chrome-icon'; // Import custom icon
-
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address' }),
@@ -39,9 +39,9 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const { signInWithGoogle } = useAuth(); // Get signInWithGoogle function
-  const [loadingEmail, setLoadingEmail] = useState(false); // Loading state for email/password login
-  const [loadingGoogle, setLoadingGoogle] = useState(false); // Loading state for Google login
+  const { signInWithGoogle } = useAuth();
+  const [loadingEmail, setLoadingEmail] = useState(false);
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const {
@@ -53,6 +53,11 @@ export default function LoginPage() {
   });
 
   const onSubmit = async (data: LoginFormValues) => {
+    if (!auth) {
+        setError("Authentication service is not available.");
+        toast({ variant: "destructive", title: 'Error', description: "Authentication service failed." });
+        return;
+    }
     setLoadingEmail(true);
     setError(null);
     try {
@@ -61,12 +66,11 @@ export default function LoginPage() {
         title: 'Login Successful',
         description: 'Welcome back!',
       });
-      router.push('/dashboard'); // Redirect to dashboard after successful login
-    } catch (err: any) {
+      router.push('/dashboard'); // Redirect on success
+    } catch (err: unknown) {
        console.error("Login failed:", err);
-       // Provide more specific error messages
        let errorMessage = "An unexpected error occurred. Please try again.";
-       if (err.code) {
+       if (err instanceof FirebaseError) {
          switch (err.code) {
            case 'auth/user-not-found':
            case 'auth/wrong-password':
@@ -82,7 +86,14 @@ export default function LoginPage() {
            case 'auth/user-disabled':
                errorMessage = 'Your account has been disabled. Please contact support.';
                break;
+            case 'auth/network-request-failed':
+                errorMessage = 'Network error. Please check your internet connection.';
+                break;
+            default:
+                errorMessage = `Login failed (${err.code}). Please try again.`;
          }
+       } else if (err instanceof Error) {
+           errorMessage = err.message;
        }
        setError(errorMessage);
        toast({
@@ -100,22 +111,22 @@ export default function LoginPage() {
       setError(null);
       try {
           await signInWithGoogle();
-          // No need for toast here, it's handled in useAuth
-          router.push('/dashboard'); // Redirect on success
+          // Redirect is handled by useAuth's onAuthStateChanged effect
+          // router.push('/dashboard'); // No need to push here usually
       } catch (err: any) {
-          // Error handling is mostly done within useAuth, but we can set local error state if needed
-          console.error("Google Sign-In failed (from page):", err);
-          setError(err.message || "Failed to sign in with Google.");
-          // Toast is likely already shown by useAuth
+          // Errors are usually handled within signInWithGoogle and shown via toast
+          console.error("Google Sign-In failed (from login page):", err);
+          // Set local error state if needed, though toast might be sufficient
+          // setError(err.message || "Failed to sign in with Google.");
       } finally {
           setLoadingGoogle(false);
       }
    };
 
-  const isLoading = loadingEmail || loadingGoogle; // General loading state
+  const isLoading = loadingEmail || loadingGoogle;
 
   return (
-    <div className="flex justify-center items-center min-h-[calc(100vh-10rem)] px-4 py-8">
+    <div className="flex justify-center items-center min-h-[calc(100vh-12rem)] px-4 py-8"> {/* Adjust min-height */}
       <Card className="w-full max-w-md shadow-lg border border-border rounded-lg">
         <CardHeader className="space-y-1 text-center p-6">
           <CardTitle className="text-2xl md:text-3xl font-bold">Welcome Back!</CardTitle>
@@ -196,5 +207,3 @@ export default function LoginPage() {
     </div>
   );
 }
-
-    

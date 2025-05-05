@@ -1,3 +1,4 @@
+
 "use client"
 
 // Inspired by react-hot-toast library
@@ -8,8 +9,8 @@ import type {
   ToastProps,
 } from "@/components/ui/toast"
 
-const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+const TOAST_LIMIT = 1 // Show only one toast at a time
+const TOAST_REMOVE_DELAY = 5000 // Auto-remove after 5 seconds
 
 type ToasterToast = ToastProps & {
   id: string
@@ -79,6 +80,7 @@ export const reducer = (state: State, action: Action): State => {
     case "ADD_TOAST":
       return {
         ...state,
+        // Add new toast to the beginning and limit the array
         toasts: [action.toast, ...state.toasts].slice(0, TOAST_LIMIT),
       }
 
@@ -93,11 +95,11 @@ export const reducer = (state: State, action: Action): State => {
     case "DISMISS_TOAST": {
       const { toastId } = action
 
-      // ! Side effects ! - This could be extracted into a dismissToast() action,
-      // but I'll keep it here for simplicity
+      // Side effects: Schedule removal if toastId is provided
       if (toastId) {
         addToRemoveQueue(toastId)
       } else {
+        // Dismiss all toasts
         state.toasts.forEach((toast) => {
           addToRemoveQueue(toast.id)
         })
@@ -109,7 +111,7 @@ export const reducer = (state: State, action: Action): State => {
           t.id === toastId || toastId === undefined
             ? {
                 ...t,
-                open: false,
+                open: false, // Mark as closed for fade-out animation
               }
             : t
         ),
@@ -117,11 +119,13 @@ export const reducer = (state: State, action: Action): State => {
     }
     case "REMOVE_TOAST":
       if (action.toastId === undefined) {
+        // Remove all toasts
         return {
           ...state,
           toasts: [],
         }
       }
+      // Filter out the specific toast
       return {
         ...state,
         toasts: state.toasts.filter((t) => t.id !== action.toastId),
@@ -159,10 +163,13 @@ function toast({ ...props }: Toast) {
       id,
       open: true,
       onOpenChange: (open) => {
-        if (!open) dismiss()
+        if (!open) dismiss() // Trigger dismiss when closed by user interaction
       },
     },
   })
+
+  // Schedule automatic removal
+  addToRemoveQueue(id);
 
   return {
     id: id,

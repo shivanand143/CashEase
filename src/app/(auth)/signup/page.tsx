@@ -1,16 +1,15 @@
-// src/app/(auth)/signup/page.tsx
+
 "use client";
 
 import * as React from 'react';
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation'; // Import useSearchParams
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore'; // Import getDoc
-
+import { FirebaseError } from 'firebase/app';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -24,13 +23,11 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { auth, db } from '@/lib/firebase/config';
-import type { UserProfile, User } from '@/lib/types'; // Assuming User type is exported from types or use firebase/auth User
+import { auth } from '@/lib/firebase/config'; // Ensure config is correctly imported
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, UserPlus } from 'lucide-react'; // Use a generic Chrome icon or create a Google SVG
-import { useAuth } from '@/hooks/use-auth'; // Import useAuth for Google Sign-In and profile creation logic
-import { ChromeIcon } from '@/components/icons/chrome-icon'; // Import custom icon
-
+import { AlertCircle, UserPlus } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth'; // Import useAuth for Google Sign-In and profile creation
+import { ChromeIcon } from '@/components/icons/chrome-icon';
 
 const signupSchema = z.object({
   displayName: z.string().min(2, { message: 'Name must be at least 2 characters' }).max(50, { message: 'Name cannot exceed 50 characters' }),
@@ -42,10 +39,9 @@ type SignupFormValues = z.infer<typeof signupSchema>;
 
 export default function SignupPage() {
   const router = useRouter();
-   const searchParams = useSearchParams(); // Get search params
+  const searchParams = useSearchParams();
   const { toast } = useToast();
-  // Use the profile creation logic from the hook
-  const { signInWithGoogle } = useAuth(); // Only need signInWithGoogle here
+  const { signInWithGoogle, createOrUpdateUserProfile } = useAuth(); // Get necessary functions
   const [loadingEmail, setLoadingEmail] = useState(false);
   const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,85 +54,87 @@ export default function SignupPage() {
     resolver: zodResolver(signupSchema),
   });
 
+  const onSubmit = async (data: SignupFormValues) => {
+    if (!auth) {
+        setError("Authentication service is not available.");
+        toast({ variant: "destructive", title: 'Error', description: "Authentication service failed." });
+        return;
+    }
+    setLoadingEmail(true);
+    setError(null);
+    const referralCodeFromUrl = searchParams.get('ref');
+    console.log("Manual signup attempt. Referral code from URL:", referralCodeFromUrl);
 
- const onSubmit = async (data: SignupFormValues) => {
-   setLoadingEmail(true);
-   setError(null);
-   // Referral code will be handled by the onAuthStateChanged listener in useAuth
-   // const referralCode = searchParams.get('ref');
-   // console.log("Attempting manual signup. Referral code from URL:", referralCode);
+    try {
+      // 1. Create user in Firebase Authentication
+      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+      const user = userCredential.user;
+      console.log("User created in Firebase Auth:", user.uid);
 
-   try {
-     // 1. Create user in Firebase Authentication
-     const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
-     const user = userCredential.user;
-     console.log("User created in Firebase Auth:", user.uid);
+      // 2. Update Firebase Auth profile (with display name)
+      // This is done *before* profile creation to ensure name is available
+      await updateProfile(user, { displayName: data.displayName });
+      console.log("Firebase Auth profile updated with display name:", data.displayName);
 
-     // 2. Update Firebase Auth profile (optional but good practice)
-     // This helps if the profile listener is slightly delayed
-     await updateProfile(user, {
-       displayName: data.displayName,
-     });
-     console.log("Firebase Auth profile updated with display name:", data.displayName);
+      // 3. Create Firestore profile document using the function from useAuth
+      // Pass the referral code from the URL
+      await createOrUpdateUserProfile(user, referralCodeFromUrl);
 
-     // 3. User profile document creation/update is now handled by the
-     //    onAuthStateChanged listener within the useAuth hook.
-     //    It will pick up the new user and create the profile,
-     //    checking for referral codes automatically if needed.
-     //    No need to call createOrUpdateUserProfile directly here.
+      toast({
+        title: 'Signup Successful',
+        description: 'Welcome to CashEase! Redirecting...',
+      });
+      router.push('/dashboard'); // Redirect to dashboard
 
-     toast({
-       title: 'Signup Successful',
-       description: 'Welcome to CashEase! Redirecting...',
-     });
-     router.push('/dashboard'); // Redirect to dashboard after successful signup
-
-   } catch (err: any) {
-     console.error("Signup failed:", err);
-     let errorMessage = "An unexpected error occurred. Please try again.";
-     if (err.code) {
-       switch (err.code) {
-         case 'auth/email-already-in-use':
-           errorMessage = 'This email address is already registered. Please try logging in.';
-           break;
-         case 'auth/invalid-email':
-           errorMessage = 'Please enter a valid email address.';
-           break;
-         case 'auth/weak-password':
-           errorMessage = 'Password is too weak. Please choose a stronger password (at least 6 characters).';
-           break;
-         case 'auth/operation-not-allowed':
-             errorMessage = 'Email/password accounts are not enabled. Please contact support.';
-             break;
-         default:
-           errorMessage = `An error occurred (${err.code || 'unknown'}). Please try again.`;
-       }
-     }
-     setError(errorMessage);
-     toast({
-       variant: "destructive",
-       title: 'Signup Failed',
-       description: errorMessage,
-     });
-   } finally {
-     setLoadingEmail(false);
-   }
- };
+    } catch (err: unknown) {
+      console.error("Signup failed:", err);
+      let errorMessage = "An unexpected error occurred. Please try again.";
+      if (err instanceof FirebaseError) {
+        switch (err.code) {
+          case 'auth/email-already-in-use':
+            errorMessage = 'This email address is already registered. Please try logging in.';
+            break;
+          case 'auth/invalid-email':
+            errorMessage = 'Please enter a valid email address.';
+            break;
+          case 'auth/weak-password':
+            errorMessage = 'Password is too weak. Please choose a stronger password (at least 6 characters).';
+            break;
+          case 'auth/operation-not-allowed':
+              errorMessage = 'Email/password accounts are not enabled. Please contact support.';
+              break;
+           case 'auth/network-request-failed':
+                errorMessage = 'Network error. Please check your internet connection.';
+                break;
+          default:
+            errorMessage = `Signup error (${err.code}). Please try again.`;
+        }
+      } else if (err instanceof Error) {
+          errorMessage = err.message;
+      }
+      setError(errorMessage);
+      toast({
+        variant: "destructive",
+        title: 'Signup Failed',
+        description: errorMessage,
+      });
+    } finally {
+      setLoadingEmail(false);
+    }
+  };
 
   const handleGoogleSignIn = async () => {
      setLoadingGoogle(true);
      setError(null);
      try {
-         // The signInWithGoogle function in useAuth now handles profile creation/update
-         // and checks for the referral code from the URL internally.
+         // signInWithGoogle from useAuth now handles profile creation and referral check
          await signInWithGoogle();
-         // No need for toast here, it's handled in useAuth
-         router.push('/dashboard'); // Redirect on success
+         // Redirect is handled by useAuth's onAuthStateChanged effect
+         // router.push('/dashboard'); // No need to push here
      } catch (err: any) {
-         // Error handling is mostly done within useAuth, but we can set local error state if needed
          console.error("Google Sign-In failed (from signup page):", err);
-         setError(err.message || "Failed to sign in with Google.");
-         // Toast is likely already shown by useAuth
+         // Errors are typically handled within signInWithGoogle
+         // setError(err.message || "Failed to sign in with Google.");
      } finally {
          setLoadingGoogle(false);
      }
@@ -144,9 +142,8 @@ export default function SignupPage() {
 
   const isLoading = loadingEmail || loadingGoogle;
 
-
   return (
-    <div className="flex justify-center items-center min-h-[calc(100vh-10rem)] px-4 py-8">
+    <div className="flex justify-center items-center min-h-[calc(100vh-12rem)] px-4 py-8">
       <Card className="w-full max-w-md shadow-lg border border-border rounded-lg">
         <CardHeader className="space-y-1 text-center p-6">
           <CardTitle className="text-2xl md:text-3xl font-bold">Create your Account</CardTitle>
@@ -222,7 +219,6 @@ export default function SignupPage() {
            <Button variant="outline" className="w-full h-10" onClick={handleGoogleSignIn} disabled={isLoading}>
              {loadingGoogle ? 'Signing in...' : <> <ChromeIcon className="mr-2 h-4 w-4" /> Continue with Google </>}
            </Button>
-
 
         </CardContent>
         <CardFooter className="flex flex-col space-y-2 text-center text-sm p-6 pt-4">

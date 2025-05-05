@@ -1,19 +1,32 @@
-import * as React from "react"
 
-const MOBILE_BREAKPOINT = 768
+"use client"; // Ensure this hook only runs on the client
+
+import * as React from "react";
+
+const MOBILE_BREAKPOINT = 768; // Standard Tailwind md breakpoint
 
 export function useIsMobile() {
-  const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
+  const [isMobile, setIsMobile] = React.useState<boolean>(false); // Default to false initially
 
   React.useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
-    const onChange = () => {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+    // Check if window is defined (prevents errors during SSR)
+    if (typeof window === 'undefined') {
+      return;
     }
-    mql.addEventListener("change", onChange)
-    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-    return () => mql.removeEventListener("change", onChange)
-  }, [])
 
-  return !!isMobile
+    const checkDevice = () => {
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    };
+
+    // Initial check
+    checkDevice();
+
+    // Listener for window resize
+    window.addEventListener('resize', checkDevice);
+
+    // Cleanup listener on component unmount
+    return () => window.removeEventListener('resize', checkDevice);
+  }, []); // Empty dependency array ensures this runs only once on mount
+
+  return isMobile;
 }

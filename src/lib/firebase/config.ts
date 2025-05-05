@@ -1,13 +1,9 @@
-// src/lib/firebase/config.ts
+
 import { initializeApp, getApps, getApp, FirebaseOptions } from "firebase/app";
 import { getAuth, Auth } from "firebase/auth";
 import { getFirestore, Firestore } from "firebase/firestore";
-// import { getFunctions } from "firebase/functions"; // Uncomment if using Firebase Functions
 
-// Ensure your Firebase project credentials are set in your environment variables.
-// Create a .env.local file in the project root if it doesn't exist.
-// See .env.local.example for required variables.
-
+// Load environment variables using Next.js's built-in support
 const firebaseConfig: FirebaseOptions = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -15,7 +11,7 @@ const firebaseConfig: FirebaseOptions = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID // Optional
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
 // Function to check if all required keys have values
@@ -47,7 +43,6 @@ if (missingEnvVars.length > 0) {
         app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
         auth = getAuth(app);
         db = getFirestore(app);
-        // const functions = getFunctions(app); // Uncomment if using Firebase Functions
         console.log("Firebase initialized successfully.");
     }
   } catch (error: any) {
@@ -66,4 +61,4 @@ if (missingEnvVars.length > 0) {
 }
 
 // Export the potentially null services and the error state
-export { app, auth, db, firebaseInitializationError /*, functions*/ };
+export { app, auth, db, firebaseInitializationError };

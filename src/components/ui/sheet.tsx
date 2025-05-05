@@ -1,13 +1,13 @@
-// src/components/ui/sheet.tsx
+
 "use client"
 
-import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 import * as React from "react"
 import * as SheetPrimitive from "@radix-ui/react-dialog" // Sheet uses Dialog primitives
 import { cva, type VariantProps } from "class-variance-authority"
 import { X } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 
+import { cn } from "@/lib/utils"
 
 const Sheet = SheetPrimitive.Root
 
@@ -55,87 +55,104 @@ interface SheetContentProps
   extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
     VariantProps<typeof sheetVariants> {}
 
-// Forward Refs for Header Components
-const SheetHeader = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn(
-      "flex flex-col space-y-2 text-center sm:text-left",
-      className // Removed p-6 from here
-    )}
-    {...props}
-  />
-));
-SheetHeader.displayName = "SheetHeader";
-
-const SheetFooter = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn(
-      "mt-auto flex flex-col gap-2 pt-6 sm:flex-row sm:justify-end sm:space-x-2", // Added mt-auto, pt-6, gap-2
-      className // Removed p-6 from here
-    )}
-    {...props}
-  />
-));
-SheetFooter.displayName = "SheetFooter";
-
-const SheetTitle = React.forwardRef<
-  React.ElementRef<typeof SheetPrimitive.Title>,
-  React.ComponentPropsWithoutRef<typeof SheetPrimitive.Title>
->(({ className, ...props }, ref) => (
-  <SheetPrimitive.Title // Use DialogPrimitive.Title
-    ref={ref}
-    className={cn("text-lg font-semibold text-foreground", className)}
-    {...props}
-  />
-));
-SheetTitle.displayName = SheetPrimitive.Title.displayName; // Use DialogPrimitive name
-
-const SheetDescription = React.forwardRef<
-  React.ElementRef<typeof SheetPrimitive.Description>,
-  React.ComponentPropsWithoutRef<typeof SheetPrimitive.Description>
->(({ className, ...props }, ref) => (
-  <SheetPrimitive.Description // Use DialogPrimitive.Description
-    ref={ref}
-    className={cn("text-sm text-muted-foreground", className)}
-    {...props}
-  />
-));
-SheetDescription.displayName = SheetPrimitive.Description.displayName; // Use DialogPrimitive name
-
-
-// Updated SheetContent: No longer adds a default close button
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
 >(({ side = "right", className, children, ...props }, ref) => {
+  // Generate a unique ID for the visually hidden title
+  const titleId = React.useId();
+
   return (
     <SheetPortal>
       <SheetOverlay />
       <SheetPrimitive.Content
         ref={ref}
         className={cn(sheetVariants({ side }), className)}
+        aria-labelledby={titleId} // Point to the hidden title
         {...props}
       >
-        {/* Render a hidden title for accessibility compliance */}
+        {/* Always include a visually hidden title for accessibility */}
         <VisuallyHidden asChild>
-            <SheetTitle>Menu</SheetTitle>
+          <DialogTitle id={titleId}>Sheet Menu</DialogTitle>
         </VisuallyHidden>
 
+        {/* Render the user's provided content */}
         {children}
-        {/* Removed the default close button from here */}
+
+        {/* Close button remains */}
+        <SheetClose
+          className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary"
+        >
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
+        </SheetClose>
       </SheetPrimitive.Content>
     </SheetPortal>
   );
 });
 SheetContent.displayName = SheetPrimitive.Content.displayName
+
+
+// Define DialogTitle for use within Sheet components if needed by consumers
+// This ensures SheetTitle can be used similarly to DialogTitle
+const DialogTitle = React.forwardRef<
+  React.ElementRef<typeof SheetPrimitive.Title>,
+  React.ComponentPropsWithoutRef<typeof SheetPrimitive.Title>
+>(({ className, ...props }, ref) => (
+  <SheetPrimitive.Title
+    ref={ref}
+    className={cn("text-lg font-semibold text-foreground", className)}
+    {...props}
+  />
+));
+DialogTitle.displayName = SheetPrimitive.Title.displayName; // Keep original Radix name
+
+// Define DialogDescription for use within Sheet components
+const DialogDescription = React.forwardRef<
+  React.ElementRef<typeof SheetPrimitive.Description>,
+  React.ComponentPropsWithoutRef<typeof SheetPrimitive.Description>
+>(({ className, ...props }, ref) => (
+  <SheetPrimitive.Description
+    ref={ref}
+    className={cn("text-sm text-muted-foreground", className)}
+    {...props}
+  />
+));
+DialogDescription.displayName = SheetPrimitive.Description.displayName; // Keep original Radix name
+
+
+const SheetHeader = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) => (
+  <div
+    className={cn(
+      "flex flex-col space-y-2 text-center sm:text-left",
+      className
+    )}
+    {...props}
+  />
+)
+SheetHeader.displayName = "SheetHeader"
+
+const SheetFooter = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) => (
+  <div
+    className={cn(
+      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
+      className
+    )}
+    {...props}
+  />
+)
+SheetFooter.displayName = "SheetFooter"
+
+// Use the re-defined DialogTitle and DialogDescription as SheetTitle/SheetDescription
+const SheetTitle = DialogTitle;
+const SheetDescription = DialogDescription;
+
 
 export {
   Sheet,

@@ -1,20 +1,21 @@
+
 import type { Metadata } from 'next';
-import { Geist } from 'next/font/google';
+import { Inter as FontSans } from 'next/font/google'; // Using Inter font
 import './globals.css';
-import { AuthProvider } from '@/hooks/use-auth'; // Updated import if necessary, though alias might handle it
+import { cn } from "@/lib/utils";
+import { AuthProvider } from '@/hooks/use-auth';
 import Header from '@/components/layout/header';
 import Footer from '@/components/layout/footer';
-import { Toaster } from "@/components/ui/toaster" // Import Toaster
+import { Toaster } from "@/components/ui/toaster";
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
+const fontSans = FontSans({
+  subsets: ["latin"],
+  variable: "--font-sans",
 });
 
-
 export const metadata: Metadata = {
-  title: 'CashEase - Cashback & Coupons',
-  description: 'Get cashback and find the best coupons for your online shopping with CashEase.',
+  title: 'CashEase - Cashback & Coupons Rebuilt',
+  description: 'Get cashback and find the best coupons for your online shopping.',
 };
 
 export default function RootLayout({
@@ -24,16 +25,22 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.variable} antialiased`}>
+      <body
+        className={cn(
+          "min-h-screen bg-background font-sans antialiased",
+          fontSans.variable
+        )}
+      >
         <AuthProvider>
-          {/* Apply max-width and centering to the entire layout structure */}
-          <div className="flex flex-col min-h-screen max-w-screen-lg mx-auto"> {/* Added max-width and mx-auto */}
+          <div className="relative flex min-h-screen flex-col bg-background">
             <Header />
-            {/* Remove container class from main, let the outer div handle width */}
-            <main className="flex-grow w-full">{children}</main>
+            {/* Main content area */}
+            <main className="flex-1 container mx-auto px-4 py-8 md:py-12">
+              {children}
+            </main>
             <Footer />
           </div>
-          <Toaster /> {/* Add Toaster here */}
+          <Toaster />
         </AuthProvider>
       </body>
     </html>

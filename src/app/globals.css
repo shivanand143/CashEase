@@ -1,11 +1,9 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: var(--font-geist-sans), sans-serif;
-}
-
+/* Define base styles and ShadCN variables */
 @layer base {
   :root {
     --background: 0 0% 100%; /* White */
@@ -44,20 +42,20 @@ body {
 
     --radius: 0.5rem;
 
-    /* Sidebar specific variables - adjust if using sidebar component extensively */
-    --sidebar-background: 240 4.8% 95.9%; /* Light Gray - same as muted */
-    --sidebar-foreground: 240 10% 3.9%; /* Dark Gray */
-    --sidebar-primary: 211 100% 50%; /* Blue */
-    --sidebar-primary-foreground: 0 0% 100%; /* White */
-    --sidebar-accent: 0 0% 100%; /* White - for selected items */
-    --sidebar-accent-foreground: 211 100% 50%; /* Blue text on selected */
-    --sidebar-border: 240 5.9% 90%; /* Gray border */
-    --sidebar-ring: 211 100% 50%; /* Blue for focus rings */
+    /* Sidebar specific variables */
+    --sidebar-background: 240 4.8% 95.9%;
+    --sidebar-foreground: 240 10% 3.9%;
+    --sidebar-primary: 211 100% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 100%;
+    --sidebar-accent-foreground: 211 100% 50%;
+    --sidebar-border: 240 5.9% 90%;
+    --sidebar-ring: 211 100% 50%;
   }
 
   .dark {
-    --background: 240 10% 3.9%; /* Dark Gray */
-    --foreground: 0 0% 98%; /* Almost White */
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
 
     --card: 240 10% 3.9%;
     --card-foreground: 0 0% 98%;
@@ -65,24 +63,24 @@ body {
     --popover: 240 10% 3.9%;
     --popover-foreground: 0 0% 98%;
 
-    --primary: 211 100% 50%; /* Blue */
-    --primary-foreground: 0 0% 100%; /* White */
+    --primary: 211 100% 50%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 134 61% 41%; /* Green */
-    --secondary-foreground: 0 0% 100%; /* White */
+    --secondary: 134 61% 41%;
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 240 3.7% 15.9%; /* Darker Gray */
-    --muted-foreground: 240 5% 64.9%; /* Lighter Gray */
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
 
-    --accent: 45 100% 51%; /* Amber */
-    --accent-foreground: 240 10% 3.9%; /* Dark Gray text on Amber */
+    --accent: 45 100% 51%;
+    --accent-foreground: 240 10% 3.9%;
 
-    --destructive: 0 62.8% 30.6%; /* Darker Red */
-    --destructive-foreground: 0 0% 98%; /* Almost White */
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 240 3.7% 15.9%; /* Darker Gray border */
-    --input: 240 3.7% 15.9%; /* Darker Gray input border */
-    --ring: 211 100% 50%; /* Blue for focus rings */
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 211 100% 50%;
 
     --chart-1: 211 100% 50%;
     --chart-2: 134 61% 41%;
@@ -91,14 +89,14 @@ body {
     --chart-5: 240 3.7% 15.9%;
 
     /* Sidebar specific variables - Dark mode */
-    --sidebar-background: 240 10% 3.9%; /* Dark Gray - same as background */
-    --sidebar-foreground: 0 0% 98%; /* Almost White */
-    --sidebar-primary: 211 100% 50%; /* Blue */
-    --sidebar-primary-foreground: 0 0% 100%; /* White */
-    --sidebar-accent: 240 3.7% 15.9%; /* Darker Gray - for selected items */
-    --sidebar-accent-foreground: 211 100% 50%; /* Blue text on selected */
-    --sidebar-border: 240 3.7% 15.9%; /* Darker Gray border */
-    --sidebar-ring: 211 100% 50%; /* Blue for focus rings */
+    --sidebar-background: 240 10% 3.9%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 211 100% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 211 100% 50%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 211 100% 50%;
   }
 }
 

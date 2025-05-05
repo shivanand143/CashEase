@@ -1,4 +1,4 @@
-// src/components/layout/header.tsx
+
 "use client";
 
 import * as React from 'react';
@@ -21,36 +21,35 @@ import {
   SheetTrigger,
   SheetClose,
 } from "@/components/ui/sheet";
-import { LogIn, LogOut, User, IndianRupee, ShoppingBag, LayoutDashboard, Settings, Menu, Home, Tag, ShieldCheck, Gift, History, Send, X, List, HelpCircle, BookOpen, Search as SearchIcon } from 'lucide-react';
+import {
+    LogIn, LogOut, User, IndianRupee, ShoppingBag, LayoutDashboard, Settings, Menu,
+    Tag, ShieldCheck, Gift, History, Send, X, List, HelpCircle, BookOpen, Search as SearchIcon
+} from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Separator } from "@/components/ui/separator";
 import { Input } from '@/components/ui/input';
-import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 
 export default function Header() {
   const { user, userProfile, loading, signOut } = useAuth();
   const pathname = usePathname();
   const [searchTerm, setSearchTerm] = React.useState('');
+  const [isSheetOpen, setIsSheetOpen] = React.useState(false); // State for mobile sheet
   const router = useRouter();
 
   const getInitials = (name?: string | null) => {
-    if (!name) return 'CE';
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase();
+    if (!name) return 'CE'; // CashEase initials
+    return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
 
   const navLinks = [
     { href: "/stores", label: "Stores", icon: ShoppingBag },
     { href: "/coupons", label: "Coupons", icon: Tag },
     { href: "/categories", label: "Categories", icon: List },
-    { href: "/blog", label: "Blog", icon: BookOpen },
-    { href: "/faq", label: "FAQ", icon: HelpCircle },
+    // { href: "/blog", label: "Blog", icon: BookOpen }, // Temporarily hide blog
+    { href: "/how-it-works", label: "How It Works", icon: HelpCircle },
   ];
 
   const userMenuItems = [
@@ -68,147 +67,148 @@ export default function Header() {
   const handleSearchSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!searchTerm.trim()) return;
+    setIsSheetOpen(false); // Close sheet on search submit
     router.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`);
-    // Consider adding SheetClose logic here if needed
-    const closeButton = document.querySelector('[data-radix-dialog-close]');
-    if (closeButton instanceof HTMLElement) {
-       closeButton.click();
-    }
-    setSearchTerm(''); // Clear search term after submit
+    setSearchTerm(''); // Clear search term
   };
 
+  const handleSheetLinkClick = () => {
+      setIsSheetOpen(false); // Close sheet when a link inside is clicked
+  }
+
   return (
-    // Removed sticky positioning
-    <header className="w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      {/* Container remains to align header content within the max-width set in layout.tsx */}
-      <div className="container flex h-14 items-center justify-between gap-2 md:gap-4">
-        {/* Left Side: Mobile Menu Trigger & Desktop Nav */}
+    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="container mx-auto flex h-16 items-center justify-between gap-2 px-4 md:px-6">
+        {/* Left Side: Mobile Menu Trigger & Logo */}
         <div className="flex items-center">
           {/* Mobile Menu Trigger */}
-          <div className="md:hidden mr-2"> {/* Ensure trigger is visible */}
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <Menu className="h-5 w-5" />
-                  <span className="sr-only">Toggle Menu</span>
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-full max-w-xs p-0 flex flex-col">
-                  {/* Always include a visually hidden title for accessibility */}
-                  <VisuallyHidden asChild>
-                    <SheetTitle>Main menu</SheetTitle>
-                  </VisuallyHidden>
-                <SheetHeader className="p-4 border-b flex flex-row items-center justify-between">
-                  <Link href="/" className="flex items-center space-x-2">
-                    <IndianRupee className="h-6 w-6 text-primary" />
-                    <span className="font-bold text-xl">CashEase</span>
-                  </Link>
-                  <SheetClose asChild>
-                    <Button variant="ghost" size="icon">
-                      <X className="h-5 w-5" />
-                      <span className="sr-only">Close Menu</span>
-                    </Button>
-                  </SheetClose>
-                </SheetHeader>
-                {/* Mobile Search Bar */}
-                <form onSubmit={handleSearchSubmit} className="p-4 border-b">
-                  <div className="relative">
-                    <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      type="search"
-                      placeholder="Search stores, coupons..."
-                      className="pl-9 w-full h-9"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                  </div>
-                </form>
-                <div className="flex-grow flex flex-col overflow-y-auto">
-                  <nav className="flex flex-col space-y-1 p-4">
-                    {navLinks.map((link) => (
-                      <SheetClose key={link.href} asChild>
-                        <Link
-                          href={link.href}
-                          className={cn(
-                            "flex items-center gap-3 rounded-md px-3 py-2 text-base font-medium transition-colors hover:bg-muted",
-                            isActive(link.href) ? "bg-muted text-primary" : "text-foreground"
-                          )}
-                        >
-                          {link.icon && <link.icon className="h-5 w-5" />}
-                          {link.label}
-                        </Link>
-                      </SheetClose>
-                    ))}
-                  </nav>
-                  <Separator className="my-2" />
-                  <div className="p-4 flex flex-col space-y-1">
-                    {loading ? (
-                      <Skeleton className="h-10 w-full rounded-md" />
-                    ) : user ? (
-                      <>
-                        {userMenuItems.map((item) => (
-                          <SheetClose key={item.href} asChild>
-                            <Link
-                              href={item.href}
-                              className={cn(
-                                "flex items-center gap-3 rounded-md px-3 py-2 text-base font-medium transition-colors hover:bg-muted",
-                                isActive(item.href) ? "bg-muted text-primary" : "text-foreground"
-                              )}
-                            >
-                              <item.icon className="h-5 w-5" />
-                              {item.label}
-                            </Link>
-                          </SheetClose>
-                        ))}
-                        {userProfile?.role === 'admin' && (
-                          <SheetClose asChild>
-                            <Link
-                              href={adminMenuItem.href}
-                              className={cn(
-                                "flex items-center gap-3 rounded-md px-3 py-2 text-base font-medium transition-colors hover:bg-muted",
-                                isActive(adminMenuItem.href) ? "bg-muted text-primary" : "text-foreground"
-                              )}
-                            >
-                              <adminMenuItem.icon className="h-5 w-5" />
-                              {adminMenuItem.label}
-                            </Link>
-                          </SheetClose>
-                        )}
-                        <Separator className="my-2" />
-                        <Button variant="ghost" onClick={signOut} className="w-full justify-start px-3 py-2 text-base font-medium">
-                          <LogOut className="mr-3 h-5 w-5" /> Logout
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <SheetClose asChild>
-                          <Button variant="ghost" asChild className="w-full justify-start px-3 py-2 text-base font-medium">
-                            <Link href="/login">
-                              <LogIn className="mr-3 h-5 w-5" /> Login
-                            </Link>
-                          </Button>
-                        </SheetClose>
-                        <SheetClose asChild>
-                          <Button asChild className="w-full justify-center px-3 py-2 text-base font-medium">
-                            <Link href="/signup">Sign Up</Link>
-                          </Button>
-                        </SheetClose>
-                      </>
-                    )}
-                  </div>
+          <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="md:hidden mr-2">
+                <Menu className="h-5 w-5" />
+                <span className="sr-only">Toggle Menu</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-full max-w-xs p-0 flex flex-col">
+              <SheetHeader className="p-4 border-b flex flex-row items-center justify-between">
+                 {/* Add title for accessibility */}
+                 <SheetTitle className="sr-only">Main Menu</SheetTitle>
+                <Link href="/" className="flex items-center space-x-2" onClick={handleSheetLinkClick}>
+                  <IndianRupee className="h-6 w-6 text-primary" />
+                  <span className="font-bold text-lg">CashEase</span>
+                </Link>
+                <SheetClose asChild>
+                  <Button variant="ghost" size="icon">
+                    <X className="h-5 w-5" />
+                    <span className="sr-only">Close Menu</span>
+                  </Button>
+                </SheetClose>
+              </SheetHeader>
+              {/* Mobile Search */}
+              <form onSubmit={handleSearchSubmit} className="p-4 border-b">
+                <div className="relative">
+                  <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="search"
+                    placeholder="Search stores, coupons..."
+                    className="pl-9 w-full h-9"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
                 </div>
-              </SheetContent>
-            </Sheet>
-          </div>
+              </form>
+              {/* Mobile Navigation */}
+              <div className="flex-grow overflow-y-auto">
+                <nav className="flex flex-col space-y-1 p-4">
+                  {navLinks.map((link) => (
+                    <SheetClose key={link.href} asChild>
+                      <Link
+                        href={link.href}
+                        className={cn(
+                          "flex items-center gap-3 rounded-md px-3 py-2 text-base font-medium transition-colors hover:bg-muted",
+                          isActive(link.href) ? "bg-muted text-primary" : "text-foreground"
+                        )}
+                        onClick={handleSheetLinkClick}
+                      >
+                        {link.icon && <link.icon className="h-5 w-5" />}
+                        {link.label}
+                      </Link>
+                    </SheetClose>
+                  ))}
+                </nav>
+                <Separator className="my-2" />
+                {/* Mobile Auth/User Menu */}
+                <div className="p-4 flex flex-col space-y-1">
+                  {loading ? (
+                    <Skeleton className="h-10 w-full rounded-md" />
+                  ) : user ? (
+                    <>
+                      {userMenuItems.map((item) => (
+                        <SheetClose key={item.href} asChild>
+                          <Link
+                            href={item.href}
+                            className={cn(
+                              "flex items-center gap-3 rounded-md px-3 py-2 text-base font-medium transition-colors hover:bg-muted",
+                              isActive(item.href) ? "bg-muted text-primary" : "text-foreground"
+                            )}
+                            onClick={handleSheetLinkClick}
+                          >
+                            <item.icon className="h-5 w-5" />
+                            {item.label}
+                          </Link>
+                        </SheetClose>
+                      ))}
+                      {userProfile?.role === 'admin' && (
+                        <SheetClose asChild>
+                          <Link
+                            href={adminMenuItem.href}
+                            className={cn(
+                              "flex items-center gap-3 rounded-md px-3 py-2 text-base font-medium transition-colors hover:bg-muted",
+                              isActive(adminMenuItem.href) ? "bg-muted text-primary" : "text-foreground"
+                            )}
+                             onClick={handleSheetLinkClick}
+                          >
+                            <adminMenuItem.icon className="h-5 w-5" />
+                            {adminMenuItem.label}
+                          </Link>
+                        </SheetClose>
+                      )}
+                      <Separator className="my-2" />
+                      <Button variant="ghost" onClick={() => { signOut(); setIsSheetOpen(false); }} className="w-full justify-start px-3 py-2 text-base font-medium">
+                        <LogOut className="mr-3 h-5 w-5" /> Logout
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <SheetClose asChild>
+                        <Button variant="ghost" asChild className="w-full justify-start px-3 py-2 text-base font-medium">
+                          <Link href="/login" onClick={handleSheetLinkClick}>
+                            <LogIn className="mr-3 h-5 w-5" /> Login
+                          </Link>
+                        </Button>
+                      </SheetClose>
+                      <SheetClose asChild>
+                        <Button asChild className="w-full justify-center px-3 py-2 text-base font-medium">
+                          <Link href="/signup" onClick={handleSheetLinkClick}>Sign Up</Link>
+                        </Button>
+                      </SheetClose>
+                    </>
+                  )}
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
 
-          {/* Logo/Name (Now always on the left, next to menu/nav) */}
-          <Link href="/" className="flex items-center space-x-2 mr-4 md:mr-6">
+          {/* Logo */}
+          <Link href="/" className="flex items-center space-x-2 mr-4">
             <IndianRupee className="h-6 w-6 text-primary" />
             <span className="font-bold text-xl hidden sm:inline-block">CashEase</span>
           </Link>
+        </div>
 
-          {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center space-x-4 text-sm font-medium">
+        {/* Center: Desktop Navigation & Search */}
+        <div className="flex-1 hidden md:flex justify-center items-center gap-6">
+          <nav className="flex items-center space-x-4 lg:space-x-6 text-sm font-medium">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
@@ -222,16 +222,13 @@ export default function Header() {
               </Link>
             ))}
           </nav>
-        </div>
-
-        {/* Center: Desktop Search Bar */}
-        <div className="flex-1 hidden md:flex justify-center px-4">
-          <form onSubmit={handleSearchSubmit} className="w-full max-w-md relative">
+          {/* Desktop Search */}
+          <form onSubmit={handleSearchSubmit} className="w-full max-w-xs relative">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search stores, coupons, categories..."
-              className="pl-9 w-full h-9"
+              placeholder="Search..."
+              className="pl-9 w-full h-9 text-sm"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -241,12 +238,12 @@ export default function Header() {
         {/* Right Side: Auth actions */}
         <div className="flex items-center space-x-2">
           {loading ? (
-            <Skeleton className="h-8 w-8 rounded-full" />
+            <Skeleton className="h-9 w-9 rounded-full" />
           ) : user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                  <Avatar className="h-8 w-8">
+                <Button variant="ghost" className="relative h-9 w-9 rounded-full">
+                  <Avatar className="h-9 w-9 border">
                     <AvatarImage src={userProfile?.photoURL ?? undefined} alt={userProfile?.displayName ?? 'User'} />
                     <AvatarFallback>{getInitials(userProfile?.displayName)}</AvatarFallback>
                   </Avatar>
@@ -259,15 +256,10 @@ export default function Header() {
                     <p className="text-xs leading-none text-muted-foreground truncate">
                       {user.email}
                     </p>
-                    {userProfile && (
-                      <p className="text-xs leading-none text-muted-foreground pt-1">
-                        Balance: ₹{userProfile.cashbackBalance.toFixed(2)}
-                      </p>
-                    )}
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {userMenuItems.map((item) => (
+                 {userMenuItems.map((item) => (
                   <DropdownMenuItem key={item.href} asChild>
                     <Link href={item.href}>
                       <item.icon className="mr-2 h-4 w-4" />
@@ -275,7 +267,7 @@ export default function Header() {
                     </Link>
                   </DropdownMenuItem>
                 ))}
-                {userProfile?.role === 'admin' && (
+                 {userProfile?.role === 'admin' && (
                   <DropdownMenuItem asChild>
                     <Link href={adminMenuItem.href}>
                       <adminMenuItem.icon className="mr-2 h-4 w-4" />
@@ -291,13 +283,11 @@ export default function Header() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <div className="hidden md:flex items-center space-x-2">
-              <Button variant="ghost" asChild>
-                <Link href="/login">
-                  <LogIn className="mr-2 h-4 w-4" /> Login
-                </Link>
+            <div className="hidden md:flex items-center space-x-1">
+              <Button variant="ghost" asChild size="sm">
+                <Link href="/login">Login</Link>
               </Button>
-              <Button asChild>
+              <Button asChild size="sm">
                 <Link href="/signup">Sign Up</Link>
               </Button>
             </div>

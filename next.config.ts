@@ -1,21 +1,35 @@
+
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
   typescript: {
-    ignoreBuildErrors: true,
+    // !! WARN !!
+    // Dangerously allow production builds to successfully complete even if
+    // your project has type errors.
+    // !! WARN !!
+    ignoreBuildErrors: true, // Set to false for stricter type checking
   },
   eslint: {
-    ignoreDuringBuilds: true,
+    // Warning: This allows production builds to successfully complete even if
+    // your project has ESLint errors.
+    ignoreDuringBuilds: true, // Set to false for stricter linting
   },
   images: {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'picsum.photos',
+        hostname: 'picsum.photos', // Placeholder images
         port: '',
         pathname: '/**',
       },
+       // Add other trusted image domains here if needed
+       // e.g., for store logos from specific CDNs
+      // {
+      //   protocol: 'https',
+      //   hostname: 'your-cdn-hostname.com',
+      //   port: '',
+      //   pathname: '/**',
+      // },
     ],
   },
 };
