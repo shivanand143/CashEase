@@ -1,16 +1,28 @@
 {
   "indexes": [
+    // Clicks
     {
       "collectionGroup": "clicks",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
     },
+     {
+      "collectionGroup": "clicks",
+      "queryScope": "COLLECTION_GROUP", // Required for admin views if querying across all users
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+
+    // Payout Requests
     {
       "collectionGroup": "payoutRequests",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "requestedAt", "order": "DESCENDING" }
@@ -18,15 +30,49 @@
     },
      {
       "collectionGroup": "payoutRequests",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION_GROUP", // Required for admin view
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "requestedAt", "order": "DESCENDING" } // Keep DESC for admin view
+        { "fieldPath": "requestedAt", "order": "DESCENDING" } // Keep DESC for admin view default sort
+      ]
+    },
+    {
+      "collectionGroup": "payoutRequests",
+      "queryScope": "COLLECTION_GROUP", // Required for admin search by user
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "DESCENDING" }
+      ]
+    },
+
+
+    // Transactions
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION", // For user dashboard history
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "transactionDate", "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "transactions",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION_GROUP", // For admin view (all transactions)
+      "fields": [
+        { "fieldPath": "transactionDate", "order": "DESCENDING" }
+      ]
+    },
+     {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION_GROUP", // For admin filtering by status
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "transactionDate", "order": "DESCENDING" }
+      ]
+    },
+     {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION_GROUP", // For admin search by user ID
       "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "transactionDate", "order": "DESCENDING" }
@@ -34,16 +80,19 @@
     },
      {
       "collectionGroup": "transactions",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION", // For payout validation query
       "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" },
-         { "fieldPath": "payoutId", "order": "ASCENDING" } // Needed for payout verification query
+        { "fieldPath": "payoutId", "order": "ASCENDING" }
       ]
     },
-     {
+
+
+    // Stores
+    {
       "collectionGroup": "stores",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION", // For StoresPage (all active) & AdminStoresPage default
       "fields": [
         { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "name", "order": "ASCENDING" }
@@ -51,25 +100,37 @@
     },
     {
       "collectionGroup": "stores",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION", // For CategoryPage
       "fields": [
         { "fieldPath": "categories", "arrayConfig": "CONTAINS" },
         { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "name", "order": "ASCENDING" }
       ]
     },
+    {
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION", // For HomePage Featured Stores
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "isFeatured", "order": "DESCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
+    },
      {
       "collectionGroup": "stores",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION", // For Admin search by name
       "fields": [
-        { "fieldPath": "isActive", "order": "ASCENDING" },
-        { "fieldPath": "isFeatured", "order": "DESCENDING" },
-        { "fieldPath": "name", "order": "ASCENDING" } // Optional: secondary sort
+        { "fieldPath": "name", "order": "ASCENDING" }
+        // Adding createdAt helps if name search has many results
+        // { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
+
+
+    // Coupons
     {
       "collectionGroup": "coupons",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION", // For HomePage Top Coupons & AdminCoupons default
       "fields": [
         { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "isFeatured", "order": "DESCENDING" },
@@ -78,7 +139,7 @@
     },
     {
       "collectionGroup": "coupons",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION", // For StoreDetailPage
       "fields": [
         { "fieldPath": "storeId", "order": "ASCENDING" },
         { "fieldPath": "isActive", "order": "ASCENDING" },
@@ -88,22 +149,72 @@
     },
     {
       "collectionGroup": "coupons",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION_GROUP", // For Admin search by storeId
       "fields": [
         { "fieldPath": "storeId", "order": "ASCENDING" },
-        { "fieldPath": "isActive", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        { "fieldPath": "createdAt", "order": "DESCENDING" } // Secondary sort needed
       ]
     },
+    // Note: Searching coupon descriptions efficiently requires a dedicated search service (e.g., Algolia) or careful denormalization.
+    // A basic index for description search might look like this, but could be inefficient:
+    // {
+    //   "collectionGroup": "coupons",
+    //   "queryScope": "COLLECTION_GROUP",
+    //   "fields": [
+    //     { "fieldPath": "isActive", "order": "ASCENDING" },
+    //     { "fieldPath": "description", "order": "ASCENDING" }, // Requires indexing 'description'
+    //     { "fieldPath": "createdAt", "order": "DESCENDING" }
+    //   ]
+    // }
+
+
+    // Banners
      {
       "collectionGroup": "banners",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "order", "order": "ASCENDING" }
       ]
+    },
+
+    // Categories
+    {
+      "collectionGroup": "categories",
+      "queryScope": "COLLECTION",
+      "fields": [
+        // Optional: if you filter by isActive
+        // { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
+    },
+
+    // Users
+    // Note: Indexes on 'users' might require Collection Group scope if querying across all users (admins)
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION_GROUP", // For admin user search
+      "fields": [
+        { "fieldPath": "email", "order": "ASCENDING" } // For searching by email
+        // Add createdAt if needed for secondary sort
+      ]
+    },
+     {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION_GROUP", // For admin user search by name (less precise)
+      "fields": [
+        { "fieldPath": "displayName", "order": "ASCENDING" }
+        // Add createdAt if needed for secondary sort
+      ]
+    },
+     {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION_GROUP", // For checking existing referral codes
+      "fields": [
+        { "fieldPath": "referralCode", "order": "ASCENDING" }
+      ]
     }
-    // Add other necessary indexes here based on query errors
   ],
   "fieldOverrides": []
 }

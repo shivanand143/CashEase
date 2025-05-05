@@ -3,95 +3,102 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- User Profiles ---
-    match /users/{userId} {
-      // Allow users to read/write their own profile
-      allow read, update: if request.auth != null && request.auth.uid == userId;
-      // Allow authenticated users to create their profile
-      allow create: if request.auth != null;
-      // Allow admins to read any profile (adjust rule based on your admin check)
-      allow read: if isAdmin();
-      // Allow admins to update any profile (e.g., disable accounts)
-      allow update: if isAdmin();
-    }
-
-    // --- Stores ---
-    match /stores/{storeId} {
-      // Allow anyone to read store data (publicly visible)
-      allow read: if true;
-      // Allow only admins to create, update, or delete stores
-      allow write: if isAdmin();
-    }
-
-    // --- Coupons ---
-    match /coupons/{couponId} {
-      // Allow anyone to read coupon data
-      allow read: if true;
-      // Allow only admins to write coupons
-      allow write: if isAdmin();
-    }
-
-    // --- Categories ---
-    match /categories/{categoryId} {
-      // Allow anyone to read category data
-      allow read: if true;
-      // Allow only admins to write categories
-      allow write: if isAdmin();
-    }
-
-     // --- Banners ---
-     match /banners/{bannerId} {
-       // Allow anyone to read banner data
-       allow read: if true;
-       // Allow only admins to write banners
-       allow write: if isAdmin();
-     }
-
-    // --- Transactions ---
-    match /transactions/{transactionId} {
-      // Allow users to read their own transactions
-      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      // Allow admins to read any transaction
-      allow read: if isAdmin();
-      // Allow admins to update transaction status/notes (or potentially a backend service)
-      allow update: if isAdmin();
-      // Disallow client-side creation/deletion of transactions (should be done server-side/functions)
-      allow create, delete: if false;
-    }
-
-     // --- Clicks ---
-     match /clicks/{clickId} {
-       // Allow users to read their own clicks
-       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-       // Allow server-side creation of clicks (if using server actions/functions)
-       // Or allow logged-in users to create their own clicks if using client-side writes directly
-       // Be cautious with client-side writes for sensitive data
-       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-       // Allow admins to read any click
-       allow read: if isAdmin();
-       // Disallow updates/deletes from client-side generally
-       allow update, delete: if false;
-     }
-
-
-    // --- Payout Requests ---
-    match /payoutRequests/{payoutId} {
-      // Allow users to read their own payout requests
-      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      // Allow users to create their own payout requests
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      // Allow admins to read any payout request
-      allow read: if isAdmin();
-      // Allow admins to update payout requests (status, notes)
-      allow update: if isAdmin();
-      // Disallow client-side deletion
-      allow delete: if false;
-    }
-
-    // --- Helper function to check for admin role ---
-    // This assumes you store the role in the user's profile document
+    // Helper function to check if the user is an admin
     function isAdmin() {
-      return request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Helper function to check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if the user owns the resource
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users Collection
+    // - Authenticated users can read their own profile.
+    // - Admins can read any profile.
+    // - Authenticated users can create their own profile (on signup).
+    // - Authenticated users can update their own profile (specific fields).
+    // - Admins can update any profile (e.g., disable account, change role).
+    // - Deletion should likely be restricted (soft delete via 'isDisabled' field).
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      // Allow users to update specific fields (displayName, photoURL, payoutDetails, updatedAt)
+      allow update: if (isOwner(userId) && request.resource.data.uid == resource.data.uid && !(request.resource.data.role != resource.data.role) && !(request.resource.data.isDisabled != resource.data.isDisabled)) || isAdmin();
+      allow delete: if false; // Prevent accidental deletion
+    }
+
+    // Stores Collection
+    // - Anyone can read active stores.
+    // - Only admins can create, update, or delete stores.
+    match /stores/{storeId} {
+      allow read: if resource.data.isActive == true || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Coupons Collection
+    // - Anyone can read active coupons.
+    // - Only admins can create, update, or delete coupons.
+    match /coupons/{couponId} {
+      allow read: if resource.data.isActive == true || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Categories Collection
+    // - Anyone can read categories.
+    // - Only admins can create, update, or delete categories.
+    match /categories/{categoryId} {
+      allow read: if true; // Publicly readable
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Banners Collection
+    // - Anyone can read active banners.
+    // - Only admins can create, update, or delete banners.
+    match /banners/{bannerId} {
+      allow read: if resource.data.isActive == true || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Clicks Collection
+    // - Authenticated users can create their own click records.
+    // - Authenticated users can read their own click records.
+    // - Admins can read any click records.
+    match /clicks/{clickId} {
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow update, delete: if isAdmin(); // Admins might need to correct/delete clicks
+    }
+
+    // Transactions Collection
+    // - Authenticated users can read their own transaction records.
+    // - Admins can read any transaction records.
+    // - Only admins (or backend functions) should create/update transactions.
+    match /transactions/{transactionId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      // Creation should likely happen via backend/trusted environment after purchase validation
+      allow create: if isAdmin(); // Or functions
+      // Status updates typically done by admin or backend
+      allow update: if isAdmin();
+      allow delete: if isAdmin(); // Allow admin deletion if necessary
+    }
+
+    // PayoutRequests Collection
+    // - Authenticated users can create their own payout requests.
+    // - Authenticated users can read their own payout requests.
+    // - Admins can read/update any payout request (to approve/reject/mark paid).
+    match /payoutRequests/{requestId} {
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      // Only admins can update the status, adminNotes, etc.
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
   }
 }
