@@ -1,4 +1,3 @@
-
 {
   "name": "cashease-rebuild",
   "version": "0.1.0",
@@ -8,8 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit",
-    "seed": "node src/lib/seed-data.mjs"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -42,7 +40,7 @@
     "embla-carousel-react": "^8.1.7",
     "firebase": "^10.12.3",
     "lucide-react": "^0.414.0",
-    "next": "^14.2.5",
+    "next": "14.2.5",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
@@ -64,4 +62,3 @@
     "typescript": "^5"
   }
 }
-
