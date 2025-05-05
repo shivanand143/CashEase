@@ -9,18 +9,20 @@ import { Input } from '@/components/ui/input';
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import Image from 'next/image';
-import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp } from 'lucide-react';
+import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info } from 'lucide-react'; // Added missing icons
 import { useToast } from '@/hooks/use-toast';
 import { collection, getDocs, query, where, limit, orderBy, QueryConstraint, DocumentData, getDoc, doc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import type { Store, Coupon, Banner } from '@/lib/types';
+import type { Store, Coupon, Banner, Category } from '@/lib/types'; // Added Category
 import { Skeleton } from '@/components/ui/skeleton';
-import StoreCard from '@/components/store-card';
-import CouponCard from '@/components/coupon-card';
-import { useRouter } from 'next/navigation';
+import StoreCard from '@/components/store-card'; // Assuming you have this component
+import CouponCard from '@/components/coupon-card'; // Assuming you have this component
+import { useRouter } from 'next/navigation'; // Import useRouter
 import { safeToDate } from '@/lib/utils'; // Import safeToDate
-import { ProductCard } from '@/components/product-card'; // Import ProductCard
+import { ProductCard } from '@/components/product-card'; // Fixed import path
 import { AmazonProduct } from '@/lib/amazon/amazon-paapi'; // Import AmazonProduct type
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'; // Added Alert components
+import { AlertCircle } from 'lucide-react'; // Added AlertCircle
 
 // --- Helper Types ---
 interface CouponWithStore extends Coupon {
@@ -31,8 +33,10 @@ interface CouponWithStore extends Coupon {
 async function fetchData<T>(collectionName: string, constraints: QueryConstraint[] = [], orderField?: string, orderDirection?: 'asc' | 'desc', fetchLimit?: number): Promise<T[]> {
     let data: T[] = [];
     if (!db) {
-        console.error(`Firestore DB not initialized when fetching ${collectionName}.`);
-        throw new Error("Database not available.");
+        console.warn(`Firestore DB not initialized when fetching ${collectionName}.`);
+        // Return empty array instead of throwing error to allow partial page load
+        return [];
+        // throw new Error("Database not available.");
     }
     try {
         const dataRef = collection(db, collectionName);
@@ -60,7 +64,8 @@ async function fetchData<T>(collectionName: string, constraints: QueryConstraint
         });
     } catch (err) {
         console.error(`Error fetching ${collectionName}:`, err);
-        throw err; // Re-throw to be caught by the caller
+        // Don't re-throw, allow function to return empty array on error
+        // throw err;
     }
     return data;
 }
@@ -80,6 +85,10 @@ async function fetchCouponsWithStoreData(constraints: QueryConstraint[], orderFi
                 if (!coupon.storeId) return coupon;
                 if (storeCache.has(coupon.storeId)) {
                     return { ...coupon, store: storeCache.get(coupon.storeId)! };
+                }
+                if (!db) {
+                  console.warn("DB not available for store fetch in fetchCouponsWithStoreData");
+                  return coupon;
                 }
                 try {
                     const storeDocRef = doc(db, 'stores', coupon.storeId);
@@ -106,7 +115,8 @@ async function fetchCouponsWithStoreData(constraints: QueryConstraint[], orderFi
         }
     } catch (err) {
         console.error("Error in fetchCouponsWithStoreData:", err);
-        throw err; // Re-throw
+        // Don't re-throw, allow function to return empty array on error
+        // throw err;
     }
     return enrichedCoupons;
 }
@@ -129,10 +139,12 @@ export default function HomePage() {
   const [banners, setBanners] = React.useState<Banner[]>([]);
   const [featuredStores, setFeaturedStores] = React.useState<Store[]>([]);
   const [topCoupons, setTopCoupons] = React.useState<CouponWithStore[]>([]);
+  const [categories, setCategories] = React.useState<Category[]>([]); // State for categories
   const [amazonProducts, setAmazonProducts] = React.useState<AmazonProduct[]>([]);
   const [loadingBanners, setLoadingBanners] = React.useState(true);
   const [loadingStores, setLoadingStores] = React.useState(true);
   const [loadingCoupons, setLoadingCoupons] = React.useState(true);
+  const [loadingCategories, setLoadingCategories] = React.useState(true); // Loading state for categories
   const [loadingProducts, setLoadingProducts] = React.useState(true); // Added loading state for products
   const [error, setError] = React.useState<string | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -144,18 +156,19 @@ export default function HomePage() {
       setLoadingBanners(true);
       setLoadingStores(true);
       setLoadingCoupons(true);
-      setLoadingProducts(true); // Set loading true for products
+      setLoadingCategories(true); // Set loading true for categories
+      setLoadingProducts(true);
       setError(null);
-      let combinedError: string | null = null;
+      let combinedErrorMessages: string[] = []; // Store multiple error messages
 
       try {
         // Fetch Banners
         const bannerFetchPromise = fetchData<Banner>(
-          'banners', [where('isActive', '==', true)], 'order', 'asc'
+          'banners', [where('isActive', '==', true)], 'order', 'asc', 5 // Limit banners
         ).catch(err => {
             console.error("Banner fetch failed:", err);
-            combinedError = combinedError ? `${combinedError}\nBanners failed` : "Banners failed";
-            return []; // Return empty array on error
+            combinedErrorMessages.push("banners");
+            return [];
         });
 
         // Fetch Featured Stores
@@ -163,7 +176,7 @@ export default function HomePage() {
           'stores', [where('isActive', '==', true), where('isFeatured', '==', true)], 'name', 'asc', 12
         ).catch(err => {
             console.error("Store fetch failed:", err);
-            combinedError = combinedError ? `${combinedError}\nStores failed` : "Stores failed";
+            combinedErrorMessages.push("stores");
             return [];
         });
 
@@ -172,28 +185,35 @@ export default function HomePage() {
           [where('isActive', '==', true)], 'isFeatured', 'desc', 6
         ).catch(err => {
             console.error("Coupon fetch failed:", err);
-            combinedError = combinedError ? `${combinedError}\nCoupons failed` : "Coupons failed";
+            combinedErrorMessages.push("coupons");
             return [];
         });
 
-        // Fetch Amazon Products (Replace with actual API call)
+         // Fetch Top Categories
+         const categoryFetchPromise = fetchData<Category>(
+             'categories', [], 'order', 'asc', 12 // Limit categories for homepage display
+         ).catch(err => {
+             console.error("Category fetch failed:", err);
+             combinedErrorMessages.push("categories");
+             return [];
+         });
+
+        // Fetch Amazon Products (Placeholder)
         const productFetchPromise = new Promise<AmazonProduct[]>((resolve) => {
-          // Simulate API call delay
-          setTimeout(() => {
-            resolve(exampleAmazonProducts);
-          }, 700); // Simulate ~700ms delay
+          setTimeout(() => resolve(exampleAmazonProducts), 700);
         }).catch(err => {
             console.error("Product fetch failed:", err);
-            combinedError = combinedError ? `${combinedError}\nProducts failed` : "Products failed";
+            combinedErrorMessages.push("products");
             return [];
         });
 
 
         // Await all promises
-        const [bannerData, storeData, couponData, productData] = await Promise.all([
+        const [bannerData, storeData, couponData, categoryData, productData] = await Promise.all([
             bannerFetchPromise,
             storeFetchPromise,
             couponFetchPromise,
+            categoryFetchPromise, // Add category promise
             productFetchPromise
         ]);
 
@@ -202,11 +222,14 @@ export default function HomePage() {
           setBanners(bannerData);
           setFeaturedStores(storeData);
           setTopCoupons(couponData);
+          setCategories(categoryData); // Set categories state
           setAmazonProducts(productData);
-          setError(combinedError); // Set combined error state
+           if (combinedErrorMessages.length > 0) {
+               setError(`Failed to load: ${combinedErrorMessages.join(', ')}.`);
+           }
         }
 
-      } catch (err) { // Catch potential errors from Promise.all itself (less likely)
+      } catch (err) { // Catch potential errors from Promise.all itself
         if (isMounted) {
            console.error("Error loading page data:", err);
            setError("Failed to load some page data. Please try again.");
@@ -217,7 +240,8 @@ export default function HomePage() {
           setLoadingBanners(false);
           setLoadingStores(false);
           setLoadingCoupons(false);
-          setLoadingProducts(false); // Set loading false for products
+          setLoadingCategories(false); // Set loading false for categories
+          setLoadingProducts(false);
         }
       }
     };
@@ -236,7 +260,7 @@ export default function HomePage() {
       toast({
         variant: "destructive",
         title: "Error Loading Data",
-        description: `Could not load some parts of the page: ${error}`,
+        description: error,
       });
     }
   }, [error, toast]);
@@ -260,7 +284,7 @@ export default function HomePage() {
     Autoplay({ delay: 4000, stopOnInteraction: true })
   );
 
-  const isLoading = loadingBanners || loadingStores || loadingCoupons || loadingProducts;
+  const isLoading = loadingBanners || loadingStores || loadingCoupons || loadingCategories || loadingProducts;
 
   return (
     <div className="space-y-12 md:space-y-16 lg:space-y-20">
@@ -268,7 +292,7 @@ export default function HomePage() {
       {/* Hero Section with Search */}
        <section className="relative text-center py-12 md:py-16 lg:py-20 bg-gradient-to-br from-primary/10 via-background to-secondary/10 rounded-lg shadow-sm overflow-hidden border border-border/50">
            {/* Background Image/Pattern (Optional) */}
-           <div className="absolute inset-0 opacity-5 bg-[url('/hero-pattern.svg')] bg-repeat"></div>
+           {/* <div className="absolute inset-0 opacity-5 bg-[url('/hero-pattern.svg')] bg-repeat"></div> */}
            <div className="container relative z-10 px-4 md:px-6">
              <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-4 text-foreground">
                Shop Smarter, Earn <span className="text-primary">CashEase</span> Back!
@@ -319,7 +343,7 @@ export default function HomePage() {
              onMouseLeave={plugin.current.reset}
              opts={{
                align: "start",
-               loop: banners.length > 1, // Only loop if more than one banner
+               loop: banners.length > 1,
              }}
            >
              <CarouselContent>
@@ -327,12 +351,12 @@ export default function HomePage() {
                  <CarouselItem key={banner.id || index}>
                    <Link href={banner.link || '#'} target={banner.link ? "_blank" : undefined} rel="noopener noreferrer" className="block relative aspect-[2/1] md:aspect-[3/1] lg:aspect-[4/1] overflow-hidden rounded-lg shadow-md group border border-border/30">
                      <Image
-                       src={banner.imageUrl || 'https://picsum.photos/seed/placeholderbanner/1200/400'} // Fallback image
+                       src={banner.imageUrl || 'https://picsum.photos/seed/placeholderbanner/1200/400'}
                        alt={banner.altText || 'Promotional Banner'}
                        fill
                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 1200px"
                        className="object-cover transition-transform duration-300 group-hover:scale-105"
-                       priority={index === 0} // Prioritize loading the first banner
+                       priority={index === 0}
                        data-ai-hint={banner.dataAiHint || 'promotional banner sale offer'}
                      />
                      {(banner.title || banner.subtitle) && (
@@ -345,53 +369,108 @@ export default function HomePage() {
                  </CarouselItem>
                ))}
              </CarouselContent>
-             {banners.length > 1 && ( // Show controls only if more than one banner
+             {banners.length > 1 && (
                <>
                  <CarouselPrevious className="absolute left-2 md:left-4 top-1/2 -translate-y-1/2 z-10 bg-background/80 hover:bg-background border-border shadow-md disabled:opacity-50" />
                  <CarouselNext className="absolute right-2 md:right-4 top-1/2 -translate-y-1/2 z-10 bg-background/80 hover:bg-background border-border shadow-md disabled:opacity-50" />
                </>
              )}
            </Carousel>
-         ) : (
+         ) : !error ? ( // Show "No deals" only if not loading and no error
              <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border">
                 No special deals featured right now. Check back soon!
              </div>
-          )}
+          ) : null /* Don't show anything if there was an error */ }
        </section>
 
 
       {/* --- How it Works Section --- */}
-      {/* Simplified for brevity, can be expanded */}
-      <section className="container px-4 md:px-6 py-12 text-center">
+      <section className="container px-4 md:px-6 py-12 text-center bg-muted/30 rounded-lg border">
         <h2 className="text-3xl font-bold mb-4">How CashEase Works</h2>
         <p className="text-muted-foreground mb-8 max-w-xl mx-auto">Earn cashback in 3 simple steps!</p>
         <div className="grid md:grid-cols-3 gap-6 md:gap-8">
-           <Card className="border-border/80 shadow-sm p-6">
-               <Search className="w-10 h-10 mx-auto text-primary mb-3"/>
-               <CardTitle className="text-lg font-semibold mb-1">1. Find Store</CardTitle>
-               <CardDescription>Search & click out</CardDescription>
-           </Card>
-           <Card className="border-border/80 shadow-sm p-6">
-               <ShoppingBag className="w-10 h-10 mx-auto text-primary mb-3"/>
-               <CardTitle className="text-lg font-semibold mb-1">2. Shop</CardTitle>
-               <CardDescription>Buy as usual</CardDescription>
-           </Card>
-            <Card className="border-border/80 shadow-sm p-6">
-               <IndianRupee className="w-10 h-10 mx-auto text-primary mb-3"/>
-               <CardTitle className="text-lg font-semibold mb-1">3. Earn</CardTitle>
-               <CardDescription>Get cashback!</CardDescription>
-           </Card>
+           <div className="flex flex-col items-center space-y-2 p-4">
+               <div className="flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 border-2 border-primary text-primary mb-3">
+                   <Search className="w-8 h-8"/>
+               </div>
+               <h3 className="text-lg font-semibold">1. Find Store</h3>
+               <p className="text-sm text-muted-foreground">Search & click out via CashEase</p>
+           </div>
+           <div className="flex flex-col items-center space-y-2 p-4">
+               <div className="flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 border-2 border-primary text-primary mb-3">
+                  <ShoppingBag className="w-8 h-8"/>
+               </div>
+               <h3 className="text-lg font-semibold">2. Shop</h3>
+               <p className="text-sm text-muted-foreground">Buy as usual on the retailer's site</p>
+           </div>
+            <div className="flex flex-col items-center space-y-2 p-4">
+               <div className="flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 border-2 border-primary text-primary mb-3">
+                   <IndianRupee className="w-8 h-8"/>
+               </div>
+               <h3 className="text-lg font-semibold">3. Earn</h3>
+               <p className="text-sm text-muted-foreground">Get cashback in your account!</p>
+           </div>
         </div>
          <Button variant="link" asChild className="mt-6">
              <Link href="/how-it-works">Learn More <ArrowRight className="ml-1 w-4 h-4"/></Link>
          </Button>
       </section>
 
+        {/* --- Popular Categories Section --- */}
+        <section className="container px-4 md:px-6">
+           <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+               <h2 className="text-3xl font-bold flex items-center gap-2">
+                 <Building2 className="text-primary w-7 h-7" /> Popular Categories
+               </h2>
+               <Button variant="outline" size="sm" asChild>
+                 <Link href="/categories" className="flex items-center gap-1">
+                   View All Categories <ArrowRight className="w-4 h-4" />
+                 </Link>
+               </Button>
+           </div>
+           {loadingCategories ? (
+               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
+                 {Array.from({ length: 12 }).map((_, index) => (
+                   <Skeleton key={`cat-skel-${index}`} className="h-32 rounded-lg" />
+                 ))}
+               </div>
+           ) : categories.length > 0 ? (
+               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
+                 {categories.map((category) => (
+                   <Link key={category.id} href={`/category/${category.slug}`} legacyBehavior>
+                     <a className="block group">
+                       <Card className="text-center hover:shadow-md transition-shadow duration-300 h-full flex flex-col items-center justify-center p-4 border rounded-lg bg-card hover:border-primary/50">
+                         {category.imageUrl ? (
+                           <Image
+                             src={category.imageUrl}
+                             alt={`${category.name} category`}
+                             width={60}
+                             height={60}
+                             className="object-contain mb-3 h-16 w-16"
+                             data-ai-hint={`${category.name} icon illustration`}
+                           />
+                         ) : (
+                           <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-3 border">
+                             <Building2 className="w-8 h-8 text-muted-foreground" />
+                           </div>
+                         )}
+                         <p className="font-medium text-sm text-foreground">{category.name}</p>
+                       </Card>
+                     </a>
+                   </Link>
+                 ))}
+               </div>
+           ) : !error ? (
+               <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No categories found.</p>
+           ): null}
+       </section>
+
+
       {/* --- Featured Stores Section --- */}
       <section className="container px-4 md:px-6">
         <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
           <h2 className="text-3xl font-bold flex items-center gap-2">
-            <Building2 className="text-primary w-7 h-7" /> Featured Stores
+            <ShoppingBag className="text-primary w-7 h-7" /> Featured Stores
           </h2>
           <Button variant="outline" size="sm" asChild>
             <Link href="/stores" className="flex items-center gap-1">
@@ -402,7 +481,7 @@ export default function HomePage() {
         {loadingStores ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
             {Array.from({ length: 12 }).map((_, index) => (
-              <Skeleton key={index} className="h-48 rounded-lg" />
+              <Skeleton key={`store-skel-${index}`} className="h-48 rounded-lg" />
             ))}
           </div>
         ) : featuredStores.length > 0 ? (
@@ -411,9 +490,9 @@ export default function HomePage() {
               <StoreCard key={store.id} store={store} />
             ))}
           </div>
-        ) : (
-          <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No featured stores available right now. Check back soon!</p>
-        )}
+        ) : !error ? (
+          <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No featured stores available right now.</p>
+        ) : null}
       </section>
 
       {/* --- Top Coupons Section --- */}
@@ -431,7 +510,7 @@ export default function HomePage() {
         {loadingCoupons ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {Array.from({ length: 6 }).map((_, index) => (
-              <Skeleton key={index} className="h-40 rounded-lg" />
+              <Skeleton key={`coupon-skel-${index}`} className="h-40 rounded-lg" />
             ))}
           </div>
         ) : topCoupons.length > 0 ? (
@@ -440,18 +519,20 @@ export default function HomePage() {
               <CouponCard key={coupon.id} coupon={coupon} />
             ))}
           </div>
-        ) : (
+        ) : !error ? (
           <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No top coupons available at the moment.</p>
-        )}
+        ): null}
       </section>
 
        {/* --- Amazon Products Feed --- */}
       <section className="container px-4 md:px-6">
          <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
             <h2 className="text-3xl font-bold flex items-center gap-2">
-               <Image src="/amazon-logo.svg" alt="Amazon Logo" width={100} height={30} className="h-8 w-auto object-contain"/> Today's Picks
+               {/* Use an inline SVG or a simple text fallback if image isn't available */}
+                {/* <Image src="/amazon-logo.svg" alt="Amazon Logo" width={100} height={30} className="h-8 w-auto object-contain"/> */}
+                <span className="font-amazon-ember" aria-label="Amazon">Amazon</span> Today's Picks
             </h2>
-            {/* Link to Amazon store page if you have one */}
+             {/* Link to a potential Amazon store page on your site */}
             <Button variant="outline" size="sm" asChild>
               <Link href="/stores/amazon" className="flex items-center gap-1">
                  View Amazon Offers <ArrowRight className="w-4 h-4" />
@@ -461,7 +542,7 @@ export default function HomePage() {
           {loadingProducts ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
                   {Array.from({ length: 6 }).map((_, index) => (
-                      <Skeleton key={index} className="h-64 rounded-lg" /> // Adjust height for product cards
+                      <Skeleton key={`product-skel-${index}`} className="h-64 rounded-lg" />
                   ))}
               </div>
           ) : amazonProducts.length > 0 ? (
@@ -470,47 +551,74 @@ export default function HomePage() {
                       <ProductCard key={product.ASIN} product={product} />
                   ))}
               </div>
-          ) : (
+          ) : !error ? (
               <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">Could not load product recommendations.</p>
-          )}
+          ) : null}
        </section>
 
 
-      {/* --- Maximize Savings & Referral Sections (Combined or simplified) --- */}
+      {/* --- Maximize Savings & Referral Sections --- */}
        <section className="container px-4 md:px-6 grid md:grid-cols-2 gap-8">
            {/* Maximize Savings */}
-           <Card className="shadow-sm bg-muted/50 border border-border/50">
+           <Card className="shadow-sm bg-gradient-to-tr from-amber-50 to-yellow-100 border-amber-300">
                <CardHeader>
-                   <CardTitle className="flex items-center gap-2"><Zap className="text-accent w-6 h-6" />Maximize Your Savings</CardTitle>
-                   <CardDescription>Discover exclusive deals and special promotions.</CardDescription>
+                   <CardTitle className="flex items-center gap-2 text-amber-800"><Zap className="text-amber-600 w-6 h-6" />Maximize Your Savings</CardTitle>
+                   <CardDescription className="text-amber-700">Discover exclusive deals and special promotions beyond cashback.</CardDescription>
                </CardHeader>
                <CardContent>
-                   <p className="text-muted-foreground mb-4 text-sm">
-                       Beyond cashback, discover exclusive deals, bank offers, and special promotions updated daily.
+                   <p className="text-amber-800/90 mb-4 text-sm">
+                       Check out our curated list of hot deals, bank offers, and limited-time promotions updated daily.
                    </p>
-                   <Button asChild size="sm">
+                   <Button asChild size="sm" className="bg-amber-600 hover:bg-amber-700 text-white">
                        <Link href="/deals">Explore Hot Deals</Link>
                    </Button>
                </CardContent>
            </Card>
             {/* Referral */}
-            <Card className="shadow-sm bg-gradient-to-r from-secondary/10 to-primary/10 border border-border/50">
+            <Card className="shadow-sm bg-gradient-to-tr from-green-50 to-emerald-100 border-green-300">
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><Gift className="text-secondary w-6 h-6" /> Refer & Earn More!</CardTitle>
-                    <CardDescription>Invite friends and earn bonus cashback.</CardDescription>
+                    <CardTitle className="flex items-center gap-2 text-green-800"><Gift className="text-green-600 w-6 h-6" /> Refer & Earn More!</CardTitle>
+                    <CardDescription className="text-green-700">Invite friends and you both earn bonus cashback.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                     <p className="text-muted-foreground mb-4 text-sm">
-                       Invite your friends to CashEase and earn bonus cashback when they sign up and make their first purchase.
+                     <p className="text-green-800/90 mb-4 text-sm">
+                       Share your unique referral link. When your friend signs up and makes their first qualifying purchase, you both get rewarded!
                    </p>
-                   <Button asChild size="sm">
+                   <Button asChild size="sm" className="bg-green-600 hover:bg-green-700 text-white">
                        <Link href="/dashboard/referrals">Get Your Referral Link</Link>
                    </Button>
                 </CardContent>
             </Card>
        </section>
 
+      {/* Optional: Error Alert for partial data load */}
+      {error && !isLoading && (
+         <div className="container px-4 md:px-6">
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Data Loading Issue</AlertTitle>
+              <AlertDescription>
+                Some sections of the page might not have loaded correctly ({error}). Please try refreshing the page.
+              </AlertDescription>
+            </Alert>
+         </div>
+       )}
 
     </div>
   );
 }
+
+// Basic CSS for Amazon font (add to globals.css or similar)
+/*
+@font-face {
+  font-family: 'Amazon Ember';
+  src: url('/fonts/AmazonEmber_Rg.woff2') format('woff2'),
+       url('/fonts/AmazonEmber_Rg.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+.font-amazon-ember {
+  font-family: 'Amazon Ember', Arial, sans-serif;
+}
+*/
