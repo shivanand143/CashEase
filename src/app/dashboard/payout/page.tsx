@@ -20,7 +20,8 @@ import {
   limit,
   Timestamp, // Import Timestamp
   DocumentData, // Import DocumentData
-  QueryDocumentSnapshot // Import QueryDocumentSnapshot
+  QueryDocumentSnapshot, // Import QueryDocumentSnapshot
+  Query // Import Query type
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import type { PayoutDetails, PayoutMethod, UserProfile, Transaction } from '@/lib/types';
@@ -76,7 +77,7 @@ function PayoutPageContent() {
   // Fetch current balance and check eligibility on mount/user change
   useEffect(() => {
     const checkPayoutStatus = async () => {
-      if (user) {
+      if (user && fetchUserProfile) { // Check if fetchUserProfile exists
         setLoading(true);
         setError(null);
         try {
@@ -109,10 +110,14 @@ function PayoutPageContent() {
         } finally {
           setLoading(false);
         }
-      } else if (!authLoading) {
+      } else if (!authLoading && !user) {
          // If auth is done loading and no user, redirect or show message
          router.push('/login');
          setLoading(false); // Not logged in or profile not loaded yet
+      } else if (!fetchUserProfile) {
+         console.error("fetchUserProfile function is missing from useAuth context.");
+         setError("Internal application error. Please contact support.");
+         setLoading(false);
       }
     };
 
@@ -156,29 +161,43 @@ function PayoutPageContent() {
            throw new Error("User profile not found.");
          }
          const currentUserData = userDocSnap.data() as UserProfile;
-          const currentBalance = currentUserData.cashbackBalance || 0;
-          payoutAmount = currentBalance; // <<< CRITICAL: Use the balance read *inside* the transaction
+          payoutAmount = currentUserData.cashbackBalance || 0; // <<< CRITICAL: Use the balance read *inside* the transaction
 
           // Double-check balance server-side
-         if (currentBalance < MIN_PAYOUT_AMOUNT) {
-              throw new Error(`Your available balance (${formatCurrency(currentBalance)}) is below the minimum payout amount of ${formatCurrency(MIN_PAYOUT_AMOUNT)}.`);
+         if (payoutAmount < MIN_PAYOUT_AMOUNT) {
+              throw new Error(`Your available balance (${formatCurrency(payoutAmount)}) is below the minimum payout amount of ${formatCurrency(MIN_PAYOUT_AMOUNT)}.`);
          }
 
           // --- Verify confirmed transactions sum (important consistency check) ---
           console.log(`Querying 'confirmed' transactions with payoutId == null for user ${user.uid}...`);
           const transactionsCollection = collection(db, 'transactions');
           // Refined query: Explicitly check for payoutId == null
-          const confirmedUnpaidQuery = query(
+          const confirmedUnpaidQuery: Query<DocumentData> = query( // Explicitly type the query
              transactionsCollection,
              where('userId', '==', user.uid),
              where('status', '==', 'confirmed'),
-              // IMPORTANT: Filter out transactions already linked to a payout
-             where('payoutId', '==', null),
+             where('payoutId', '==', null), // Explicitly check for null payoutId
              limit(500) // Limit query for safety
           );
 
-           // IMPORTANT: Use transaction.get for read operations inside a transaction
-          const confirmedTransactionsSnap = await transaction.get(confirmedUnpaidQuery);
+           // Add a check to ensure the query object itself is valid before using it
+           if (!confirmedUnpaidQuery || typeof confirmedUnpaidQuery !== 'object') {
+               throw new Error("Internal error: Failed to construct transaction query.");
+           }
+           console.log("Constructed Query is valid object:", confirmedUnpaidQuery);
+
+
+          // IMPORTANT: Use transaction.get for read operations inside a transaction
+          console.log("Attempting transaction.get(query)...");
+          let confirmedTransactionsSnap; // Declare outside try/catch
+          try {
+             confirmedTransactionsSnap = await transaction.get(confirmedUnpaidQuery);
+          } catch (getQueryError: any) {
+              console.error("Error during transaction.get(query):", getQueryError);
+              // Rethrow a more specific error
+              throw new Error(`Failed to read transactions within transaction: ${getQueryError.message}`);
+          }
+
           console.log(`Found ${confirmedTransactionsSnap.size} 'confirmed' and unpaid transactions.`);
 
 
@@ -193,8 +212,9 @@ function PayoutPageContent() {
                 sumOfTransactions += txData.cashbackAmount;
                 console.log(`  - Including Tx ID: ${docSnap.id}, Amount: ₹${txData.cashbackAmount.toFixed(2)}`);
             } else {
-                errorMessage = "transaction with null cashbackAmount";
                 console.warn(`Transaction ${docSnap.id} has missing or invalid cashbackAmount. Skipping.`);
+                // Decide if this should be an error or just a warning
+                // If it should be an error: throw new Error(`Transaction ${docSnap.id} has invalid cashback amount.`);
             }
           });
           sumOfTransactions = parseFloat(sumOfTransactions.toFixed(2)); // Address potential float issues
@@ -204,8 +224,13 @@ function PayoutPageContent() {
          // Strict validation: Ensure the sum exactly matches the available balance
          // Allow for minor floating point discrepancies
          if (Math.abs(sumOfTransactions - payoutAmount) > 0.01) {
-              // Simplified error logging - the specific message is more useful here
-              console.error(`Mismatch: Sum of confirmed transactions (₹${sumOfTransactions.toFixed(2)}) does not match available balance (₹${payoutAmount.toFixed(2)}).`);
+              // Log more details before throwing error
+              console.error("Data mismatch details:", {
+                  userId: user.uid,
+                  calculatedSum: sumOfTransactions,
+                  profileBalance: payoutAmount,
+                  numTransactions: transactionIdsToUpdate.length,
+              });
               throw new Error("Balance calculation error. There's a mismatch between your confirmed cashback and transaction history. Please contact support.");
          }
 
@@ -230,7 +255,7 @@ function PayoutPageContent() {
           console.log("Attempting to update user profile document...");
          transaction.update(userDocRef, {
             cashbackBalance: 0, // Reset available balance
-            // pendingCashback: currentUserData.pendingCashback || 0, // Keep pending as is - NO, pending is not related
+            // pendingCashback: currentUserData.pendingCashback || 0, // Pending cashback remains
             lastPayoutRequestAt: serverTimestamp(),
             payoutDetails: payoutDetails, // Save/update payout details used
             updatedAt: serverTimestamp(),
@@ -260,7 +285,7 @@ function PayoutPageContent() {
         setLatestUserProfile(prev => prev ? { ...prev, cashbackBalance: 0, lastPayoutRequestAt: new Date(), payoutDetails: payoutDetails } : null);
 
      } catch (err: any) {
-       console.error("Payout request failed inside transaction:", err);
+       console.error("Payout request failed:", err); // Log the full error
        setError(err.message || "Failed to submit payout request.");
        toast({ variant: "destructive", title: 'Payout Failed', description: err.message || "Could not submit request." });
      } finally {
@@ -315,7 +340,7 @@ function PayoutPageContent() {
           <AlertDescription>
             {availableBalance < MIN_PAYOUT_AMOUNT
               ? `You need at least ${formatCurrency(MIN_PAYOUT_AMOUNT)} confirmed cashback to request a payout.`
-              : `You have recently requested a payout or have a pending request. Please wait for it to be processed.` // More specific message
+              : `You may have recently requested a payout or have a pending request. Please wait for it to be processed.` // More specific message
             }
              <Button variant="link" className="p-0 h-auto ml-2" onClick={() => router.push('/stores')}>
                  Keep Shopping!
