@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from 'react';
@@ -45,6 +46,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; // Import Select components
 import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, CheckCircle, XCircle, ExternalLink, CalendarIcon } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -90,7 +92,7 @@ interface CouponWithStoreName extends Coupon {
 
 // Zod schema for coupon form validation
 const couponSchema = z.object({
-  storeId: z.string().min(1, 'Store ID is required'),
+  storeId: z.string().min(1, 'Store is required'),
   code: z.string().optional().nullable(),
   description: z.string().min(5, 'Description is too short').max(250, 'Description too long'),
   link: z.string().url('Invalid URL format').optional().nullable(),
