@@ -19,10 +19,19 @@
     },
     {
       "collectionGroup": "transactions",
-      "queryScope": "COLLECTION",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "transactionDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "payoutId", "order": "ASCENDING" }
       ]
     },
     {
@@ -34,7 +43,7 @@
         { "fieldPath": "name", "order": "ASCENDING" }
       ]
     },
-    {
+     {
       "collectionGroup": "stores",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -42,21 +51,50 @@
         { "fieldPath": "name", "order": "ASCENDING" }
       ]
     },
-    {
-      "collectionGroup": "coupons",
-      "queryScope": "COLLECTION",
+     {
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "isFeatured", "order": "DESCENDING" }
+        // Add secondary sort if needed, e.g., name
+        // { "fieldPath": "name", "order": "ASCENDING" }
       ]
     },
     {
-      "collectionGroup": "users",
-      "queryScope": "COLLECTION",
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "email", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "coupons",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "isFeatured", "order": "DESCENDING" }
+        // Add secondary sort if needed, e.g., createdAt
+        // { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+     {
+      "collectionGroup": "coupons",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+       "collectionGroup": "users",
+       "queryScope": "COLLECTION",
+       "fields": [
+         { "fieldPath": "email", "order": "ASCENDING" },
+         { "fieldPath": "createdAt", "order": "DESCENDING" }
+       ]
     }
   ],
   "fieldOverrides": []
