@@ -4,7 +4,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Search, ShoppingBag, IndianRupee, Gift, Banknote, MousePointerClick } from 'lucide-react';
+import { Search, ShoppingBag, IndianRupee, Gift, Banknote, MousePointerClick, CheckCircle } from 'lucide-react'; // Updated CheckCircle for confirmation
 import Image from 'next/image';
 
 const steps = [
@@ -18,7 +18,7 @@ const steps = [
   {
     icon: MousePointerClick,
     title: "2. Click Out via CashEase",
-    description: "Once you find a store or deal you like, simply click the 'Activate Cashback' or 'Get Deal' button. We'll redirect you to the retailer's website.",
+    description: "Once you find a store or deal you like, simply click the 'Activate Cashback' or 'Get Deal' button. This click is crucial for tracking your potential cashback.",
     image: "https://picsum.photos/seed/hiw-click/400/250",
     aiHint: "clicking button on website illustration",
   },
@@ -30,16 +30,16 @@ const steps = [
     aiHint: "online shopping cart checkout illustration",
   },
   {
-    icon: IndianRupee,
-    title: "4. Cashback Tracks Automatically",
-    description: "Thanks to our tracking link, the retailer informs us of your purchase. We add your cashback to your CashEase account as 'Pending' typically within 72 hours.",
+    icon: IndianRupee, // Keep IndianRupee for earnings, but update text
+    title: "4. Cashback Tracking Initiated",
+    description: "Your click through CashEase is recorded. Based on this click and information we receive (or you provide), your potential cashback will appear as 'Pending' within 72 hours.", // Updated description
     image: "https://picsum.photos/seed/hiw-track/400/250",
     aiHint: "tracking earnings graph chart illustration",
   },
    {
-    icon: Gift, // Changed Icon
+    icon: CheckCircle, // Use CheckCircle for confirmation
     title: "5. Cashback Confirmed",
-    description: "Retailers wait for the return period to end. Once confirmed (usually 30-90 days), your cashback status changes from 'Pending' to 'Confirmed'.",
+    description: "After the retailer's return period (usually 30-90 days), we verify your purchase. Once confirmed, your cashback status changes from 'Pending' to 'Confirmed'.",
     image: "https://picsum.photos/seed/hiw-confirm/400/250",
     aiHint: "approved confirmed checkmark illustration",
   },
@@ -62,7 +62,7 @@ export default function HowItWorksPage() {
         </p>
       </section>
 
-      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 lg:gap-10">
         {steps.map((step, index) => (
           <Card key={index} className="flex flex-col text-center shadow-sm hover:shadow-lg transition-shadow duration-300 border border-border/50">
             <CardHeader className="items-center">
