@@ -1,5 +1,7 @@
+// src/hooks/use-auth.tsx
 "use client";
 
+import * as React from 'react'; // Ensure React is imported
 import { useState, useEffect, useCallback, useContext, createContext } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -12,86 +14,66 @@ import {
   updateProfile,
   User,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase/config';
+import { doc, setDoc, getDoc, serverTimestamp, updateDoc, collection, query, where, getDocs, Timestamp, increment, limit } from 'firebase/firestore'; // Added Timestamp, increment, limit
+import { auth, db, firebaseInitializationError } from '@/lib/firebase/config'; // Import firebaseInitializationError
 import type { UserProfile } from '@/lib/types';
-import { useToast } from '@/hooks/use-toast'; // Import useToast
+import { useToast } from '@/hooks/use-toast';
 import { v4 as uuidv4 } from 'uuid';
-//import { env } from '@/env.mjs'; // Import the validated environment variables
+import { FirebaseError } from 'firebase/app'; // Import FirebaseError type
 
+// Define the shape of the Auth context
 interface AuthContextType {
   user: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
   error: string | null;
-  authError: string | null;
+  authError: string | null; // Separate state for auth-specific errors
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  createOrUpdateUserProfile: (user:User,ref:string|null) => Promise<void>;
+  createOrUpdateUserProfile: (user: User, referralCodeFromUrl: string | null) => Promise<void>;
   fetchUserProfile: (uid: string) => Promise<UserProfile | null>;
-  resetAuthError: () => void;
+  resetAuthError: () => void; // Function to clear auth errors
 }
 
+// Create the Auth context with default values
 const AuthContext = createContext<AuthContextType>({
   user: null,
   userProfile: null,
   loading: true,
   error: null,
-  authError: null,
+  authError: null, // Initialize authError
   signOut: () => Promise.resolve(),
   signInWithGoogle: () => Promise.resolve(),
   createOrUpdateUserProfile: async () => {},
   fetchUserProfile: async () => null,
-  resetAuthError: () => {},
+  resetAuthError: () => {}, // Provide default function
 });
 
+// Custom hook to use the Auth context
 export const useAuth = () => useContext(AuthContext);
 
+// AuthProvider component to wrap the application
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-   const [authError, setAuthError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true); // Combined loading state
+  const [error, setError] = useState<string | null>(null); // General profile/DB errors
+  const [authError, setAuthError] = useState<string | null>(null); // Auth operation errors
   const router = useRouter();
   const { toast } = useToast();
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        console.log("Auth State Changed: User logged in, UID:", user.uid);
-        setUser(user); // Set Firebase Auth user
+  // Reset auth error state
+   const resetAuthError = useCallback(() => {
+     setAuthError(null);
+   }, []);
 
-        // Fetch or create user profile document in Firestore
-        try {
-          const profile = await fetchUserProfile(user.uid);
-           setUserProfile(profile);
-        } catch (profileErr: any) {
-          console.error("Error fetching or creating user profile:", profileErr);
-          setError(profileErr.message || "Failed to fetch or create user profile.");
-           setUserProfile(null);
-        } finally {
-          setLoading(false); // Ensure loading is set to false after attempt
-        }
-      } else {
-        console.log("Auth State Changed: No user logged in.");
-        setUser(null);
-        setUserProfile(null);
-        setLoading(false);
-      }
-    });
-
-    return () => unsubscribe(); // Cleanup subscription on unmount
-  }, [router, setError]); // Removed createOrUpdateUserProfile from dependency array
-
-
-  const resetAuthError = () => {
-    setAuthError(null);
-  };
 
   // Function to fetch user profile from Firestore
   const fetchUserProfile = useCallback(async (uid: string): Promise<UserProfile | null> => {
-      if (!db || !uid) return null;
+      if (!db || !uid) {
+         console.warn("DB not initialized or UID missing in fetchUserProfile");
+         return null;
+      }
        const userDocRef = doc(db, 'users', uid);
        try {
            const docSnap = await getDoc(userDocRef);
@@ -103,6 +85,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     if (fieldValue instanceof Date) return fieldValue;
                     return null;
                  };
+
+                 // Ensure payoutDetails is either an object or null, not undefined
+                 const payoutDetails = (data.payoutDetails && typeof data.payoutDetails === 'object' && Object.keys(data.payoutDetails).length > 0)
+                  ? data.payoutDetails
+                  : null;
+
+
                  return {
                      uid: docSnap.id,
                      email: data.email ?? null,
@@ -120,33 +109,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                      createdAt: safeToDate(data.createdAt) || new Date(0),
                      updatedAt: safeToDate(data.updatedAt) || new Date(0),
                      lastPayoutRequestAt: safeToDate(data.lastPayoutRequestAt),
-                     payoutDetails: (existingData.payoutDetails && Object.keys(existingData.payoutDetails).length > 0) ? existingData.payoutDetails : null as any,
+                     payoutDetails: payoutDetails as any, // Cast as any after ensuring it's object or null
                  } as UserProfile;
            } else {
                console.warn(`fetchUserProfile: No profile found for UID ${uid}`);
                return null;
            }
-       } catch (error) {
-           console.error(`Error fetching user profile for UID ${uid}:`, error);
+       } catch (fetchError: any) {
+           console.error(`Error fetching user profile for UID ${uid}:`, fetchError);
+            setError(`Failed to load profile: ${fetchError.message}`); // Set general error
            return null;
        }
-   }, []);
+   }, []); // No dependencies needed if db is stable
 
-  const createOrUpdateUserProfile = async (user: User, referralCodeFromUrl: string | null): Promise<void> => {
+  // Function to create or update user profile in Firestore
+  const createOrUpdateUserProfile = useCallback(async (user: User, referralCodeFromUrl: string | null): Promise<void> => {
     if (!db || !user) {
-      console.error("DB is not initialized, or user is null. Cannot create profile.");
+      console.error("DB not initialized or user is null. Cannot create profile.");
+      setError("Database connection error. Profile cannot be saved."); // Set general error
       return;
     }
-    setError(null);
+    setError(null); // Clear general errors before operation
 
     try {
       const userDocRef = doc(db, 'users', user.uid);
       const docSnap = await getDoc(userDocRef);
 
+      let finalProfileData: Partial<UserProfile>; // Use Partial for update/merge
+      let isNewUser = false;
+
       if (!docSnap.exists()) {
+        isNewUser = true;
         // Generate referral code only for new users
-        const referralCode = uuidv4().substring(0, 6).toUpperCase();
-        const newProfile: UserProfile = {
+        const referralCode = uuidv4().substring(0, 8).toUpperCase(); // Slightly longer code
+        finalProfileData = {
           uid: user.uid,
           email: user.email ?? null,
           displayName: user.displayName ?? 'User',
@@ -155,178 +151,292 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           cashbackBalance: 0,
           pendingCashback: 0,
           lifetimeCashback: 0,
-          referralCode: referralCode,
+          referralCode: referralCode, // Assign generated code
           referralCount: 0,
           referralBonusEarned: 0,
-          referredBy: referralCodeFromUrl ?? null, // Track referral code
+          referredBy: referralCodeFromUrl ?? null,
           isDisabled: false,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
           lastPayoutRequestAt: null,
-          payoutDetails: null as any,
+          payoutDetails: null, // Initialize as null explicitly
         };
-         await setDoc(userDocRef, newProfile);
-        console.log("New user profile created in Firestore:", user.uid);
-         if (referralCodeFromUrl) {
-             // Update the referrer's referralCount
-             await incrementReferralCount(referralCodeFromUrl);
-             console.log(`Referral count incremented for referrer: ${referralCodeFromUrl}`);
-           }
-
-         toast({
-           title: "Welcome!",
-           description: "Your account has been created successfully.",
-         });
-
-
+        console.log("Preparing to create new user profile:", finalProfileData);
       } else {
-        // Update existing user profile
-         const existingData = docSnap.data();
+        // Prepare update data for existing user
+        const existingData = docSnap.data();
+        finalProfileData = {
+          // Only update fields that might change on login/update
+          email: user.email ?? existingData.email ?? null,
+          displayName: user.displayName ?? existingData.displayName ?? 'User',
+          photoURL: user.photoURL ?? existingData.photoURL ?? null,
+          // Keep existing sensitive fields unless explicitly changing them
+          role: existingData.role ?? 'user', // Keep existing role
+          // Ensure balances are numbers, default to 0 if missing/invalid
+          cashbackBalance: typeof existingData.cashbackBalance === 'number' ? existingData.cashbackBalance : 0,
+          pendingCashback: typeof existingData.pendingCashback === 'number' ? existingData.pendingCashback : 0,
+          lifetimeCashback: typeof existingData.lifetimeCashback === 'number' ? existingData.lifetimeCashback : 0,
+          referralCode: existingData.referralCode || uuidv4().substring(0, 8).toUpperCase(), // Ensure referral code exists
+          referralCount: typeof existingData.referralCount === 'number' ? existingData.referralCount : 0,
+          referralBonusEarned: typeof existingData.referralBonusEarned === 'number' ? existingData.referralBonusEarned : 0,
+          referredBy: existingData.referredBy ?? null, // Keep original referrer
+          isDisabled: typeof existingData.isDisabled === 'boolean' ? existingData.isDisabled : false,
+          lastPayoutRequestAt: existingData.lastPayoutRequestAt ?? null,
+          // Keep existing payout details unless explicitly updated elsewhere
+          payoutDetails: (existingData.payoutDetails && typeof existingData.payoutDetails === 'object') ? existingData.payoutDetails : null,
+          updatedAt: serverTimestamp(), // Always update timestamp
+        };
+         // Don't overwrite createdAt if it exists
+         if (existingData.createdAt) {
+            finalProfileData.createdAt = existingData.createdAt;
+         } else {
+            finalProfileData.createdAt = serverTimestamp(); // Set if missing
+         }
 
-         const data: Partial<UserProfile> = {
-           uid: user.uid,
-           email: user.email ?? null,
-           displayName: user.displayName ?? 'User',
-           photoURL: user.photoURL ?? null,
-           role: existingData.role ?? 'user',
-           cashbackBalance: typeof existingData.cashbackBalance === 'number' ? existingData.cashbackBalance : 0,
-           pendingCashback: typeof existingData.pendingCashback === 'number' ? existingData.pendingCashback : 0,
-           lifetimeCashback: typeof existingData.lifetimeCashback === 'number' ? existingData.lifetimeCashback : 0,
-           referralCode: existingData.referralCode ?? uuidv4().substring(0, 6).toUpperCase(),
-           referralCount: typeof existingData.referralCount === 'number' ? existingData.referralCount : 0,
-           referralBonusEarned: typeof existingData.referralBonusEarned === 'number' ? existingData.referralBonusEarned : 0,
-           referredBy: existingData.referredBy ?? null,
-           isDisabled: typeof existingData.isDisabled === 'boolean' ? existingData.isDisabled : false,
-           createdAt: existingData.createdAt || serverTimestamp(),
-           updatedAt: serverTimestamp(),
-           lastPayoutRequestAt: existingData.lastPayoutRequestAt ?? null,
-           payoutDetails: (existingData.payoutDetails && Object.keys(existingData.payoutDetails).length > 0) ? existingData.payoutDetails : null as any,
-         };
-
-         // Use set with merge: true for both create and update
-         await setDoc(userDocRef, data, { merge: true });
-         console.log("Existing user profile updated in Firestore:", user.uid);
-         toast({
-           title: "Profile Updated",
-           description: "Your profile has been updated.",
-         });
+        console.log("Preparing to update existing user profile:", finalProfileData);
       }
 
-      // Finally, trigger a profile refresh after any changes
-      const profile = await fetchUserProfile(user.uid);
-       setUserProfile(profile);
+      // Use set with merge: true for robust create/update
+       await setDoc(userDocRef, finalProfileData, { merge: true });
+       console.log(`User profile ${isNewUser ? 'created' : 'updated'} successfully for UID: ${user.uid}`);
 
-    } catch (err: any) {
-      console.error("Error creating or updating user profile:", err);
-      setError(err.message || "Failed to create or update user profile.");
+
+      // Increment referrer count if it's a new user with a valid referral code
+      if (isNewUser && referralCodeFromUrl) {
+        await incrementReferralCount(referralCodeFromUrl);
+      }
+
+      // Refresh local profile state after successful Firestore operation
+      const refreshedProfile = await fetchUserProfile(user.uid);
+      setUserProfile(refreshedProfile); // Update local state
+
+      // Toast notification based on action
+      toast({
+        title: isNewUser ? "Welcome!" : "Profile Updated",
+        description: isNewUser ? "Your account has been created." : "Your profile information is up-to-date.",
+      });
+
+    } catch (profileError: any) {
+      console.error("Error creating or updating user profile:", profileError);
+       setError(`Profile save error: ${profileError.message}`); // Set general error
       toast({
         variant: "destructive",
         title: 'Profile Update Failed',
-        description: err.message || "Could not create/update user profile. Please try again.",
+        description: `Could not save profile: ${profileError.message}`,
       });
     }
-  };
+  }, [fetchUserProfile, toast]); // Include fetchUserProfile and toast
 
 
+   // Function to increment referral count for the referrer
+   const incrementReferralCount = useCallback(async (referralCode: string): Promise<void> => {
+      if (!db || !referralCode) {
+        console.warn("DB not initialized or referral code missing in incrementReferralCount.");
+        return;
+      }
+      console.log(`Attempting to increment referral count for code: ${referralCode}`);
+      try {
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('referralCode', '==', referralCode), limit(1));
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+          const referrerDocRef = querySnapshot.docs[0].ref;
+          // Use Firestore's FieldValue.increment for atomic updates
+          await updateDoc(referrerDocRef, {
+            referralCount: increment(1),
+             referralBonusEarned: increment(50), // Example bonus
+            updatedAt: serverTimestamp(),
+          });
+          console.log(`Referral count incremented successfully for code: ${referralCode}`);
+        } else {
+          console.warn(`No user found with referral code: ${referralCode}`);
+        }
+      } catch (incrementError: any) {
+        console.error("Error incrementing referral count:", incrementError);
+        // Don't block the main signup flow, maybe log this error separately
+        // setError(`Referral count update failed: ${incrementError.message}`);
+      }
+    }, []); // db should be stable, no other deps needed
+
+  // Effect to listen for Firebase Auth state changes
+  useEffect(() => {
+     // Check for Firebase initialization error first
+     if (firebaseInitializationError) {
+       console.error("AuthProvider useEffect: Firebase not initialized. Skipping auth listener.", firebaseInitializationError);
+       setError("Firebase is not configured correctly. Please check setup.");
+       setLoading(false); // Stop loading if Firebase is not initialized
+       return;
+     }
+     if (!auth) {
+        console.error("AuthProvider useEffect: Firebase Auth service is not available.");
+        setError("Authentication service failed to initialize.");
+        setLoading(false);
+        return;
+     }
+
+    console.log("AuthProvider useEffect: Setting up onAuthStateChanged listener.");
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setLoading(true); // Set loading true at the start of auth state change
+      setError(null); // Clear general errors on auth change
+      setAuthError(null); // Clear auth errors on auth change
+      if (user) {
+        console.log("onAuthStateChanged: User detected, UID:", user.uid);
+        setUser(user);
+        try {
+           console.log("onAuthStateChanged: Fetching profile for user:", user.uid);
+           const profile = await fetchUserProfile(user.uid);
+           if (profile) {
+              console.log("onAuthStateChanged: Profile found:", profile);
+              setUserProfile(profile);
+           } else {
+               // Profile doesn't exist, attempt to create it
+               console.warn("onAuthStateChanged: Profile not found for user:", user.uid, "Attempting to create.");
+               // Important: Check if referral info exists in URL *only* during initial signup/login flow if needed
+               // For general auth state changes, don't pass referral code unless intended.
+               // Passing null here prevents accidentally applying referrals on subsequent logins.
+               await createOrUpdateUserProfile(user, null);
+           }
+        } catch (profileErr: any) {
+          console.error("onAuthStateChanged: Error fetching/creating profile:", profileErr);
+          setError(profileErr.message || "Failed to load user profile.");
+          setUserProfile(null); // Ensure profile is null on error
+        }
+      } else {
+        console.log("onAuthStateChanged: No user detected.");
+        setUser(null);
+        setUserProfile(null);
+      }
+      setLoading(false); // Set loading false after all operations complete
+    });
+
+    // Cleanup function
+    return () => {
+       console.log("AuthProvider useEffect: Cleaning up onAuthStateChanged listener.");
+       unsubscribe();
+    };
+  // Add fetchUserProfile and createOrUpdateUserProfile as dependencies
+  }, [fetchUserProfile, createOrUpdateUserProfile]);
+
+
+  // Google Sign-In handler
   const signInWithGoogle = async () => {
     setError(null);
+    setAuthError(null); // Reset auth-specific errors
     try {
+      // Ensure auth is initialized before using
+      if (!auth) {
+        throw new Error("Firebase Auth is not initialized.");
+      }
+
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
-      const referralCode =  new URLSearchParams(window.location.search).get('ref'); //check on signup
+      const referralCode = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('ref') : null; // check on signup
       console.log("Google Sign-In successful, UID:", user.uid, "Referral code from URL:", referralCode);
-      await createOrUpdateUserProfile(user,referralCode); // common function for Google Sign-in too.
+      await createOrUpdateUserProfile(user, referralCode); // common function for Google Sign-in too.
 
        toast({
          title: "Sign-in Successful",
          description: "You have been successfully signed in with Google.",
        });
+       // Redirect handled by onAuthStateChanged or calling page
 
-    } catch (err: any) {
-       console.error("Google Sign-In failed:", err);
-       let errorMessage = "An unexpected error occurred during Google Sign-In. Please try again.";
-        if (err.code) {
-           switch (err.code) {
-             case 'auth/popup-closed-by-user':
-               errorMessage = 'The sign-in popup was closed by the user before completion.';
-               break;
-             case 'auth/account-exists-with-different-credential':
-               errorMessage = 'An account with the same email address already exists but with different sign-in details. Please try another login method.';
-               break;
-             case 'auth/auth-domain-config-required':
-               errorMessage = 'The Auth domain is not properly configured. Please contact support.';
-               break;
-             default:
-               errorMessage = `Google Sign-In error (${err.code}): ${err.message}`;
-           }
-         }
-         setError(errorMessage);
-         toast({
-           variant: "destructive",
-           title: 'Google Sign-In Failed',
-           description: errorMessage,
-         });
+    } catch (err: unknown) { // Use unknown type for caught errors
+      console.error("Google Sign-In failed:", err);
+
+      let errorMessage = "An unexpected error occurred during Google Sign-In. Please try again.";
+      const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'unknown_domain'; // Get current domain
+
+      // Check if it's a FirebaseError
+      if (err instanceof FirebaseError) {
+        switch (err.code) {
+          case 'auth/popup-closed-by-user':
+            errorMessage = 'The sign-in popup was closed before completion.';
+            break;
+          case 'auth/account-exists-with-different-credential':
+            errorMessage = 'An account with this email already exists using a different sign-in method.';
+            break;
+          case 'auth/auth-domain-config-required':
+            errorMessage = 'The Auth domain is not properly configured. Please contact support.';
+            break;
+          case 'auth/cancelled-popup-request':
+            errorMessage = 'Multiple sign-in popups were opened. Please close the others and try again.';
+            break;
+          case 'auth/operation-not-allowed':
+             errorMessage = 'Google Sign-In is not enabled for this project in the Firebase Console (Authentication -> Sign-in method).';
+             break;
+          case 'auth/unauthorized-domain':
+             // Provide more specific guidance for this error
+             console.warn(`[Auth/Unauthorized Domain] Attempted sign-in from: ${currentDomain}`); // Log the domain
+             errorMessage = `This domain (${currentDomain}) is not authorized for Firebase Authentication. Please add it EXACTLY in the Firebase Console -> Authentication -> Settings -> Authorized domains. Check for port numbers or typos.`;
+             break;
+          default:
+            errorMessage = `Google Sign-In error (${err.code}): ${err.message}`;
+        }
+      } else if (err instanceof Error) {
+         // Handle generic errors
+         errorMessage = err.message;
+      }
+
+      setAuthError(errorMessage); // Use setAuthError for auth-related issues
+      toast({
+        variant: "destructive",
+        title: 'Google Sign-In Failed',
+        description: errorMessage,
+        duration: 9000, // Increase duration slightly
+      });
+       // Do not automatically sign out here, let the user retry or choose another method
     }
   };
 
+  // Sign out handler
   const signOut = async () => {
     setError(null);
+    setAuthError(null); // Clear auth errors on sign out attempt
     try {
+       // Ensure auth is initialized before using
+       if (!auth) {
+         throw new Error("Firebase Auth is not initialized.");
+       }
       await firebaseSignOut(auth);
        toast({ title: "Signed Out", description: "You have been successfully signed out." });
       // State updates (user=null, profile=null, loading=false) are handled by onAuthStateChanged
-    } catch (error:any) {
-      console.error('Error signing out:', error);
-      const errorMsg = `Sign out error: ${error instanceof Error ? error.message : String(error)}`;
+    } catch (err: any) { // Catch specifically typed error if possible, else any
+      console.error('Error signing out:', err);
+      const errorMsg = `Sign out error: ${err.message || String(err)}`;
       setAuthError(errorMsg);
        toast({ variant: "destructive", title: 'Sign Out Failed', description: errorMsg });
     }
   };
 
-  // Implement function to increment referral count
- async function incrementReferralCount(referralCode: string): Promise<void> {
-   if (!db) {
-     console.error("DB is not initialized, cannot increment referral count.");
-     return;
-   }
-
-   try {
-     const usersRef = collection(db, 'users');
-     const q = query(usersRef, where('referralCode', '==', referralCode), limit(1));
-     const querySnapshot = await getDocs(q);
-
-     if (!querySnapshot.empty) {
-       const userDoc = querySnapshot.docs[0].ref; // Get the DocumentReference
-       await updateDoc(userDoc, {
-         referralCount:  increment(1), // Increment using FieldValue.increment()
-         referralBonusEarned: increment(50), // add 50 cash bonus too
-         updatedAt: serverTimestamp(),
-       });
-       console.log(`Referral count incremented successfully for code: ${referralCode}`);
-     } else {
-       console.warn(`No user found with referral code: ${referralCode}`);
-     }
-   } catch (err: any) {
-     console.error("Error incrementing referral count:", err);
-     setError(`Failed to increment referral count. ${err.message}`);
-   }
- }
-
-
-  const authContextValue: AuthContextType = {
+  // Memoize the context value to prevent unnecessary re-renders
+  const authContextValue = React.useMemo(() => ({
     user,
     userProfile,
     loading,
     error,
-     authError,
+    authError,
     signOut,
     signInWithGoogle,
     createOrUpdateUserProfile,
     fetchUserProfile,
     resetAuthError,
-  };
+  }), [
+    user,
+    userProfile,
+    loading,
+    error,
+    authError,
+    signOut,
+    signInWithGoogle,
+    createOrUpdateUserProfile,
+    fetchUserProfile,
+    resetAuthError,
+  ]);
 
+
+  // Provide the authentication context to children components
   // Ensure correct JSX syntax
   return (
     <AuthContext.Provider value={authContextValue}>
@@ -334,3 +444,5 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     </AuthContext.Provider>
   );
 };
+
+    
