@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from 'react';
@@ -21,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { AlertCircle, Loader2, Search, Store as StoreIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { useDebounce } from '@/hooks/use-debounce'; // Assuming a debounce hook exists
+import { useDebounce } from '@/hooks/use-debounce'; // Corrected import path
 
 const STORES_PER_PAGE = 24; // Adjust as needed
 

@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from 'react';
@@ -23,7 +24,7 @@ import { Button } from '@/components/ui/button';
 import { AlertCircle, Loader2, Tag, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useDebounce } from '@/hooks/use-debounce';
+import { useDebounce } from '@/hooks/use-debounce'; // Corrected import path
 
 const COUPONS_PER_PAGE = 18; // Adjust as needed
 
