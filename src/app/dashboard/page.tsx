@@ -10,44 +10,57 @@ import { AlertCircle, ArrowRight, Banknote, Clock, Gift, History, IndianRupee, L
 import Link from 'next/link';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { formatCurrency } from '@/lib/utils'; // Assuming you have a currency formatting utility
+import ProtectedRoute from '@/components/guards/protected-route'; // Ensure this handles redirection
 
-export default function DashboardPage() {
-  const { user, userProfile, loading, error } = useAuth();
+function DashboardContent() {
+  const { user, userProfile, loading: authLoading, error: authError } = useAuth();
   const router = useRouter();
 
-  if (loading) {
-    return <DashboardSkeleton />;
-  }
+  // Combine loading states
+  const isLoading = authLoading || (!user && !authError); // Loading if auth is loading OR no user yet and no error
 
-  if (error) {
+  // Handle auth errors specifically
+  if (authError) {
     return (
       <Alert variant="destructive">
         <AlertCircle className="h-4 w-4" />
-        <AlertTitle>Error</AlertTitle>
-        <AlertDescription>{error}</AlertDescription>
+        <AlertTitle>Authentication Error</AlertTitle>
+        <AlertDescription>
+          {authError}.
+           <Button variant="link" className="p-0 h-auto ml-2" onClick={() => router.push('/login')}>
+               Please try logging in again.
+           </Button>
+        </AlertDescription>
       </Alert>
     );
   }
 
-  if (!user || !userProfile) {
-    // Redirect to login if not authenticated
-    // This should ideally be handled by a layout or middleware,
-    // but added here as a fallback.
-    React.useEffect(() => {
-      router.push('/login');
-    }, [router]);
-    return <DashboardSkeleton />; // Show skeleton while redirecting
+
+  if (isLoading) {
+    return <DashboardSkeleton />;
   }
 
+  // If loading is finished, but still no user/profile (should be handled by ProtectedRoute, but defensively check)
+  if (!user || !userProfile) {
+    console.log("Dashboard: No user or profile found after loading, redirecting (likely handled by ProtectedRoute).");
+    // ProtectedRoute should ideally handle the redirect before this point.
+    // If it reaches here, return null or a minimal message while redirect happens.
+    return null;
+     // Or return <DashboardSkeleton /> if preferred during redirect flicker
+  }
+
+
+  // --- Data Ready: Render Dashboard ---
   const stats = [
-    { title: "Available Balance", value: formatCurrency(userProfile.cashbackBalance), icon: IndianRupee, color: "text-green-600", description: "Ready for withdrawal" },
-    { title: "Pending Cashback", value: formatCurrency(userProfile.pendingCashback), icon: Clock, color: "text-yellow-600", description: "Awaiting confirmation" },
-    { title: "Lifetime Earnings", value: formatCurrency(userProfile.lifetimeCashback), icon: Banknote, color: "text-blue-600", description: "Total confirmed cashback" },
-    { title: "Referral Bonus", value: formatCurrency(userProfile.referralBonusEarned), icon: Gift, color: "text-purple-600", description: `From ${userProfile.referralCount} friends` },
+    { title: "Available Balance", value: formatCurrency(userProfile.cashbackBalance ?? 0), icon: IndianRupee, color: "text-green-600", description: "Ready for withdrawal" },
+    { title: "Pending Cashback", value: formatCurrency(userProfile.pendingCashback ?? 0), icon: Clock, color: "text-yellow-600", description: "Awaiting confirmation" },
+    { title: "Lifetime Earnings", value: formatCurrency(userProfile.lifetimeCashback ?? 0), icon: Banknote, color: "text-blue-600", description: "Total confirmed cashback" },
+    { title: "Referral Bonus", value: formatCurrency(userProfile.referralBonusEarned ?? 0), icon: Gift, color: "text-purple-600", description: `From ${userProfile.referralCount ?? 0} friends` },
   ];
 
   const quickLinks = [
     { href: "/dashboard/history", label: "Cashback History", icon: History },
+    { href: "/dashboard/clicks", label: "Click History", icon: Clock }, // Assuming Clock icon for Click History
     { href: "/dashboard/payout", label: "Request Payout", icon: Send },
     { href: "/dashboard/referrals", label: "Refer & Earn", icon: Gift },
     { href: "/dashboard/settings", label: "Account Settings", icon: Settings },
@@ -121,21 +134,11 @@ export default function DashboardPage() {
           </Card>
        </div>
 
-      {/* Placeholder for Recent Activity (Optional) */}
-      {/* <Card>
-        <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground">Your recent transactions and payouts will appear here.</p>
-          {/* TODO: Fetch and display recent transactions/payouts */}
-        {/* </CardContent>
-      </Card> */}
     </div>
   );
 }
 
-// Skeleton component for loading state
+// Skeleton component remains the same
 function DashboardSkeleton() {
   return (
     <div className="space-y-8">
@@ -179,7 +182,7 @@ function DashboardSkeleton() {
                 <Skeleton className="h-4 w-3/4"/>
              </CardHeader>
              <CardContent className="grid gap-2">
-                {Array.from({ length: 4 }).map((_, index) => (
+                {Array.from({ length: 5 }).map((_, index) => ( // Updated length
                     <Skeleton key={index} className="h-10 w-full"/>
                 ))}
              </CardContent>
@@ -187,4 +190,13 @@ function DashboardSkeleton() {
        </div>
     </div>
   );
+}
+
+// Wrap the page content with ProtectedRoute
+export default function DashboardPage() {
+    return (
+        <ProtectedRoute>
+            <DashboardContent />
+        </ProtectedRoute>
+    );
 }

@@ -11,7 +11,8 @@ import {
   getDocs,
   startAfter,
   QueryDocumentSnapshot,
-  DocumentData
+  DocumentData,
+  Timestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import type { Store } from '@/lib/types';
@@ -21,8 +22,9 @@ import StoreCard from '@/components/store-card';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, Loader2, Search, Store as StoreIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { useDebounce } from '@/hooks/use-debounce'; // Corrected import path
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useDebounce } from '@/hooks/use-debounce';
+import { safeToDate } from '@/lib/utils';
 
 const STORES_PER_PAGE = 24; // Adjust as needed
 
@@ -37,11 +39,14 @@ export default function StoresPage() {
   const debouncedSearchTerm = useDebounce(searchTerm, 300); // Debounce search input
 
   const fetchStores = React.useCallback(async (loadMore = false, search = '') => {
-    if (!loadMore) {
+    // Determine if this is an initial load or a search/filter action
+    const isInitialOrNewSearch = !loadMore;
+
+    if (isInitialOrNewSearch) {
       setLoading(true);
-      setLastVisible(null);
-      setStores([]);
-      setHasMore(true); // Reset hasMore on new search/initial load
+      setLastVisible(null); // Reset pagination for new search/initial load
+      setStores([]); // Clear existing data
+      setHasMore(true); // Assume there's more until the first fetch proves otherwise
     } else {
       setLoadingMore(true);
     }
@@ -49,7 +54,7 @@ export default function StoresPage() {
 
     if (!db) {
       setError("Database connection not available.");
-      setLoading(false);
+      setLoading(isInitialOrNewSearch);
       setLoadingMore(false);
       return;
     }
@@ -58,17 +63,17 @@ export default function StoresPage() {
       const storesCollection = collection(db, 'stores');
       const constraints = [
         where('isActive', '==', true),
-        orderBy('name', 'asc') // Always order by name
+        orderBy('name', 'asc') // Consistent ordering
       ];
 
-      // Basic name search (case-sensitive in Firestore by default)
+      // Apply search filter if provided
       if (search) {
-         // Simple prefix search. For full-text, consider Algolia or other services.
-         // This requires indexing the 'name' field.
-         constraints.push(where('name', '>=', search));
-         constraints.push(where('name', '<=', search + '\uf8ff'));
+        // Simple prefix search for name (adjust if full-text needed)
+        constraints.push(where('name', '>=', search));
+        constraints.push(where('name', '<=', search + '\uf8ff'));
       }
 
+      // Add pagination constraint if loading more
       if (loadMore && lastVisible) {
         constraints.push(startAfter(lastVisible));
       }
@@ -77,39 +82,51 @@ export default function StoresPage() {
       const q = query(storesCollection, ...constraints);
       const querySnapshot = await getDocs(q);
 
-      const storesData = querySnapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      } as Store));
+      const storesData = querySnapshot.docs.map(docSnap => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            ...data,
+            // Ensure timestamps are Date objects
+            createdAt: safeToDate(data.createdAt),
+            updatedAt: safeToDate(data.updatedAt),
+          } as Store;
+      });
 
-      if (loadMore) {
-        setStores(prev => [...prev, ...storesData]);
-      } else {
-        setStores(storesData);
-      }
-
+      // Update state based on whether it's loading more or a new load
+      setStores(prevStores => isInitialOrNewSearch ? storesData : [...prevStores, ...storesData]);
       setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-      setHasMore(querySnapshot.docs.length === STORES_PER_PAGE);
+      setHasMore(storesData.length === STORES_PER_PAGE);
 
     } catch (err) {
       console.error("Error fetching stores:", err);
       setError(err instanceof Error ? err.message : "Failed to load stores.");
+      // Clear stores only if it was an initial load error
+      if(isInitialOrNewSearch) setStores([]);
+      setHasMore(false); // Stop further loading attempts on error
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+        setLoading(false); // Always set main loading false after initial attempt
+        setLoadingMore(false); // Always set loading more false
     }
-  }, [lastVisible]);
+  }, [lastVisible]); // Depend only on lastVisible for pagination logic
 
-  // Fetch stores on initial load and when debounced search term changes
+  // Effect for initial load and search term changes
   React.useEffect(() => {
+    // Trigger fetch only when debounced search term changes
+    // The 'loadMore' argument is false here, indicating a new search/initial load
     fetchStores(false, debouncedSearchTerm);
-  }, [fetchStores, debouncedSearchTerm]);
+  }, [debouncedSearchTerm, fetchStores]); // Depend on debounced term and the stable fetchStores
 
   const handleLoadMore = () => {
+    // Trigger fetch with 'loadMore' set to true
+    // Use the current debounced search term for consistency
     if (!loadingMore && hasMore) {
       fetchStores(true, debouncedSearchTerm);
     }
   };
+
+  // Determine overall loading state for skeleton display
+  const showSkeleton = loading && stores.length === 0 && !error;
 
   return (
     <div className="space-y-8">
@@ -120,12 +137,12 @@ export default function StoresPage() {
         Browse all our partner stores offering cashback and deals. Click on a store to see specific offers.
       </p>
 
-      {/* Search Input */}
-       <Card className="max-w-xl mx-auto shadow-sm border">
-           <CardHeader className="pb-4">
+      {/* Search Input Card - Improved Styling */}
+       <Card className="max-w-xl mx-auto shadow-sm border sticky top-20 z-40 bg-background/95 backdrop-blur-sm">
+           <CardHeader className="pb-4 pt-4"> {/* Reduced padding */}
                <CardTitle className="text-lg">Search Stores</CardTitle>
            </CardHeader>
-           <CardContent>
+           <CardContent className="pb-4"> {/* Reduced padding */}
                <div className="relative">
                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                    <Input
@@ -133,12 +150,12 @@ export default function StoresPage() {
                        placeholder="Search by store name..."
                        value={searchTerm}
                        onChange={(e) => setSearchTerm(e.target.value)}
-                       className="pl-10 h-10"
+                       className="pl-10 h-10" // Standard height
+                       aria-label="Search stores"
                    />
                </div>
            </CardContent>
        </Card>
-
 
       {error && (
         <Alert variant="destructive" className="max-w-2xl mx-auto">
@@ -148,26 +165,26 @@ export default function StoresPage() {
         </Alert>
       )}
 
-      {loading && stores.length === 0 ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
-          {Array.from({ length: 12 }).map((_, index) => (
-            <Skeleton key={index} className="h-48 rounded-lg" />
-          ))}
-        </div>
-      ) : stores.length === 0 ? (
-        <div className="text-center py-16 text-muted-foreground bg-muted/30 rounded-lg">
-          <p className="text-xl mb-4">No stores found {searchTerm ? `matching "${searchTerm}"` : ''}.</p>
-          <p>Try adjusting your search or check back later!</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
-          {stores.map((store) => (
+      {/* Grid for Stores or Skeleton */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
+        {showSkeleton ? (
+          Array.from({ length: STORES_PER_PAGE }).map((_, index) => (
+            <Skeleton key={`skel-${index}`} className="h-48 rounded-lg" />
+          ))
+        ) : stores.length === 0 && !loading ? ( // Show 'No results' only after loading and if stores array is empty
+             <div className="col-span-full text-center py-16 text-muted-foreground bg-muted/30 rounded-lg border">
+                <p className="text-xl mb-4">No stores found {debouncedSearchTerm ? `matching "${debouncedSearchTerm}"` : ''}.</p>
+                <p>Try adjusting your search or check back later!</p>
+             </div>
+        ) : (
+          stores.map((store) => (
             <StoreCard key={store.id} store={store} />
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
 
-      {hasMore && (
+      {/* Load More Button */}
+      {hasMore && !loading && ( // Show Load More only if there's more data and not currently loading initial data
         <div className="mt-8 text-center">
           <Button onClick={handleLoadMore} disabled={loadingMore}>
             {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
