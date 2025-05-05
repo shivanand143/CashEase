@@ -1,4 +1,3 @@
-
 {
   "indexes": [
     {
@@ -35,7 +34,7 @@
         { "fieldPath": "name", "order": "ASCENDING" }
       ]
     },
-     {
+    {
       "collectionGroup": "stores",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -56,10 +55,11 @@
       "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "isActive", "order": "ASCENDING" },
-        { "fieldPath": "isFeatured", "order": "DESCENDING" }
+        { "fieldPath": "isFeatured", "order": "DESCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
-     {
+    {
       "collectionGroup": "coupons",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -68,15 +68,14 @@
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
-     {
-       "collectionGroup": "coupons",
-       "queryScope": "COLLECTION_GROUP",
-       "fields": [
-         { "fieldPath": "isActive", "order": "ASCENDING" },
-         { "fieldPath": "isFeatured", "order": "DESCENDING" },
-         { "fieldPath": "createdAt", "order": "DESCENDING"}
-       ]
-     }
+    {
+      "collectionGroup": "coupons",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
   ],
   "fieldOverrides": []
 }
