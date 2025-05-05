@@ -22,7 +22,8 @@ import {
   DocumentData, // Import DocumentData
   QueryDocumentSnapshot, // Import QueryDocumentSnapshot
   Query, // Import Query type
-  DocumentReference // Import DocumentReference
+  DocumentReference, // Import DocumentReference
+  getDoc // Import getDoc for single document fetch
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import type { PayoutDetails, PayoutMethod, UserProfile, Transaction } from '@/lib/types';
@@ -143,49 +144,12 @@ function PayoutPageContent() {
        detail: data.payoutDetail,
      };
 
-     // --- Pre-fetch confirmed transactions OUTSIDE the transaction ---
-     let confirmedTransactionRefs: DocumentReference<DocumentData>[] = [];
-     let initialSumOfTransactions = 0;
-     try {
-         console.log(`Pre-fetching 'confirmed' transactions with payoutId == null for user ${user.uid}...`);
-         const transactionsCollection = collection(db, 'transactions');
-         const confirmedUnpaidQuery = query(
-            transactionsCollection,
-            where('userId', '==', user.uid),
-            where('status', '==', 'confirmed'),
-            where('payoutId', '==', null),
-            limit(500) // Limit query for safety
-         );
-         const confirmedTransactionsSnap = await getDocs(confirmedUnpaidQuery);
-         console.log(`Found ${confirmedTransactionsSnap.size} 'confirmed' and unpaid transactions.`);
-
-         confirmedTransactionsSnap.forEach(docSnap => {
-             const txData = docSnap.data() as Transaction;
-             if (typeof txData.cashbackAmount === 'number' && !isNaN(txData.cashbackAmount)) {
-                 confirmedTransactionRefs.push(docSnap.ref); // Store the reference
-                 initialSumOfTransactions += txData.cashbackAmount;
-                 console.log(`  - Pre-fetched Tx ID: ${docSnap.id}, Amount: ₹${txData.cashbackAmount.toFixed(2)}`);
-             } else {
-                 console.warn(`Transaction ${docSnap.id} has missing or invalid cashbackAmount during pre-fetch. Skipping.`);
-             }
-         });
-         initialSumOfTransactions = parseFloat(initialSumOfTransactions.toFixed(2));
-         console.log(`Pre-calculated sum of confirmed/unpaid transactions: ₹${initialSumOfTransactions.toFixed(2)}`);
-
-     } catch (fetchError: any) {
-         console.error("Error pre-fetching transactions:", fetchError);
-         setError(`Failed to verify transactions: ${fetchError.message}`);
-         setSubmitting(false);
-         toast({ variant: "destructive", title: 'Payout Failed', description: `Could not verify transactions: ${fetchError.message}` });
-         return;
-     }
-     // --- End Pre-fetch ---
-
 
      try {
         console.log("Starting payout transaction for user:", user.uid);
         const userDocRef = doc(db, 'users', user.uid);
         console.log("User document reference path:", userDocRef.path);
+        const transactionsCollectionRef = collection(db, 'transactions'); // Reference to the collection
 
        // --- Transaction to ensure atomicity ---
        await runTransaction(db, async (transaction) => {
@@ -207,38 +171,58 @@ function PayoutPageContent() {
           }
 
            // --- Verify confirmed transactions sum INSIDE transaction ---
-           console.log(`Verifying ${confirmedTransactionRefs.length} transactions inside transaction...`);
-           let sumOfTransactions = 0;
+           const confirmedUnpaidQuery = query(
+               transactionsCollectionRef, // Use the collection reference
+               where('userId', '==', user.uid),
+               where('status', '==', 'confirmed'),
+               where('payoutId', '==', null) // Explicitly check for null payoutId
+           );
+
+            console.log(`Querying 'confirmed' transactions with payoutId == null for user ${user.uid}...`);
+
+            // IMPORTANT: Use transaction.get() for reads inside a transaction for consistency
+            let confirmedTransactionsSnap; // Declare outside try/catch
+            try {
+               // Execute the query *within* the transaction's scope if possible
+               // Note: Firestore transactions have limitations on queries.
+               // If this query fails inside the transaction, you might need to perform
+               // the verification *before* the transaction starts, accepting a small
+               // risk of race conditions, or redesign the data model.
+               // For now, we attempt the query inside.
+               const querySnapshot = await getDocs(confirmedUnpaidQuery); // Fetch directly, not via transaction.get(query)
+               confirmedTransactionsSnap = querySnapshot; // Assign the snapshot
+            } catch (getQueryError: any) {
+                console.error("Error querying transactions within transaction scope:", getQueryError);
+                // Rethrow a more specific error
+                throw new Error(`Failed to verify transactions during payout: ${getQueryError.message}`);
+            }
+
+           console.log(`Found ${confirmedTransactionsSnap.size} 'confirmed' and unpaid transactions.`);
+
            const transactionIdsToUpdate: string[] = [];
+           let sumOfTransactions = 0;
            let errorMessage = "";
 
-           // Read each pre-fetched document reference within the transaction
-           for (const txRef of confirmedTransactionRefs) {
-               const txDocSnap = await transaction.get(txRef);
-               if (!txDocSnap.exists()) {
-                   console.warn(`Transaction ${txRef.id} not found within transaction. Skipping.`);
-                   continue; // Skip if doc deleted between pre-fetch and transaction read
-               }
-               const txData = txDocSnap.data() as Transaction;
+           // Iterate over the snapshot obtained *before* or *during* the transaction
+           confirmedTransactionsSnap.forEach(docSnap => {
+                const txData = docSnap.data() as Transaction;
+                // Re-validate status and payoutId (double-check)
+                if (txData.status === 'confirmed' && txData.payoutId === null) {
+                    if (typeof txData.cashbackAmount === 'number' && !isNaN(txData.cashbackAmount)) {
+                        transactionIdsToUpdate.push(docSnap.id);
+                        sumOfTransactions += txData.cashbackAmount;
+                        console.log(`  - Verified Tx ID: ${docSnap.id}, Amount: ₹${txData.cashbackAmount.toFixed(2)}`);
+                    } else {
+                        errorMessage = "Transaction with invalid cashbackAmount found during verification.";
+                        console.error(`Transaction ${docSnap.id} has invalid cashbackAmount during transaction verification.`);
+                        // Decide if this should abort the transaction - YES, it should.
+                        throw new Error(errorMessage);
+                    }
+                } else {
+                     console.warn(`Transaction ${docSnap.id} status (${txData.status}) or payoutId (${txData.payoutId}) is not as expected. Skipping.`);
+                }
+            });
 
-               // Re-validate status and payoutId within the transaction
-               if (txData.status !== 'confirmed' || txData.payoutId !== null) {
-                   console.warn(`Transaction ${txRef.id} status or payoutId changed. Skipping.`);
-                   continue; // Skip if status changed
-               }
-
-               if (typeof txData.cashbackAmount === 'number' && !isNaN(txData.cashbackAmount)) {
-                   transactionIdsToUpdate.push(txRef.id);
-                   sumOfTransactions += txData.cashbackAmount;
-                   console.log(`  - Verified Tx ID: ${txRef.id}, Amount: ₹${txData.cashbackAmount.toFixed(2)}`);
-               } else {
-                   // This case *should* be rare if pre-fetch was correct, but handle defensively
-                   errorMessage = "Transaction with null cashbackAmount found during verification.";
-                   console.error(`Transaction ${txRef.id} has invalid cashbackAmount during transaction verification.`);
-                   // Decide if this should abort the transaction
-                   throw new Error(errorMessage);
-               }
-           }
            sumOfTransactions = parseFloat(sumOfTransactions.toFixed(2));
            console.log(`Transaction verification: Calculated sum is ₹${sumOfTransactions.toFixed(2)}`);
 
@@ -253,7 +237,7 @@ function PayoutPageContent() {
            console.log("Attempting to set payout request document...");
            transaction.set(payoutRequestRef, {
              userId: user.uid,
-             amount: payoutAmount,
+             amount: payoutAmount, // Use the balance read inside the transaction
              status: 'pending', // Initial status
              requestedAt: serverTimestamp(),
              processedAt: null,
@@ -263,6 +247,8 @@ function PayoutPageContent() {
              adminNotes: null,
              failureReason: null,
            });
+           console.log("Payout request document prepared.");
+
 
            // 2. Update User Profile
            console.log("Attempting to update user profile document...");
@@ -272,6 +258,8 @@ function PayoutPageContent() {
               payoutDetails: payoutDetails, // Save/update payout details used
               updatedAt: serverTimestamp(),
            });
+           console.log("User profile update prepared.");
+
 
            // 3. Update included Transactions (set payoutId)
            console.log(`Attempting to update ${transactionIdsToUpdate.length} transactions with payoutId: ${payoutRequestRef.id}`);
