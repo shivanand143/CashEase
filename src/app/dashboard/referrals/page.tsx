@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from 'react';
+import { useState, useEffect } from 'react'; // Import useState and useEffect
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -14,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { formatCurrency } from '@/lib/utils';
 import { AlertCircle, Gift, Users, IndianRupee, Share2, Copy } from 'lucide-react';
 import ProtectedRoute from '@/components/guards/protected-route'; // Use ProtectedRoute
+import Link from 'next/link'; // Import Link
 
 function ReferralsPageContent() {
   const { user, userProfile, loading: authLoading } = useAuth();
