@@ -1,3 +1,4 @@
+// src/app/admin/transactions/page.tsx
 "use client";
 
 import * as React from 'react';
@@ -133,13 +134,13 @@ function AdminTransactionsPageContent() {
     } catch (err) {
       console.error("Error fetching transactions:", err);
       setError(err instanceof Error ? err.message : "Failed to fetch transactions");
-      toast({ variant: "destructive", title: "Fetch Error", description: error });
+      toast({ variant: "destructive", title: "Fetch Error", description: String(err) });
     } finally {
       setLoading(false);
       setLoadingMore(false);
       setIsSearching(false);
     }
-  }, [filterStatus, searchTerm, lastVisible, error, toast]); // Add error and toast dependencies
+  }, [filterStatus, searchTerm, lastVisible, toast]); // Removed error and toast from dependency array
 
   useEffect(() => {
     fetchTransactions(false, false); // Initial fetch on mount and filter change
@@ -265,86 +266,88 @@ function AdminTransactionsPageContent() {
            ) : transactions.length === 0 ? (
              <p className="text-center text-muted-foreground py-8">No transactions found matching your criteria.</p>
            ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User ID</TableHead>
-                  <TableHead>Store ID</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Cashback</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Admin Notes</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {transactions.map((tx) => (
-                  <TableRow key={tx.id}>
-                    <TableCell className="font-mono text-xs truncate max-w-[100px]">
-                       {tx.userId}
-                       {tx.clickId && <span className="block text-muted-foreground text-[10px]">Click: {tx.clickId}</span>}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs truncate max-w-[100px]">{tx.storeId}</TableCell>
-                    <TableCell>{formatCurrency(tx.saleAmount)}</TableCell>
-                    <TableCell className="font-semibold">{formatCurrency(tx.cashbackAmount)}</TableCell>
-                    <TableCell>{tx.transactionDate ? format(new Date(tx.transactionDate), 'PPp') : 'N/A'}</TableCell>
-                    <TableCell>
-                      {editingTransactionId === tx.id ? (
-                         <Select
-                            value={editData.status}
-                            onValueChange={(value) => setEditData(prev => ({ ...prev, status: value as CashbackStatus }))}
+            <div className="overflow-x-auto"> {/* Wrap table */}
+                <Table>
+                <TableHeader>
+                    <TableRow>
+                    <TableHead>User ID</TableHead>
+                    <TableHead>Store ID</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Cashback</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Admin Notes</TableHead>
+                    <TableHead>Actions</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {transactions.map((tx) => (
+                    <TableRow key={tx.id}>
+                        <TableCell className="font-mono text-xs truncate max-w-[100px]">
+                        {tx.userId}
+                        {tx.clickId && <span className="block text-muted-foreground text-[10px]">Click: {tx.clickId}</span>}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs truncate max-w-[100px]">{tx.storeId}</TableCell>
+                        <TableCell>{formatCurrency(tx.saleAmount)}</TableCell>
+                        <TableCell className="font-semibold">{formatCurrency(tx.cashbackAmount)}</TableCell>
+                        <TableCell className="whitespace-nowrap">{tx.transactionDate ? format(new Date(tx.transactionDate), 'PPp') : 'N/A'}</TableCell>
+                        <TableCell>
+                        {editingTransactionId === tx.id ? (
+                            <Select
+                                value={editData.status}
+                                onValueChange={(value) => setEditData(prev => ({ ...prev, status: value as CashbackStatus }))}
+                                disabled={isSavingEdit}
+                            >
+                                <SelectTrigger className="h-8 text-xs">
+                                    <SelectValue/>
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="pending">Pending</SelectItem>
+                                    <SelectItem value="confirmed">Confirmed</SelectItem>
+                                    <SelectItem value="rejected">Rejected</SelectItem>
+                                    <SelectItem value="paid">Paid</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        ) : (
+                            <Badge variant={getStatusVariant(tx.status)}>{tx.status}</Badge>
+                        )}
+                        </TableCell>
+                        <TableCell>
+                        {editingTransactionId === tx.id ? (
+                            <Textarea
+                            value={editData.adminNotes}
+                            onChange={(e) => setEditData(prev => ({ ...prev, adminNotes: e.target.value }))}
+                            placeholder="Add notes (e.g., reason for rejection)"
+                            className="h-16 text-xs resize-none"
                             disabled={isSavingEdit}
-                         >
-                            <SelectTrigger className="h-8 text-xs">
-                                <SelectValue/>
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="pending">Pending</SelectItem>
-                                <SelectItem value="confirmed">Confirmed</SelectItem>
-                                <SelectItem value="rejected">Rejected</SelectItem>
-                                <SelectItem value="paid">Paid</SelectItem>
-                            </SelectContent>
-                         </Select>
-                      ) : (
-                        <Badge variant={getStatusVariant(tx.status)}>{tx.status}</Badge>
-                      )}
-                    </TableCell>
-                     <TableCell>
-                      {editingTransactionId === tx.id ? (
-                         <Textarea
-                           value={editData.adminNotes}
-                           onChange={(e) => setEditData(prev => ({ ...prev, adminNotes: e.target.value }))}
-                           placeholder="Add notes (e.g., reason for rejection)"
-                           className="h-16 text-xs resize-none"
-                           disabled={isSavingEdit}
-                         />
-                      ) : (
-                         <span className="text-xs text-muted-foreground truncate block max-w-[150px]">
-                           {tx.adminNotes || '-'}
-                         </span>
-                      )}
-                     </TableCell>
-                    <TableCell>
-                      {editingTransactionId === tx.id ? (
-                        <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" onClick={handleSaveEdit} disabled={isSavingEdit} className="h-7 w-7">
-                             {isSavingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4 text-green-600"/>}
-                          </Button>
-                          <Button size="icon" variant="ghost" onClick={handleCancelEdit} disabled={isSavingEdit} className="h-7 w-7">
-                             <X className="h-4 w-4 text-red-600"/>
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button size="icon" variant="ghost" onClick={() => handleEditClick(tx)} className="h-7 w-7">
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                            />
+                        ) : (
+                            <span className="text-xs text-muted-foreground truncate block max-w-[150px]">
+                            {tx.adminNotes || '-'}
+                            </span>
+                        )}
+                        </TableCell>
+                        <TableCell>
+                        {editingTransactionId === tx.id ? (
+                            <div className="flex gap-1">
+                            <Button size="icon" variant="ghost" onClick={handleSaveEdit} disabled={isSavingEdit} className="h-7 w-7">
+                                {isSavingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4 text-green-600"/>}
+                            </Button>
+                            <Button size="icon" variant="ghost" onClick={handleCancelEdit} disabled={isSavingEdit} className="h-7 w-7">
+                                <X className="h-4 w-4 text-red-600"/>
+                            </Button>
+                            </div>
+                        ) : (
+                            <Button size="icon" variant="ghost" onClick={() => handleEditClick(tx)} className="h-7 w-7">
+                            <Edit className="h-4 w-4" />
+                            </Button>
+                        )}
+                        </TableCell>
+                    </TableRow>
+                    ))}
+                </TableBody>
+                </Table>
+            </div>
           )}
           {hasMore && (
             <div className="mt-4 text-center">
@@ -369,24 +372,26 @@ function TransactionsTableSkeleton() {
          <Skeleton className="h-4 w-1/2"/>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {Array.from({ length: 8 }).map((_, index) => (
-                <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {Array.from({ length: 10 }).map((_, rowIndex) => (
-              <TableRow key={rowIndex}>
-                {Array.from({ length: 8 }).map((_, colIndex) => (
-                  <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell>
+        <div className="overflow-x-auto"> {/* Wrap skeleton table */}
+            <Table>
+            <TableHeader>
+                <TableRow>
+                {Array.from({ length: 8 }).map((_, index) => (
+                    <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead>
                 ))}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {Array.from({ length: 10 }).map((_, rowIndex) => (
+                <TableRow key={rowIndex}>
+                    {Array.from({ length: 8 }).map((_, colIndex) => (
+                    <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell>
+                    ))}
+                </TableRow>
+                ))}
+            </TableBody>
+            </Table>
+        </div>
       </CardContent>
     </Card>
   );
@@ -399,3 +404,4 @@ export default function AdminTransactionsPage() {
       </AdminGuard>
     );
 }
+    

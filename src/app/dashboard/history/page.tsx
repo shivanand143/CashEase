@@ -5,6 +5,7 @@ import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   collection,
   query,
@@ -60,21 +61,14 @@ function CashbackHistoryContent() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const fetchTransactions = useCallback(async (loadMore = false) => {
-    if (!user) {
-      setLoading(false);
-      setLoadingMore(false);
-      return;
-    } // Don't fetch if no user
+  const fetchInitialTransactions = useCallback(async () => {
+    if (!user) return;
 
-    if (!loadMore) {
-      setLoading(true);
-      setLastVisible(null);
-      setTransactions([]);
-    } else {
-      setLoadingMore(true);
-    }
+    setLoading(true);
     setError(null);
+    setLastVisible(null);
+    setTransactions([]);
+    setHasMore(true);
 
     try {
       const transactionsCollection = collection(db, 'transactions');
@@ -84,9 +78,53 @@ function CashbackHistoryContent() {
         limit(TRANSACTIONS_PER_PAGE)
       ];
 
-      if (loadMore && lastVisible) {
-        constraints.push(startAfter(lastVisible));
-      }
+      const q = query(transactionsCollection, ...constraints);
+      const querySnapshot = await getDocs(q);
+
+      const transactionsData = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          transactionDate: safeToDate(data.transactionDate) || new Date(0),
+          confirmationDate: safeToDate(data.confirmationDate),
+          paidDate: safeToDate(data.paidDate),
+          createdAt: safeToDate(data.createdAt) || new Date(0),
+          updatedAt: safeToDate(data.updatedAt) || new Date(0),
+        } as Transaction;
+      });
+
+      setTransactions(transactionsData);
+      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+      setHasMore(querySnapshot.docs.length === TRANSACTIONS_PER_PAGE);
+      setError(null); // Clear error on successful fetch
+
+    } catch (err) {
+      console.error("Error fetching initial transactions:", err);
+      const errorMsg = err instanceof Error ? err.message : "Failed to load transaction history.";
+      setError(errorMsg);
+      setTransactions([]); // Clear transactions on error
+      setHasMore(false);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+
+  const fetchMoreTransactions = useCallback(async () => {
+    if (!user || !lastVisible || !hasMore) return;
+
+    setLoadingMore(true);
+    setError(null);
+
+    try {
+      const transactionsCollection = collection(db, 'transactions');
+      const constraints = [
+        where('userId', '==', user.uid),
+        orderBy('transactionDate', 'desc'),
+        startAfter(lastVisible),
+        limit(TRANSACTIONS_PER_PAGE)
+      ];
 
       const q = query(transactionsCollection, ...constraints);
       const querySnapshot = await getDocs(q);
@@ -96,7 +134,6 @@ function CashbackHistoryContent() {
         return {
           id: docSnap.id,
           ...data,
-          // Ensure dates are converted correctly
           transactionDate: safeToDate(data.transactionDate) || new Date(0),
           confirmationDate: safeToDate(data.confirmationDate),
           paidDate: safeToDate(data.paidDate),
@@ -105,45 +142,39 @@ function CashbackHistoryContent() {
         } as Transaction;
       });
 
-      if (loadMore) {
-        setTransactions(prev => [...prev, ...transactionsData]);
-      } else {
-        setTransactions(transactionsData);
-      }
-
+      setTransactions(prev => [...prev, ...transactionsData]);
       setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
       setHasMore(querySnapshot.docs.length === TRANSACTIONS_PER_PAGE);
 
     } catch (err) {
-      console.error("Error fetching transactions:", err);
-      const errorMsg = err instanceof Error ? err.message : "Failed to load transaction history.";
-      setError(errorMsg);
+      console.error("Error fetching more transactions:", err);
+      const errorMsg = err instanceof Error ? err.message : "Failed to load more transactions.";
+      setError(errorMsg); // Show error for loading more
     } finally {
-      setLoading(false);
       setLoadingMore(false);
     }
-  }, [user, lastVisible]);
+  }, [user, lastVisible, hasMore]);
 
   useEffect(() => {
     if (user) {
-      fetchTransactions(false);
+      fetchInitialTransactions();
     } else if (!authLoading) {
       // If auth is done loading and still no user, redirect
       router.push('/login');
     }
-  }, [user, authLoading, fetchTransactions, router]);
+  }, [user, authLoading, fetchInitialTransactions, router]);
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      fetchTransactions(true);
+      fetchMoreTransactions();
     }
   };
 
-  if (authLoading || (loading && transactions.length === 0)) {
+  if (authLoading || (loading && transactions.length === 0 && !error)) {
     return <HistoryTableSkeleton />;
   }
 
-  if (!user) {
+  if (!user && !authLoading) {
     // This should ideally be handled by ProtectedRoute, but good as a fallback
     return (
         <Alert variant="destructive" className="max-w-md mx-auto">
@@ -180,7 +211,7 @@ function CashbackHistoryContent() {
         <CardContent>
           {loading && transactions.length === 0 ? (
             <HistoryTableSkeleton />
-          ) : transactions.length === 0 ? (
+          ) : !loading && transactions.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <p className="mb-4">You haven't earned any cashback yet.</p>
               <Button asChild>
@@ -188,45 +219,51 @@ function CashbackHistoryContent() {
               </Button>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Store</TableHead>
-                  <TableHead>Order Amount</TableHead>
-                  <TableHead>Cashback</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  {/* <TableHead>Details</TableHead> */}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {transactions.map((tx) => (
-                  <TableRow key={tx.id}>
-                    <TableCell className="font-medium">{tx.storeName || tx.storeId || 'Unknown Store'}</TableCell>
-                    <TableCell>{formatCurrency(tx.saleAmount)}</TableCell>
-                    <TableCell className="font-semibold">{formatCurrency(tx.cashbackAmount)}</TableCell>
-                    <TableCell>{tx.transactionDate ? format(new Date(tx.transactionDate), 'PPp') : 'N/A'}</TableCell>
-                    <TableCell>
-                      <Badge variant={getStatusVariant(tx.status)}>{tx.status}</Badge>
-                       {tx.status === 'confirmed' && tx.confirmationDate && (
-                        <span className="block text-[10px] text-muted-foreground mt-1">
-                          Confirmed: {format(new Date(tx.confirmationDate), 'PP')}
-                        </span>
-                       )}
-                       {tx.status === 'paid' && tx.paidDate && (
-                        <span className="block text-[10px] text-muted-foreground mt-1">
-                          Paid: {format(new Date(tx.paidDate), 'PP')}
-                        </span>
-                       )}
-                    </TableCell>
-                    {/* <TableCell className="text-xs text-muted-foreground truncate max-w-[150px]">
-                       {tx.adminNotes || '-'}
-                       {tx.clickId && <span className="block">Click: {tx.clickId}</span>}
-                    </TableCell> */}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="overflow-x-auto"> {/* Wrap table for horizontal scroll */}
+                <Table>
+                <TableHeader>
+                    <TableRow>
+                    <TableHead>Store</TableHead>
+                    <TableHead>Order Amount</TableHead>
+                    <TableHead>Cashback</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Transaction ID</TableHead> {/* Added Transaction ID */}
+                    {/* <TableHead>Details</TableHead> */}
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {transactions.map((tx) => (
+                    <TableRow key={tx.id}>
+                        <TableCell className="font-medium">{tx.storeName || tx.storeId || 'Unknown Store'}</TableCell>
+                        <TableCell>{formatCurrency(tx.saleAmount)}</TableCell>
+                        <TableCell className="font-semibold">{formatCurrency(tx.cashbackAmount)}</TableCell>
+                        <TableCell className="whitespace-nowrap">{tx.transactionDate ? format(new Date(tx.transactionDate), 'PPp') : 'N/A'}</TableCell>
+                        <TableCell>
+                        <Badge variant={getStatusVariant(tx.status)}>{tx.status}</Badge>
+                        {tx.status === 'confirmed' && tx.confirmationDate && (
+                            <span className="block text-[10px] text-muted-foreground mt-1">
+                            Confirmed: {format(new Date(tx.confirmationDate), 'PP')}
+                            </span>
+                        )}
+                        {tx.status === 'paid' && tx.paidDate && (
+                            <span className="block text-[10px] text-muted-foreground mt-1">
+                            Paid: {format(new Date(tx.paidDate), 'PP')}
+                            </span>
+                        )}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs truncate max-w-[100px]">
+                            {tx.id}
+                        </TableCell>
+                        {/* <TableCell className="text-xs text-muted-foreground truncate max-w-[150px]">
+                        {tx.adminNotes || '-'}
+                        {tx.clickId && <span className="block">Click: {tx.clickId}</span>}
+                        </TableCell> */}
+                    </TableRow>
+                    ))}
+                </TableBody>
+                </Table>
+            </div>
           )}
           {hasMore && (
             <div className="mt-6 text-center">
@@ -251,24 +288,26 @@ function HistoryTableSkeleton() {
          <Skeleton className="h-4 w-2/3" />
        </CardHeader>
        <CardContent>
-         <Table>
-           <TableHeader>
-             <TableRow>
-               {Array.from({ length: 5 }).map((_, index) => (
-                 <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead>
-               ))}
-             </TableRow>
-           </TableHeader>
-           <TableBody>
-             {Array.from({ length: 10 }).map((_, rowIndex) => (
-               <TableRow key={rowIndex}>
-                 {Array.from({ length: 5 }).map((_, colIndex) => (
-                   <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell>
-                 ))}
-               </TableRow>
-             ))}
-           </TableBody>
-         </Table>
+          <div className="overflow-x-auto"> {/* Add overflow here too */}
+            <Table>
+            <TableHeader>
+                <TableRow>
+                {Array.from({ length: 6 }).map((_, index) => ( // Adjusted length for new column
+                    <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead>
+                ))}
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {Array.from({ length: 10 }).map((_, rowIndex) => (
+                <TableRow key={rowIndex}>
+                    {Array.from({ length: 6 }).map((_, colIndex) => ( // Adjusted length
+                    <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell>
+                    ))}
+                </TableRow>
+                ))}
+            </TableBody>
+            </Table>
+          </div>
        </CardContent>
      </Card>
    );
@@ -282,3 +321,4 @@ function HistoryTableSkeleton() {
      </ProtectedRoute>
    );
  }
+    

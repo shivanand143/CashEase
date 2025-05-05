@@ -121,11 +121,11 @@ function ClickHistoryContent() {
     }
   };
 
-  if (authLoading || (loading && clicks.length === 0)) {
+  if (authLoading || (loading && clicks.length === 0 && !error)) { // Ensure skeleton shows only on initial load without error
     return <ClickHistoryTableSkeleton />;
   }
 
-  if (!user) {
+  if (!user && !authLoading) { // Show login prompt if auth check finished and no user
     return (
         <Alert variant="destructive" className="max-w-md mx-auto">
             <AlertCircle className="h-4 w-4" />
@@ -158,9 +158,9 @@ function ClickHistoryContent() {
           <CardDescription>View the stores and offers you recently clicked on.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading && clicks.length === 0 ? (
+          {loading && clicks.length === 0 ? ( // Show skeleton only if loading and no clicks yet
             <ClickHistoryTableSkeleton />
-          ) : clicks.length === 0 ? (
+          ) : !loading && clicks.length === 0 ? ( // Show empty state only if not loading and no clicks
             <div className="text-center py-16 text-muted-foreground">
               <p className="mb-4">You haven't clicked on any offers yet.</p>
               <Button asChild>
@@ -168,34 +168,36 @@ function ClickHistoryContent() {
               </Button>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Store</TableHead>
-                  <TableHead>Coupon/Deal</TableHead>
-                  <TableHead>Clicked At</TableHead>
-                  <TableHead>Click ID</TableHead>
-                  <TableHead>Link Clicked</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {clicks.map((click) => (
-                  <TableRow key={click.id}>
-                    <TableCell className="font-medium">{click.storeName || click.storeId || 'Unknown Store'}</TableCell>
-                    <TableCell>{click.couponId || 'Store Visit'}</TableCell>
-                    <TableCell>{click.timestamp ? format(new Date(click.timestamp), 'PPp') : 'N/A'}</TableCell>
-                    <TableCell className="font-mono text-xs">{click.id}</TableCell>
-                    <TableCell>
-                        <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs">
-                            <a href={click.affiliateLink} target="_blank" rel="noopener noreferrer" title={click.affiliateLink}>
-                                View Link <ExternalLink className="h-3 w-3 ml-1"/>
-                            </a>
-                        </Button>
-                    </TableCell>
+            <div className="overflow-x-auto"> {/* Wrap table for horizontal scroll */}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Store</TableHead>
+                    <TableHead>Coupon/Deal</TableHead>
+                    <TableHead>Clicked At</TableHead>
+                    <TableHead>Click ID</TableHead>
+                    <TableHead>Link Clicked</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {clicks.map((click) => (
+                    <TableRow key={click.id}>
+                      <TableCell className="font-medium">{click.storeName || click.storeId || 'Unknown Store'}</TableCell>
+                      <TableCell>{click.couponId || 'Store Visit'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{click.timestamp ? format(new Date(click.timestamp), 'PPp') : 'N/A'}</TableCell>
+                      <TableCell className="font-mono text-xs truncate max-w-[100px]">{click.id}</TableCell>
+                      <TableCell>
+                          <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs">
+                              <a href={click.affiliateLink} target="_blank" rel="noopener noreferrer" title={click.affiliateLink} className="truncate block max-w-[200px]">
+                                  {click.affiliateLink || 'N/A'} <ExternalLink className="h-3 w-3 ml-1 inline-block align-middle"/>
+                              </a>
+                          </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
           {hasMore && (
             <div className="mt-6 text-center">
@@ -220,24 +222,26 @@ function ClickHistoryTableSkeleton() {
          <Skeleton className="h-4 w-2/3" />
        </CardHeader>
        <CardContent>
-         <Table>
-           <TableHeader>
-             <TableRow>
-               {Array.from({ length: 5 }).map((_, index) => (
-                 <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead>
-               ))}
-             </TableRow>
-           </TableHeader>
-           <TableBody>
-             {Array.from({ length: 10 }).map((_, rowIndex) => (
-               <TableRow key={rowIndex}>
-                 {Array.from({ length: 5 }).map((_, colIndex) => (
-                   <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell>
-                 ))}
-               </TableRow>
-             ))}
-           </TableBody>
-         </Table>
+         <div className="overflow-x-auto"> {/* Add overflow here too for consistency */}
+            <Table>
+            <TableHeader>
+                <TableRow>
+                {Array.from({ length: 5 }).map((_, index) => (
+                    <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead>
+                ))}
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {Array.from({ length: 10 }).map((_, rowIndex) => (
+                <TableRow key={rowIndex}>
+                    {Array.from({ length: 5 }).map((_, colIndex) => (
+                    <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell>
+                    ))}
+                </TableRow>
+                ))}
+            </TableBody>
+            </Table>
+         </div>
        </CardContent>
      </Card>
    );
@@ -250,3 +254,4 @@ function ClickHistoryTableSkeleton() {
      </ProtectedRoute>
    );
  }
+    
