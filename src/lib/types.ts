@@ -57,15 +57,15 @@ export interface Transaction {
 
 // For logging user clicks on affiliate links
 export interface Click {
-    id: string; // Firestore document ID
+    id: string; // Firestore document ID (can be the generated clickId)
     userId: string;
     storeId: string;
     storeName?: string; // Optional: Denormalized store name
     couponId?: string | null; // Optional: if the click was on a specific coupon
-    affiliateLink: string; // The link clicked
+    affiliateLink: string; // The specific link that was clicked (with clickId appended if applicable)
     timestamp: Date | Timestamp; // Firestore server timestamp preferred
     userAgent?: string; // Optional: User agent string
-    // Add other relevant details if needed, e.g., source page, IP address (handle privacy)
+    // Add other relevant details if needed, e.g., source page, IP address (handle privacy carefully)
 }
 
 
@@ -79,7 +79,7 @@ export interface Store {
   id: string; // Firestore document ID
   name: string;
   logoUrl: string | null;
-  affiliateLink: string; // The actual tracking link
+  affiliateLink: string; // The BASE tracking link (clickId added dynamically)
   cashbackRate: string; // User-friendly display string (e.g., "Up to 5%", "Flat ₹50")
   cashbackRateValue: number; // The numeric value for calculations
   cashbackType: CashbackType; // 'percentage' or 'fixed'

@@ -12,7 +12,8 @@ import {
   Settings,
   ArrowLeft,
   Home,
-  User
+  User,
+  MousePointerClick // Import new icon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -22,6 +23,7 @@ import ProtectedRoute from '@/components/guards/protected-route'; // Import Prot
 const dashboardNavItems = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
   { href: '/dashboard/history', label: 'Cashback History', icon: History },
+  { href: '/dashboard/clicks', label: 'Click History', icon: MousePointerClick }, // Add new link
   { href: '/dashboard/payout', label: 'Request Payout', icon: Send },
   { href: '/dashboard/referrals', label: 'Refer & Earn', icon: Gift },
   { href: '/dashboard/settings', label: 'Account Settings', icon: Settings },

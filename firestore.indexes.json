@@ -1,5 +1,109 @@
-
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "clicks",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "payoutRequests",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "DESCENDING" }
+      ]
+    },
+     {
+      "collectionGroup": "payoutRequests",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "DESCENDING" } // Keep DESC for admin view
+      ]
+    },
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "transactionDate", "order": "DESCENDING" }
+      ]
+    },
+     {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+         { "fieldPath": "payoutId", "order": "ASCENDING" } // Needed for payout verification query
+      ]
+    },
+     {
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "categories", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
+    },
+     {
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "isFeatured", "order": "DESCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" } // Optional: secondary sort
+      ]
+    },
+    {
+      "collectionGroup": "coupons",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "isFeatured", "order": "DESCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "coupons",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "isFeatured", "order": "DESCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "coupons",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+     {
+      "collectionGroup": "banners",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" }
+      ]
+    }
+    // Add other necessary indexes here based on query errors
+  ],
   "fieldOverrides": []
 }

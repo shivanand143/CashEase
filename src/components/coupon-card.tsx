@@ -18,15 +18,11 @@ import { formatDistanceToNow } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth'; // Import useAuth to check user login status
 import { useRouter } from 'next/navigation'; // Import useRouter for redirection
+import { trackClick } from '@/lib/actions/tracking'; // Import the tracking action
+import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
 
 interface CouponCardProps {
   coupon: Coupon & { store?: Store }; // Coupon data, optionally with nested store data
-}
-
-// Define a dummy trackClick function to avoid import errors
-async function trackClick(data: any): Promise<void> {
-  console.log('Tracking click (dummy function):', data);
-  return Promise.resolve();
 }
 
 export default function CouponCard({ coupon }: CouponCardProps) {
@@ -34,64 +30,108 @@ export default function CouponCard({ coupon }: CouponCardProps) {
   const { user } = useAuth(); // Get the user object
   const router = useRouter(); // Initialize router
 
+  // Function to append click ID to a URL
+  const appendClickId = (url: string, clickId: string): string => {
+    try {
+      const urlObj = new URL(url);
+      // Common affiliate parameters: subid, clickid, ref, aff_sub
+      // Check common ones or make configurable per store if needed
+      urlObj.searchParams.set('subid', clickId); // Example: Adjust based on network
+      urlObj.searchParams.set('aff_sub', clickId); // Another common example
+      return urlObj.toString();
+    } catch (e) {
+      console.warn("Invalid URL for click tracking:", url);
+      return url; // Return original URL if invalid
+    }
+  };
+
   const handleGetCode = async (code: string) => {
+    const clickId = uuidv4(); // Generate unique click ID
+    let targetUrl = coupon.store?.affiliateLink; // Default to store link
+
+    if (!targetUrl) {
+        console.warn(`Missing affiliate link for storeId: ${coupon.storeId}`);
+        targetUrl = '#'; // Fallback URL
+    } else {
+        targetUrl = appendClickId(targetUrl, clickId);
+    }
+
+
+    // Track click if user is logged in
+    if (user && coupon.storeId) {
+      try {
+        await trackClick({
+          userId: user.uid,
+          storeId: coupon.storeId,
+          storeName: coupon.store?.name,
+          couponId: coupon.id, // Track the coupon ID
+          clickId: clickId,
+          affiliateLink: targetUrl, // Track the final link
+          timestamp: new Date(),
+        });
+        console.log(`Tracked click for code coupon ${coupon.id} by user ${user.uid}, clickId: ${clickId}`);
+      } catch (trackError) {
+        console.error("Error tracking coupon code click:", trackError);
+        // Don't block user flow for tracking errors
+      }
+    }
+
+    // Copy code and show toast
     try {
       await navigator.clipboard.writeText(code);
       toast({
         title: 'Code Copied!',
-        description: `Coupon code "${code}" copied to clipboard.`,
+        description: `Coupon code "${code}" copied. Redirecting...`,
       });
-       // Track click if user is logged in
-       if (user && coupon.storeId) {
-        try {
-          await trackClick({
-            userId: user.uid,
-            storeId: coupon.storeId,
-            couponId: coupon.id, // Track the coupon ID
-            timestamp: new Date(),
-          });
-          console.log(`Tracked click for coupon ${coupon.id} by user ${user.uid}`);
-        } catch (trackError) {
-          console.error("Error tracking coupon click:", trackError);
-          // Don't block user flow for tracking errors
-        }
-      }
+       // Redirect after a short delay to allow toast visibility
+       setTimeout(() => {
+        window.open(targetUrl, '_blank', 'noopener,noreferrer');
+       }, 500);
     } catch (err) {
       console.error('Failed to copy code:', err);
       toast({
         variant: 'destructive',
         title: 'Copy Failed',
-        description: 'Could not copy the code. Please try again.',
+        description: 'Could not copy the code.',
       });
     }
   };
 
   const handleGetDeal = async () => {
-    if (!coupon.link) {
-      toast({
-        variant: 'destructive',
-        title: 'No Link',
-        description: 'This deal does not have a specific link.',
-      });
-      return;
+    const clickId = uuidv4(); // Generate unique click ID
+    let targetUrl = coupon.link || coupon.store?.affiliateLink; // Prioritize coupon link
+
+    if (!targetUrl) {
+        toast({
+            variant: 'destructive',
+            title: 'No Link Available',
+            description: 'Could not find a link for this deal.',
+        });
+        return;
     }
+
+    targetUrl = appendClickId(targetUrl, clickId);
+
     // Track click if user is logged in
      if (user && coupon.storeId) {
       try {
         await trackClick({
           userId: user.uid,
           storeId: coupon.storeId,
+          storeName: coupon.store?.name,
           couponId: coupon.id, // Track the coupon ID
+          clickId: clickId,
+          affiliateLink: targetUrl, // Track the final link
           timestamp: new Date(),
         });
-         console.log(`Tracked click for deal ${coupon.id} by user ${user.uid}`);
+         console.log(`Tracked click for deal ${coupon.id} by user ${user.uid}, clickId: ${clickId}`);
       } catch (trackError) {
         console.error("Error tracking deal click:", trackError);
         // Don't block user flow for tracking errors
       }
     }
     // Open the deal link in a new tab
-    window.open(coupon.link, '_blank', 'noopener,noreferrer');
+    window.open(targetUrl, '_blank', 'noopener,noreferrer');
   };
 
    // Handle clicks on the main card content to redirect to store page
@@ -113,34 +153,38 @@ export default function CouponCard({ coupon }: CouponCardProps) {
       className={`flex flex-col justify-between border rounded-lg overflow-hidden shadow-sm hover:shadow-lg transition-shadow duration-300 ${
         isExpired ? 'opacity-60 bg-muted/50' : ''
       }`}
-      onClick={handleCardClick} // Add click handler to the card
-      style={{ cursor: 'pointer' }} // Indicate clickable area
+      // Remove onClick handler from the Card itself if you want buttons to be the primary action
+      // onClick={handleCardClick}
+      // style={{ cursor: 'pointer' }}
     >
       <CardHeader className="p-4 pb-2">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            {coupon.store?.logoUrl ? (
-              <Image
-                src={coupon.store.logoUrl}
-                alt={`${storeName} logo`}
-                width={24}
-                height={24}
-                className="rounded-sm object-contain"
-                 data-ai-hint={`${storeName} logo`}
-              />
-            ) : (
-              <StoreIcon className="w-6 h-6 text-muted-foreground" />
-            )}
-            <CardTitle className="text-base font-semibold leading-tight">
-              {storeName} Offer
-            </CardTitle>
-          </div>
-           {isExpired && <Badge variant="destructive">Expired</Badge>}
-           {coupon.isFeatured && !isExpired && <Badge variant="secondary" className="bg-accent text-accent-foreground">Featured</Badge>}
-        </div>
-        <CardDescription className="text-sm leading-snug h-10 line-clamp-2">
-          {coupon.description}
-        </CardDescription>
+         {/* Link the header content to the store page */}
+         <Link href={`/stores/${coupon.storeId}`} className="block hover:bg-muted/30 rounded -m-2 p-2 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                {coupon.store?.logoUrl ? (
+                  <Image
+                    src={coupon.store.logoUrl}
+                    alt={`${storeName} logo`}
+                    width={24}
+                    height={24}
+                    className="rounded-sm object-contain"
+                     data-ai-hint={`${storeName} logo`}
+                  />
+                ) : (
+                  <StoreIcon className="w-6 h-6 text-muted-foreground" />
+                )}
+                <CardTitle className="text-base font-semibold leading-tight">
+                  {storeName} Offer
+                </CardTitle>
+              </div>
+              {isExpired && <Badge variant="destructive">Expired</Badge>}
+              {coupon.isFeatured && !isExpired && <Badge variant="secondary" className="bg-accent text-accent-foreground">Featured</Badge>}
+            </div>
+            <CardDescription className="text-sm leading-snug h-10 line-clamp-2">
+              {coupon.description}
+            </CardDescription>
+         </Link>
       </CardHeader>
       <CardContent className="p-4 pt-0 pb-2 flex-grow">
          {expiryDate && !isExpired && (
@@ -180,12 +224,21 @@ export default function CouponCard({ coupon }: CouponCardProps) {
              Get Deal <ExternalLink className="w-4 h-4 ml-1" />
            </Button>
         ) : (
-          <Button variant="secondary" size="sm" className="w-full" disabled>
-            View Offer
-          </Button> /* Placeholder if no code/link */
+          // If no code and no specific deal link, link to the store
+          <Button
+            variant="secondary"
+            size="sm"
+            className="w-full"
+            onClick={(e) => {
+               e.stopPropagation();
+               handleCardClick(e); // Reuse card click logic for store redirect
+            }}
+            disabled={isExpired}
+          >
+            Visit Store <StoreIcon className="w-4 h-4 ml-1" />
+          </Button>
         )}
       </CardFooter>
     </Card>
   );
 }
-

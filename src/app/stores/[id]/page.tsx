@@ -15,6 +15,20 @@ import CouponCard from '@/components/coupon-card';
 import { AlertCircle, ArrowLeft, ExternalLink, Info, BadgePercent, ScrollText } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { trackClick } from '@/lib/actions/tracking'; // Import tracking function
+import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
+
+// Function to append click ID to a URL (same as in coupon-card)
+const appendClickId = (url: string, clickId: string): string => {
+  try {
+    const urlObj = new URL(url);
+    urlObj.searchParams.set('subid', clickId);
+    urlObj.searchParams.set('aff_sub', clickId);
+    return urlObj.toString();
+  } catch (e) {
+    console.warn("Invalid URL for click tracking:", url);
+    return url;
+  }
+};
 
 export default function StoreDetailPage() {
   const params = useParams();
@@ -67,10 +81,10 @@ export default function StoreDetailPage() {
         const couponSnap = await getDocs(q);
         const couponsData = couponSnap.docs.map(docSnap => ({
             id: docSnap.id,
-             // Add store data to each coupon for CouponCard (optional but good practice)
+             // Add store data to each coupon for CouponCard (essential for tracking)
             store: storeData,
             ...docSnap.data()
-        } as Coupon));
+        } as Coupon)); // Cast assumes CouponCard expects Coupon type
         setCoupons(couponsData);
 
       } catch (err) {
@@ -87,17 +101,22 @@ export default function StoreDetailPage() {
    const handleVisitStore = async () => {
      if (!store || !store.affiliateLink) return;
 
+     const clickId = uuidv4(); // Generate unique click ID
+     const targetUrl = appendClickId(store.affiliateLink, clickId);
+
      // --- Track Click ---
      if (user) {
        try {
          await trackClick({
            userId: user.uid,
            storeId: store.id,
+           storeName: store.name,
            couponId: null, // Not tied to a specific coupon here
+           clickId: clickId,
+           affiliateLink: targetUrl, // Store the final link clicked
            timestamp: new Date(),
-           affiliateLink: store.affiliateLink // Store the link clicked
          });
-         console.log(`Tracked visit for store ${store.id} by user ${user.uid}`);
+         console.log(`Tracked visit for store ${store.id} by user ${user.uid}, clickId: ${clickId}`);
        } catch (trackError) {
          console.error("Error tracking store visit click:", trackError);
          // Optionally notify the user or log centrally, but don't block redirection
@@ -108,7 +127,7 @@ export default function StoreDetailPage() {
      }
 
      // --- Redirect ---
-     window.open(store.affiliateLink, '_blank', 'noopener,noreferrer');
+     window.open(targetUrl, '_blank', 'noopener,noreferrer');
    };
 
 
@@ -176,7 +195,8 @@ export default function StoreDetailPage() {
         {coupons.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {coupons.map((coupon) => (
-              <CouponCard key={coupon.id} coupon={coupon} />
+              // Pass the enriched coupon (which includes store data) to CouponCard
+              <CouponCard key={coupon.id} coupon={{...coupon, store: store}} />
             ))}
           </div>
         ) : (
