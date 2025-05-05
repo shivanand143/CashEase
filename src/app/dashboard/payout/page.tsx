@@ -23,7 +23,8 @@ import {
   QueryDocumentSnapshot, // Import QueryDocumentSnapshot
   Query, // Import Query type
   DocumentReference, // Import DocumentReference
-  getDoc // Import getDoc for single document fetch
+  getDoc, // Import getDoc for single document fetch
+  orderBy
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import type { PayoutDetails, PayoutMethod, UserProfile, Transaction } from '@/lib/types';
@@ -140,9 +141,12 @@ function PayoutPageContent() {
 
      let payoutAmount = latestUserProfile.cashbackBalance; // Initial payout amount
      const payoutDetails: PayoutDetails = {
-       method: data.payoutMethod as PayoutMethod,
-       detail: data.payoutDetail,
-     };
+        method: data.payoutMethod as PayoutMethod,
+        detail: data.payoutDetail,
+      };
+
+     // Clear previous errors
+     setError(null);
 
 
      try {
@@ -152,125 +156,99 @@ function PayoutPageContent() {
         const transactionsCollectionRef = collection(db, 'transactions'); // Reference to the collection
 
        // --- Transaction to ensure atomicity ---
-       await runTransaction(db, async (transaction) => {
-          console.log("Inside transaction, attempting to get user document...");
-          const userDocSnap = await transaction.get(userDocRef);
-          console.log("User document snapshot fetched inside transaction.");
+       let batchCommitResult = null; // Variable to store the result of the transaction
+               if (db) {
+                 // Define the transaction function
+                 const transactionFn = async (transaction: any) => { // Use 'any' for transaction type or import firebase.firestore.Transaction if using Admin SDK
+                     console.log("Inside transaction, attempting to get user document...");
+                     const userDocSnap = await transaction.get(userDocRef);
+                     console.log("User document snapshot fetched inside transaction.");
 
-          if (!userDocSnap.exists()) {
-            throw new Error("User profile not found.");
-          }
-          const currentUserData = userDocSnap.data() as UserProfile;
-          payoutAmount = currentUserData.cashbackBalance || 0; // <<< CRITICAL: Use the balance read *inside* the transaction
+                     if (!userDocSnap.exists()) {
+                         throw new Error("User profile not found.");
+                     }
+                     const currentUserData = userDocSnap.data() as UserProfile;
+                     const userBalance = currentUserData.cashbackBalance || 0; // Default to 0 if undefined
 
-          console.log(`Transaction check: User balance is ₹${payoutAmount.toFixed(2)}`);
+                        if (userBalance < MIN_PAYOUT_AMOUNT){ throw new Error(`Balance should be higher or equal to ${MIN_PAYOUT_AMOUNT}`)}
+                         // Start: Check is amount is not less than the minimum and everything is fine otherwise just throw
+                         if (payoutAmount < MIN_PAYOUT_AMOUNT) {
+                             throw new Error(`Minimum payout amount is ${MIN_PAYOUT_AMOUNT}.`);
+                         }
+                         // End: Check is amount is not less than the minimum and everything is fine otherwise just throw
+                         // Fetch user data
+                         const userSnap = await getDoc(userDocRef); // Use getDoc instead of transaction.get for initial balance check
+                         if (!userSnap.exists()) {
+                             throw new Error("User not found");
+                         }
+                         const userData = userSnap.data() as UserProfile;
+                         const userCashbackBalance = userData.cashbackBalance || 0;
 
-          // Double-check balance server-side
-          if (payoutAmount < MIN_PAYOUT_AMOUNT) {
-               throw new Error(`Your available balance (${formatCurrency(payoutAmount)}) is below the minimum payout amount of ${formatCurrency(MIN_PAYOUT_AMOUNT)}.`);
-          }
+                         // Fetch confirmed transactions NOT linked to a payout
+                         const confirmedUnpaidQuery = query(
+                             transactionsCollectionRef,
+                             where("userId", "==", user.uid),
+                             where("status", "==", "confirmed"),
+                             where("payoutId", "==", null) // Correct check for null payoutId
+                         );
+                         const batchTransactionSnap = await getDocs(confirmedUnpaidQuery);
+                         const allTransactionsInsideFunction = batchTransactionSnap.docs.map(doc => ({
+                                transactionId: doc.id,
+                                ...doc.data()
+                            }) as Transaction)
+                         const totalCashbackAmount = allTransactionsInsideFunction.reduce((sum, tx) => sum + (tx.cashbackAmount || 0), 0); // Default to 0 if cashbackAmount is missing
 
-           // --- Verify confirmed transactions sum INSIDE transaction ---
-           const confirmedUnpaidQuery = query(
-               transactionsCollectionRef, // Use the collection reference
-               where('userId', '==', user.uid),
-               where('status', '==', 'confirmed'),
-               where('payoutId', '==', null) // Explicitly check for null payoutId
-           );
+                         if (Math.abs(totalCashbackAmount - userCashbackBalance) > 0.01) {
+                             console.error(`Balance mismatch: Calculated sum ${totalCashbackAmount}, User balance ${userCashbackBalance}`);
+                             throw new Error("Balance calculation error. Contact support.")
+                         }
+                         const finalPayoutAmount = parseFloat(totalCashbackAmount.toFixed(2)); // Convert and re-assign
 
-            console.log(`Querying 'confirmed' transactions with payoutId == null for user ${user.uid}...`);
+                         console.log(`Starting payout of ${finalPayoutAmount.toFixed(2)}`);
+                         const requestData = {
+                             userId: user.uid,
+                             amount: finalPayoutAmount,
+                             status: "pending",
+                             requestedAt: serverTimestamp(),
+                             paymentMethod: data.payoutMethod,
+                             paymentDetails: payoutDetails,
+                             transactionIds: allTransactionsInsideFunction.map(tx => tx.id), // Map to transaction IDs
+                             adminNotes: null,
+                             failureReason: null,
+                             processedAt: null,
+                         };
 
-            // IMPORTANT: Use transaction.get() for reads inside a transaction for consistency
-            let confirmedTransactionsSnap; // Declare outside try/catch
-            try {
-               // Execute the query *within* the transaction's scope if possible
-               // Note: Firestore transactions have limitations on queries.
-               // If this query fails inside the transaction, you might need to perform
-               // the verification *before* the transaction starts, accepting a small
-               // risk of race conditions, or redesign the data model.
-               // For now, we attempt the query inside.
-               const querySnapshot = await getDocs(confirmedUnpaidQuery); // Fetch directly, not via transaction.get(query)
-               confirmedTransactionsSnap = querySnapshot; // Assign the snapshot
-            } catch (getQueryError: any) {
-                console.error("Error querying transactions within transaction scope:", getQueryError);
-                // Rethrow a more specific error
-                throw new Error(`Failed to verify transactions during payout: ${getQueryError.message}`);
-            }
+                         // Create payout request
+                         const payoutRequestRef = doc(collection(db, 'payoutRequests'));
+                         transaction.set(payoutRequestRef, requestData);
+                         // Reset user's cashback balance
+                         transaction.update(userDocRef, {
+                             cashbackBalance: 0,
+                             updatedAt: serverTimestamp(),
+                         });
+                          console.log(`User profile update prepared.`);
 
-           console.log(`Found ${confirmedTransactionsSnap.size} 'confirmed' and unpaid transactions.`);
 
-           const transactionIdsToUpdate: string[] = [];
-           let sumOfTransactions = 0;
-           let errorMessage = "";
+                         // Link transactions to payout request
 
-           // Iterate over the snapshot obtained *before* or *during* the transaction
-           confirmedTransactionsSnap.forEach(docSnap => {
-                const txData = docSnap.data() as Transaction;
-                // Re-validate status and payoutId (double-check)
-                if (txData.status === 'confirmed' && txData.payoutId === null) {
-                    if (typeof txData.cashbackAmount === 'number' && !isNaN(txData.cashbackAmount)) {
-                        transactionIdsToUpdate.push(docSnap.id);
-                        sumOfTransactions += txData.cashbackAmount;
-                        console.log(`  - Verified Tx ID: ${docSnap.id}, Amount: ₹${txData.cashbackAmount.toFixed(2)}`);
-                    } else {
-                        errorMessage = "Transaction with invalid cashbackAmount found during verification.";
-                        console.error(`Transaction ${docSnap.id} has invalid cashbackAmount during transaction verification.`);
-                        // Decide if this should abort the transaction - YES, it should.
-                        throw new Error(errorMessage);
-                    }
-                } else {
-                     console.warn(`Transaction ${docSnap.id} status (${txData.status}) or payoutId (${txData.payoutId}) is not as expected. Skipping.`);
+                         console.log(`Attempting to update ${payoutRequestRef} transactions with payoutId: ${payoutRequestRef.id}`);
+                         const payoutId = payoutRequestRef.id; // Capture payoutRequestRef.id outside loop
+                         for (const transactionData of allTransactionsInsideFunction) {
+                             const transactionRef = doc(db, "transactions", transactionData.id);
+                             transaction.update(transactionRef, {
+                                 payoutId: payoutId,
+                                 updatedAt: serverTimestamp()
+                             });
+                         }
+                          console.log("Transaction updates prepared.");
+                 };
+                 // Run the transaction
+                 batchCommitResult = await runTransaction(db, transactionFn);
                 }
-            });
-
-           sumOfTransactions = parseFloat(sumOfTransactions.toFixed(2));
-           console.log(`Transaction verification: Calculated sum is ₹${sumOfTransactions.toFixed(2)}`);
-
-           // Strict validation against the balance read *inside* the transaction
-           if (Math.abs(sumOfTransactions - payoutAmount) > 0.01) {
-               console.error(`Mismatch inside transaction: Sum (₹${sumOfTransactions.toFixed(2)}) vs Balance (₹${payoutAmount.toFixed(2)})`);
-               throw new Error("Balance calculation error. There's a mismatch between your confirmed cashback and transaction history. Please contact support.");
-           }
-
-           // 1. Create Payout Request Document
-           const payoutRequestRef = doc(collection(db, 'payoutRequests'));
-           console.log("Attempting to set payout request document...");
-           transaction.set(payoutRequestRef, {
-             userId: user.uid,
-             amount: payoutAmount, // Use the balance read inside the transaction
-             status: 'pending', // Initial status
-             requestedAt: serverTimestamp(),
-             processedAt: null,
-             paymentMethod: payoutDetails.method,
-             paymentDetails: payoutDetails,
-             transactionIds: transactionIdsToUpdate, // Link transactions to this payout
-             adminNotes: null,
-             failureReason: null,
-           });
-           console.log("Payout request document prepared.");
 
 
-           // 2. Update User Profile
-           console.log("Attempting to update user profile document...");
-           transaction.update(userDocRef, {
-              cashbackBalance: 0, // Reset available balance
-              lastPayoutRequestAt: serverTimestamp(),
-              payoutDetails: payoutDetails, // Save/update payout details used
-              updatedAt: serverTimestamp(),
-           });
-           console.log("User profile update prepared.");
-
-
-           // 3. Update included Transactions (set payoutId)
-           console.log(`Attempting to update ${transactionIdsToUpdate.length} transactions with payoutId: ${payoutRequestRef.id}`);
-           transactionIdsToUpdate.forEach(txId => {
-             const txRef = doc(db, 'transactions', txId);
-             transaction.update(txRef, { payoutId: payoutRequestRef.id, updatedAt: serverTimestamp() });
-           });
-           console.log("Transaction updates prepared.");
-       });
-       // --- Transaction End ---
-       console.log("Transaction committed successfully.");
+                console.log(`Transaction committed successfully. Refreshed balance:  ${availableBalance.toFixed(2)}`);
+                console.log(`Payout processing completed successfully. Refreshed balance:  ${availableBalance.toFixed(2)}`);
 
 
        toast({
@@ -284,6 +262,14 @@ function PayoutPageContent() {
        setLastRequestDate(new Date()); // Update last request date locally
        // Update local profile state as well
        setLatestUserProfile(prev => prev ? { ...prev, cashbackBalance: 0, lastPayoutRequestAt: new Date(), payoutDetails: payoutDetails } : null);
+
+         // Refetch user to update the value and balance
+        const profile = await fetchUserProfile(user.uid);
+            if (profile) {
+                 setLatestUserProfile(profile);
+                 setAvailableBalance(profile.cashbackBalance || 0);
+                 setCanRequest((profile.cashbackBalance || 0) >= MIN_PAYOUT_AMOUNT);
+            }
 
 
      } catch (err: any) {
@@ -331,7 +317,15 @@ function PayoutPageContent() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-4xl font-bold text-primary">{formatCurrency(availableBalance)}</p>
+             <>
+
+             <span className="inline-flex h-8 items-center space-x-2 text-sm">
+                  <h2>Your available balance to withdraw:</h2>
+                 <IndianRupee className="mr-1 h-4 w-4" />
+                 {availableBalance.toFixed(2)}
+                 {/* Add more sections as needed */}
+             </span>
+             </>
         </CardContent>
       </Card>
 
