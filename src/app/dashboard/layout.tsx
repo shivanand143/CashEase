@@ -1,0 +1,79 @@
+// src/app/dashboard/layout.tsx
+"use client";
+
+import * as React from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import {
+  LayoutDashboard,
+  History,
+  Send,
+  Gift,
+  Settings,
+  ArrowLeft,
+  Home,
+  User
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
+import ProtectedRoute from '@/components/guards/protected-route'; // Import ProtectedRoute
+
+const dashboardNavItems = [
+  { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+  { href: '/dashboard/history', label: 'Cashback History', icon: History },
+  { href: '/dashboard/payout', label: 'Request Payout', icon: Send },
+  { href: '/dashboard/referrals', label: 'Refer & Earn', icon: Gift },
+  { href: '/dashboard/settings', label: 'Account Settings', icon: Settings },
+];
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const pathname = usePathname();
+
+  const isActive = (href: string) => {
+    // Exact match for dashboard overview, prefix for others
+    return href === '/dashboard' ? pathname === href : pathname.startsWith(href);
+  };
+
+  return (
+    <ProtectedRoute> {/* Wrap the entire layout content */}
+      <div className="flex flex-col md:flex-row gap-8">
+        {/* Sidebar Navigation */}
+        <aside className="w-full md:w-64 shrink-0">
+          <nav className="flex flex-col space-y-1 border rounded-lg p-2 bg-card shadow-sm">
+             {/* Optional: Back to Home link */}
+             <Button variant="ghost" className="justify-start text-muted-foreground mb-2" asChild>
+               <Link href="/">
+                 <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
+               </Link>
+             </Button>
+             <Separator className="mb-2" />
+
+            {dashboardNavItems.map((item) => (
+              <Button
+                key={item.href}
+                variant={isActive(item.href) ? 'secondary' : 'ghost'}
+                className="justify-start"
+                asChild
+              >
+                <Link href={item.href} className="flex items-center gap-3">
+                  <item.icon className="w-5 h-5" />
+                  {item.label}
+                </Link>
+              </Button>
+            ))}
+          </nav>
+        </aside>
+
+        {/* Main Content Area */}
+        <main className="flex-1">
+          {children}
+        </main>
+      </div>
+    </ProtectedRoute>
+  );
+}
