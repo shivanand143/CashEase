@@ -109,7 +109,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                      createdAt: safeToDate(data.createdAt) || new Date(0),
                      updatedAt: safeToDate(data.updatedAt) || new Date(0),
                      lastPayoutRequestAt: safeToDate(data.lastPayoutRequestAt),
-                     payoutDetails: payoutDetails as any, // Cast as any after ensuring it's object or null
+                     payoutDetails: payoutDetails, // Use the sanitized value
                  } as UserProfile;
            } else {
                console.warn(`fetchUserProfile: No profile found for UID ${uid}`);
@@ -123,7 +123,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    }, []); // No dependencies needed if db is stable
 
   // Function to create or update user profile in Firestore
-  const createOrUpdateUserProfile = useCallback(async (user: User, referralCodeFromUrl: string | null): Promise<void> => {
+  const createOrUpdateUserProfile = useCallback(async (user: User | ({role: string} & User) , referralCodeFromUrl: string | null): Promise<void> => {
     if (!db || !user) {
       console.error("DB not initialized or user is null. Cannot create profile.");
       setError("Database connection error. Profile cannot be saved."); // Set general error
@@ -147,7 +147,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: user.email ?? null,
           displayName: user.displayName ?? 'User',
           photoURL: user.photoURL ?? null,
-          role: 'user',
+          role: (user as any).role ?? 'user', // Allow initial role setting
           cashbackBalance: 0,
           pendingCashback: 0,
           lifetimeCashback: 0,
@@ -164,14 +164,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log("Preparing to create new user profile:", finalProfileData);
       } else {
         // Prepare update data for existing user
-        const existingData = docSnap.data();
+        const existingData = docSnap.data() as UserProfile;
         finalProfileData = {
           // Only update fields that might change on login/update
           email: user.email ?? existingData.email ?? null,
           displayName: user.displayName ?? existingData.displayName ?? 'User',
           photoURL: user.photoURL ?? existingData.photoURL ?? null,
-          // Keep existing sensitive fields unless explicitly changing them
-          role: existingData.role ?? 'user', // Keep existing role
+          // Allow role update if provided in the user object
+          role: (user as any).role ?? existingData.role ?? 'user',
           // Ensure balances are numbers, default to 0 if missing/invalid
           cashbackBalance: typeof existingData.cashbackBalance === 'number' ? existingData.cashbackBalance : 0,
           pendingCashback: typeof existingData.pendingCashback === 'number' ? existingData.pendingCashback : 0,
@@ -263,7 +263,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
      // Check for Firebase initialization error first
      if (firebaseInitializationError) {
-       console.error("AuthProvider useEffect: Firebase not initialized. Skipping auth listener.", firebaseInitializationError);
+       console.warn("AuthProvider useEffect: Firebase not initialized. Skipping auth listener.", firebaseInitializationError);
        setError("Firebase is not configured correctly. Please check setup.");
        setLoading(false); // Stop loading if Firebase is not initialized
        return;
@@ -348,7 +348,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let errorMessage = "An unexpected error occurred during Google Sign-In. Please try again.";
       const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'unknown_domain'; // Get current domain
 
-      // Check if it's a FirebaseError
+      // Firebase authentication error handling
       if (err instanceof FirebaseError) {
         switch (err.code) {
           case 'auth/popup-closed-by-user':
@@ -367,9 +367,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
              errorMessage = 'Google Sign-In is not enabled for this project in the Firebase Console (Authentication -> Sign-in method).';
              break;
           case 'auth/unauthorized-domain':
-             // Provide more specific guidance for this error
-             console.warn(`[Auth/Unauthorized Domain] Attempted sign-in from: ${currentDomain}`); // Log the domain
-             // Reverted detailed explanation, focusing on core Firebase issue
              errorMessage = `This domain (${currentDomain}) is not authorized for Firebase Authentication. Check your Firebase Console settings.`;
              break;
           default:
@@ -383,9 +380,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAuthError(errorMessage); // Use setAuthError for auth-related issues
       toast({
         variant: "destructive",
-        title: 'Google Sign-In Failed',
+        title: 'Sign-In Cancelled', // Use a more appropriate title for popup closed
         description: errorMessage,
-        duration: 9000, // Increase duration slightly
+        duration: 7000, // Slightly shorter duration as it's often user action
       });
        // Do not automatically sign out here, let the user retry or choose another method
     }
@@ -403,9 +400,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await firebaseSignOut(auth);
        toast({ title: "Signed Out", description: "You have been successfully signed out." });
       // State updates (user=null, profile=null, loading=false) are handled by onAuthStateChanged
-    } catch (err: any) { // Catch specifically typed error if possible, else any
-      console.error('Error signing out:', err);
-      const errorMsg = `Sign out error: ${err.message || String(err)}`;
+    } catch (error) {
+      console.error('Error signing out:', error);
+      const errorMsg = `Sign out error: ${error instanceof Error ? error.message : String(error)}`;
       setAuthError(errorMsg);
        toast({ variant: "destructive", title: 'Sign Out Failed', description: errorMsg });
     }
@@ -429,7 +426,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loading,
     error,
     authError,
-    signOut,
+    signOut, // Include signOut in dependency array
     signInWithGoogle,
     createOrUpdateUserProfile,
     fetchUserProfile,
