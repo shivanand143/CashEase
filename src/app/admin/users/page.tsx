@@ -20,7 +20,7 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import type { UserProfile } from '@/lib/types'; // Ensure UserProfile type is defined
+import type { UserProfile } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,13 +35,13 @@ import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { AlertCircle, Loader2, Search, CheckCircle, XCircle, UserCheck, UserX } from 'lucide-react';
+import { AlertCircle, Loader2, Search, UserCheck, UserX } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import AdminGuard from '@/components/guards/admin-guard'; // Ensure page is protected
-import { Switch } from '@/components/ui/switch'; // Import Switch
+import AdminGuard from '@/components/guards/admin-guard';
+import { Switch } from '@/components/ui/switch';
 import { safeToDate } from '@/lib/utils';
-import { useAuth } from '@/hooks/use-auth'; // Import useAuth to verify admin role
+import { useAuth } from '@/hooks/use-auth';
 
 const USERS_PER_PAGE = 20;
 
@@ -69,28 +69,60 @@ function AdminUsersPageContent() {
   const [isSearching, setIsSearching] = useState(false);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null); // Track which user is being updated
 
-  const fetchUsers = useCallback(async (loadMore = false, search = false) => {
-    console.log(`ADMIN: Fetching users... Load more: ${loadMore}, Search: ${search}, Term: "${searchTerm}"`);
+  const mapFirebaseDocToUserProfile = (docSnap: QueryDocumentSnapshot<DocumentData>): UserProfile | null => {
+      try {
+          const data = docSnap.data();
+          // Robust data mapping with defaults
+          const profile: UserProfile = {
+              uid: docSnap.id,
+              email: data.email ?? 'No Email', // Provide fallback
+              displayName: data.displayName ?? 'No Name', // Provide fallback
+              photoURL: data.photoURL ?? null,
+              role: ['user', 'admin'].includes(data.role) ? data.role : 'user', // Validate role
+              cashbackBalance: typeof data.cashbackBalance === 'number' ? data.cashbackBalance : 0,
+              pendingCashback: typeof data.pendingCashback === 'number' ? data.pendingCashback : 0,
+              lifetimeCashback: typeof data.lifetimeCashback === 'number' ? data.lifetimeCashback : 0,
+              referralCode: data.referralCode ?? null,
+              referralCount: typeof data.referralCount === 'number' ? data.referralCount : 0,
+              referralBonusEarned: typeof data.referralBonusEarned === 'number' ? data.referralBonusEarned : 0,
+              referredBy: data.referredBy ?? null,
+              isDisabled: typeof data.isDisabled === 'boolean' ? data.isDisabled : false,
+              createdAt: safeToDate(data.createdAt) || new Date(0), // Use epoch if null
+              updatedAt: safeToDate(data.updatedAt) || new Date(0), // Use epoch if null
+              lastPayoutRequestAt: safeToDate(data.lastPayoutRequestAt), // Can be null
+              payoutDetails: data.payoutDetails ?? null,
+          };
+          return profile;
+      } catch (mappingError) {
+          console.error(`Error mapping document ${docSnap.id}:`, mappingError);
+          return null; // Return null if mapping fails for a specific document
+      }
+  };
+
+  const fetchUsers = useCallback(async (loadMore = false, search = false, currentSearchTerm = '') => {
     const isInitialOrNewSearch = !loadMore;
+    console.log(`ADMIN: Fetching users. Initial/NewSearch: ${isInitialOrNewSearch}, LoadMore: ${loadMore}, SearchTerm: "${currentSearchTerm}"`);
 
     if (isInitialOrNewSearch) {
       setLoading(true);
       setLastVisible(null);
       setUsers([]);
-      setHasMore(true); // Reset hasMore on new fetch/search
+      setHasMore(true);
+    } else if (!lastVisible) {
+      console.log("ADMIN: Load more called but no lastVisible, returning.");
+      setLoadingMore(false);
+      return; // Don't proceed if loading more without a cursor
     } else {
       setLoadingMore(true);
     }
-    setError(null); // Clear previous errors
+    setError(null);
     setIsSearching(search);
 
     if (!db) {
-        console.error("ADMIN: Firestore not initialized.");
-        setError("Database connection error.");
-        setLoading(false);
-        setLoadingMore(false);
-        setIsSearching(false);
-        return;
+      console.error("ADMIN: Firestore not initialized.");
+      setError("Database connection error.");
+      setLoading(false); setLoadingMore(false); setIsSearching(false);
+      return;
     }
 
     try {
@@ -98,23 +130,13 @@ function AdminUsersPageContent() {
       let constraints: QueryConstraint[] = [];
 
       // Basic Firestore search by email (case-sensitive prefix)
-      if (search && searchTerm) {
-        console.log(`ADMIN: Applying search constraints for term: ${searchTerm}`);
-        // Attempt case-insensitive search (might require specific setup or won't be truly case-insensitive)
-        const lowerCaseTerm = searchTerm.toLowerCase();
-        const upperCaseTerm = searchTerm.toUpperCase(); // Less reliable
-        // This is still limited in Firestore, often requires dedicated search service like Algolia
-        constraints.push(where('email', '>=', searchTerm)); // Start with exact case
-        constraints.push(where('email', '<=', searchTerm + '\uf8ff'));
-         // Note: Name search is even harder without a search service.
-         // You might need client-side filtering after fetching if name search is crucial.
-      }
-
-      // Apply ordering
-      if (search && searchTerm) {
-         constraints.push(orderBy('email')); // Order by email when searching for predictability
+      if (search && currentSearchTerm) {
+        console.log(`ADMIN: Applying search constraints for email: ${currentSearchTerm}`);
+        constraints.push(where('email', '>=', currentSearchTerm));
+        constraints.push(where('email', '<=', currentSearchTerm + '\uf8ff'));
+        constraints.push(orderBy('email')); // Order by email when searching
       } else {
-         constraints.push(orderBy('createdAt', 'desc')); // Default order
+        constraints.push(orderBy('createdAt', 'desc')); // Default order
       }
 
       // Apply pagination
@@ -124,55 +146,30 @@ function AdminUsersPageContent() {
       }
       constraints.push(limit(USERS_PER_PAGE));
 
-      console.log("ADMIN: Executing Firestore query with constraints:", constraints);
+      console.log("ADMIN: Executing Firestore query with constraints:", constraints.map(c => c.type + JSON.stringify(c))); // Log constraints details
       const q = query(usersCollection, ...constraints);
       const querySnapshot = await getDocs(q);
       console.log(`ADMIN: Firestore query returned ${querySnapshot.size} documents.`);
 
+      // Map data safely
+      const usersData = querySnapshot.docs
+          .map(mapFirebaseDocToUserProfile)
+          .filter((user): user is UserProfile => user !== null); // Filter out any null results from mapping errors
 
-      const usersData = querySnapshot.docs.map(docSnap => {
-         const data = docSnap.data();
-         // Robust data mapping with defaults
-         const profile: UserProfile = {
-           uid: docSnap.id,
-           email: data.email ?? 'No Email', // Provide fallback
-           displayName: data.displayName ?? 'No Name', // Provide fallback
-           photoURL: data.photoURL ?? null,
-           role: ['user', 'admin'].includes(data.role) ? data.role : 'user', // Validate role
-           cashbackBalance: typeof data.cashbackBalance === 'number' ? data.cashbackBalance : 0,
-           pendingCashback: typeof data.pendingCashback === 'number' ? data.pendingCashback : 0,
-           lifetimeCashback: typeof data.lifetimeCashback === 'number' ? data.lifetimeCashback : 0,
-           referralCode: data.referralCode ?? null,
-           referralCount: typeof data.referralCount === 'number' ? data.referralCount : 0,
-           referralBonusEarned: typeof data.referralBonusEarned === 'number' ? data.referralBonusEarned : 0,
-           referredBy: data.referredBy ?? null,
-           isDisabled: typeof data.isDisabled === 'boolean' ? data.isDisabled : false,
-           createdAt: safeToDate(data.createdAt) || new Date(0), // Use epoch if null
-           updatedAt: safeToDate(data.updatedAt) || new Date(0), // Use epoch if null
-           lastPayoutRequestAt: safeToDate(data.lastPayoutRequestAt), // Can be null
-           payoutDetails: data.payoutDetails ?? null,
-         };
-          // console.log("ADMIN: Mapped user:", profile.uid, profile.email); // Optional: Log mapped data
-         return profile;
-      });
+      console.log(`ADMIN: Mapped ${usersData.length} valid user profiles.`);
 
-      // Optional: Client-side filtering if name search is needed and not handled by Firestore query
-      let finalUsersData = usersData;
-      if (search && searchTerm && !constraints.some(c => c.toString().includes('displayName'))) { // Example check if query didn't include name
-          // finalUsersData = usersData.filter(u => u.displayName?.toLowerCase().includes(searchTerm.toLowerCase()));
-          // console.log(`ADMIN: Applied client-side filter for name, ${finalUsersData.length} results remain.`);
-      }
-
-
-      if (loadMore) {
-        setUsers(prev => [...prev, ...finalUsersData]);
+      // Update state
+      if (isInitialOrNewSearch) {
+        setUsers(usersData);
       } else {
-        setUsers(finalUsersData);
+        setUsers(prev => [...prev, ...usersData]);
       }
 
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-      setHasMore(querySnapshot.docs.length === USERS_PER_PAGE);
-      console.log(`ADMIN: Fetch successful. Has more: ${querySnapshot.docs.length === USERS_PER_PAGE}`);
+      const newLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
+      setLastVisible(newLastVisible);
+      const newHasMore = querySnapshot.docs.length === USERS_PER_PAGE;
+      setHasMore(newHasMore);
+      console.log(`ADMIN: Fetch successful. Has more: ${newHasMore}`);
 
     } catch (err) {
       console.error("ADMIN: Error fetching users:", err);
@@ -180,39 +177,45 @@ function AdminUsersPageContent() {
       setError(errorMsg);
       toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
       setHasMore(false); // Stop pagination on error
+      if (isInitialOrNewSearch) setUsers([]); // Clear users on initial load error
     } finally {
-       console.log("ADMIN: Setting loading states to false.");
+      console.log("ADMIN: Setting loading states to false.");
       setLoading(false);
       setLoadingMore(false);
       setIsSearching(false);
     }
-  }, [searchTerm, lastVisible, toast]);
+  }, [lastVisible, toast]); // Include lastVisible and toast
 
+  // Initial fetch effect
   useEffect(() => {
-     // Ensure admin role before fetching
-     if (adminProfile && adminProfile.role === 'admin') {
-         fetchUsers(false, false); // Initial fetch on mount or when admin role confirmed
-     } else if (adminProfile && adminProfile.role !== 'admin'){
-         setError("Access Denied: You do not have permission to view this page.");
-         setLoading(false);
-     }
-     // If adminProfile is null (still loading auth), the loading state handles the UI
-  }, [adminProfile, fetchUsers]);
+    // Ensure admin role before fetching
+    if (adminProfile && adminProfile.role === 'admin') {
+      console.log("ADMIN: Admin profile confirmed, initiating initial fetch.");
+      fetchUsers(false, false, searchTerm); // Pass current search term even on initial load
+    } else if (adminProfile && adminProfile.role !== 'admin') {
+      setError("Access Denied: You do not have permission to view this page.");
+      setLoading(false);
+    }
+    // No action if adminProfile is null (auth still loading)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminProfile]); // Depend only on adminProfile confirmation
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchUsers(false, true); // Fetch with search term, reset pagination
+    console.log(`ADMIN: Manual search triggered for term: "${searchTerm}"`);
+    fetchUsers(false, true, searchTerm); // Fetch with search term, reset pagination
   };
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      fetchUsers(true, searchTerm !== ''); // Pass true for loadMore
+      console.log("ADMIN: Load more triggered.");
+      fetchUsers(true, searchTerm !== '', searchTerm); // Pass true for loadMore and current search term
     }
   };
 
   // --- Toggle User Disabled Status ---
   const handleToggleUserStatus = async (userToUpdate: UserProfile) => {
-    if (!userToUpdate) return;
+    if (!userToUpdate || !db) return;
     if (adminProfile?.uid === userToUpdate.uid) {
         toast({ variant: "destructive", title: "Action Forbidden", description: "Administrators cannot disable their own account." });
         return;
@@ -254,13 +257,15 @@ function AdminUsersPageContent() {
   };
 
 
-  // Initial loading state or error state
-  if (loading && users.length === 0) {
+  // Show skeleton only during the absolute initial load
+  if (loading && users.length === 0 && !error) {
+    console.log("ADMIN: Rendering skeleton (initial load)...");
     return <UsersTableSkeleton />;
   }
 
    // Handle case where admin role is not confirmed or access denied error
    if ((!loading && !adminProfile) || (adminProfile && adminProfile.role !== 'admin')) {
+      console.log("ADMIN: Rendering Access Denied message.");
       return (
           <div className="container mx-auto p-4 md:p-8">
               <Alert variant="destructive">
@@ -274,7 +279,7 @@ function AdminUsersPageContent() {
       );
    }
 
-
+  console.log("ADMIN: Rendering main content. Loading:", loading, "Users:", users.length, "Error:", error);
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold">Manage Users</h1>
@@ -318,7 +323,6 @@ function AdminUsersPageContent() {
           <CardDescription>View and manage user accounts.</CardDescription>
         </CardHeader>
         <CardContent>
-           {/* Show skeleton only during initial load when users array is empty */}
            {loading && users.length === 0 ? (
              <UsersTableSkeleton />
             // Show "No results" only after loading if search was performed and no users match
