@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
@@ -22,10 +22,10 @@ import {
   QueryConstraint,
   DocumentData,
   QueryDocumentSnapshot,
-  addDoc // Import addDoc for creating new stores
+  addDoc 
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import type { Store, CashbackType } from '@/lib/types'; // Ensure Store type is defined
+import type { Store, CashbackType, Category, StoreFormValues as StoreFormType } from '@/lib/types'; 
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -67,9 +67,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import AdminGuard from '@/components/guards/admin-guard'; // Ensure page is protected
-import Image from 'next/image'; // For logo preview
-import { Switch } from '@/components/ui/switch'; // For toggling active status
+import AdminGuard from '@/components/guards/admin-guard'; 
+import Image from 'next/image'; 
+import { Switch } from '@/components/ui/switch'; 
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -79,26 +79,41 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
-import { safeToDate } from '@/lib/utils'; // Utility function
+import { safeToDate } from '@/lib/utils'; 
+import { MultiSelect } from '@/components/ui/multi-select';
+
 
 const STORES_PER_PAGE = 15;
 
 // Zod schema for store form validation
 const storeSchema = z.object({
   name: z.string().min(2, 'Store name must be at least 2 characters').max(100, 'Store name too long'),
+  logoUrl: z.string().url('Invalid URL format').optional().or(z.literal('')), 
+  heroImageUrl: z.string().url('Invalid URL format').optional().or(z.literal('')),
   affiliateLink: z.string().url('Invalid URL format'),
   cashbackRate: z.string().min(1, 'Cashback rate display is required').max(50, 'Rate display too long'),
   cashbackRateValue: z.number().min(0, 'Cashback value must be non-negative'),
   cashbackType: z.enum(['percentage', 'fixed']),
   description: z.string().min(10, 'Description must be at least 10 characters').max(500, 'Description too long'),
-  logoUrl: z.string().url('Invalid URL format').optional().or(z.literal('')), // Optional logo URL
+  detailedDescription: z.string().max(2000, "Detailed description too long").optional().nullable(),
   categories: z.array(z.string()).min(1, 'At least one category is required'),
-  terms: z.string().optional(),
+  rating: z.number().min(0).max(5).optional().nullable(),
+  ratingCount: z.number().min(0).optional().nullable(),
+  cashbackTrackingTime: z.string().max(50, "Tracking time too long").optional().nullable(),
+  cashbackConfirmationTime: z.string().max(50, "Confirmation time too long").optional().nullable(),
+  cashbackOnAppOrders: z.boolean().optional().nullable(),
+  detailedCashbackRatesLink: z.string().url("Invalid URL").optional().nullable(),
+  topOffersText: z.string().max(500, "Top offers text too long").optional().nullable(),
+  offerDetailsLink: z.string().url("Invalid URL").optional().nullable(),
+  terms: z.string().optional().nullable(),
   isFeatured: z.boolean().default(false),
   isActive: z.boolean().default(true),
+  dataAiHint: z.string().max(50, 'AI Hint too long').optional().nullable(),
 });
 
+
 type StoreFormValues = z.infer<typeof storeSchema>;
+
 
 // Helper function to map status to badge variant
 const getStatusVariant = (isActive: boolean): "default" | "secondary" => {
@@ -125,6 +140,8 @@ function AdminStoresPageContent() {
   const [isSaving, setIsSaving] = useState(false);
   const [deletingStoreId, setDeletingStoreId] = useState<string | null>(null); // Track which store is being deleted
   const [updatingStoreId, setUpdatingStoreId] = useState<string | null>(null); // Track status updates
+  const [categoriesList, setCategoriesList] = useState<{ value: string; label: string }[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
 
 
   // React Hook Form setup
@@ -132,18 +149,53 @@ function AdminStoresPageContent() {
     resolver: zodResolver(storeSchema),
     defaultValues: {
       name: '',
+      logoUrl: '',
+      heroImageUrl: '',
       affiliateLink: '',
       cashbackRate: '',
       cashbackRateValue: 0,
       cashbackType: 'percentage',
       description: '',
-      logoUrl: '',
+      detailedDescription: '',
       categories: [],
+      rating: null,
+      ratingCount: null,
+      cashbackTrackingTime: null,
+      cashbackConfirmationTime: null,
+      cashbackOnAppOrders: null,
+      detailedCashbackRatesLink: null,
+      topOffersText: null,
+      offerDetailsLink: null,
       terms: '',
       isFeatured: false,
       isActive: true,
+      dataAiHint: '',
     },
   });
+
+   // Fetch categories for the multi-select dropdown
+   useEffect(() => {
+    const fetchCategories = async () => {
+      setLoadingCategories(true);
+      try {
+        const categoriesCollection = collection(db, 'categories');
+        const q = query(categoriesCollection, orderBy('name', 'asc'));
+        const querySnapshot = await getDocs(q);
+        const fetchedCategories = querySnapshot.docs.map(doc => ({
+           value: doc.id, // Use slug/ID as value
+           label: doc.data().name || doc.id, // Use name as label
+        }));
+        setCategoriesList(fetchedCategories);
+      } catch (err) {
+        console.error("Error fetching categories:", err);
+        toast({ variant: "destructive", title: "Error", description: "Could not load categories." });
+      } finally {
+        setLoadingCategories(false);
+      }
+    };
+    fetchCategories();
+  }, [toast]);
+
 
   const fetchStores = useCallback(async (loadMore = false, search = false) => {
     if (!loadMore) {
@@ -160,17 +212,14 @@ function AdminStoresPageContent() {
       const storesCollection = collection(db, 'stores');
       const constraints: QueryConstraint[] = [];
 
-      // Apply searching by name (case-insensitive requires backend/alternative search)
-      // Firestore basic search:
       if (search && searchTerm) {
         constraints.push(where('name', '>=', searchTerm));
         constraints.push(where('name', '<=', searchTerm + '\uf8ff'));
       }
 
-      // Apply ordering and pagination
-       constraints.push(orderBy('name')); // Primary order by name
+       constraints.push(orderBy('name')); 
        if (!search) {
-         constraints.push(orderBy('createdAt', 'desc')); // Default secondary order
+         constraints.push(orderBy('createdAt', 'desc')); 
        }
 
       if (loadMore && lastVisible) {
@@ -187,15 +236,26 @@ function AdminStoresPageContent() {
             id: docSnap.id,
             name: data.name || '',
             logoUrl: data.logoUrl || null,
+            heroImageUrl: data.heroImageUrl || null,
             affiliateLink: data.affiliateLink || '',
             cashbackRate: data.cashbackRate || '',
             cashbackRateValue: typeof data.cashbackRateValue === 'number' ? data.cashbackRateValue : 0,
             cashbackType: data.cashbackType || 'percentage',
             description: data.description || '',
+            detailedDescription: data.detailedDescription || null,
             categories: Array.isArray(data.categories) ? data.categories : [],
+            rating: data.rating || null,
+            ratingCount: data.ratingCount || null,
+            cashbackTrackingTime: data.cashbackTrackingTime || null,
+            cashbackConfirmationTime: data.cashbackConfirmationTime || null,
+            cashbackOnAppOrders: data.cashbackOnAppOrders === undefined ? null : data.cashbackOnAppOrders,
+            detailedCashbackRatesLink: data.detailedCashbackRatesLink || null,
+            topOffersText: data.topOffersText || null,
+            offerDetailsLink: data.offerDetailsLink || null,
             terms: data.terms || '',
             isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
             isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
+            dataAiHint: data.dataAiHint || null,
             createdAt: safeToDate(data.createdAt) || new Date(0),
             updatedAt: safeToDate(data.updatedAt) || new Date(0),
           } as Store;
@@ -221,48 +281,61 @@ function AdminStoresPageContent() {
       setLoadingMore(false);
       setIsSearching(false);
     }
-  }, [searchTerm, lastVisible, toast]); // Add toast
+  }, [searchTerm, lastVisible, toast]); 
 
   useEffect(() => {
-    fetchStores(false, false); // Initial fetch on mount
-  }, [fetchStores]); // fetchStores includes its dependencies
+    fetchStores(false, false); 
+  }, [fetchStores]); 
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchStores(false, true); // Fetch with search term, reset pagination
+    fetchStores(false, true); 
   };
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      fetchStores(true, searchTerm !== ''); // Pass true for loadMore
+      fetchStores(true, searchTerm !== ''); 
     }
   };
 
   // --- Dialog and Form Handlers ---
   const openAddDialog = () => {
     setEditingStore(null);
-    form.reset({ // Reset form to defaults for adding
-        name: '', affiliateLink: '', cashbackRate: '', cashbackRateValue: 0,
-        cashbackType: 'percentage', description: '', logoUrl: '',
-        categories: [], terms: '', isFeatured: false, isActive: true,
+    form.reset({ 
+        name: '', logoUrl: '', heroImageUrl: '', affiliateLink: '', cashbackRate: '', cashbackRateValue: 0,
+        cashbackType: 'percentage', description: '', detailedDescription: '',
+        categories: [], rating: null, ratingCount: null, cashbackTrackingTime: null,
+        cashbackConfirmationTime: null, cashbackOnAppOrders: null, detailedCashbackRatesLink: null,
+        topOffersText: null, offerDetailsLink: null, terms: '', isFeatured: false, isActive: true, dataAiHint: '',
     });
     setIsDialogOpen(true);
   };
 
   const openEditDialog = (store: Store) => {
     setEditingStore(store);
-    form.reset({ // Reset form with the store's data for editing
+    form.reset({ 
       name: store.name,
+      logoUrl: store.logoUrl || '',
+      heroImageUrl: store.heroImageUrl || '',
       affiliateLink: store.affiliateLink,
       cashbackRate: store.cashbackRate,
       cashbackRateValue: store.cashbackRateValue,
       cashbackType: store.cashbackType,
       description: store.description,
-      logoUrl: store.logoUrl || '',
+      detailedDescription: store.detailedDescription || '',
       categories: store.categories || [],
+      rating: store.rating || null,
+      ratingCount: store.ratingCount || null,
+      cashbackTrackingTime: store.cashbackTrackingTime || null,
+      cashbackConfirmationTime: store.cashbackConfirmationTime || null,
+      cashbackOnAppOrders: store.cashbackOnAppOrders === undefined ? null : store.cashbackOnAppOrders,
+      detailedCashbackRatesLink: store.detailedCashbackRatesLink || null,
+      topOffersText: store.topOffersText || null,
+      offerDetailsLink: store.offerDetailsLink || null,
       terms: store.terms || '',
       isFeatured: store.isFeatured,
       isActive: store.isActive,
+      dataAiHint: store.dataAiHint || '',
     });
     setIsDialogOpen(true);
   };
@@ -271,36 +344,32 @@ function AdminStoresPageContent() {
     setIsSaving(true);
     setError(null);
 
+    const submissionData: Partial<StoreFormType> = Object.fromEntries(
+      Object.entries(data).map(([key, value]) => [key, value === '' ? null : value])
+    );
+
     try {
       if (editingStore) {
-        // --- Update Existing Store ---
         const storeDocRef = doc(db, 'stores', editingStore.id);
         await updateDoc(storeDocRef, {
-          ...data,
-           logoUrl: data.logoUrl || null, // Ensure null if empty string
-           terms: data.terms || null,
+          ...submissionData,
           updatedAt: serverTimestamp(),
         });
-        // Update local state
-        setStores(prev => prev.map(s => s.id === editingStore.id ? { ...s, ...data, updatedAt: new Date() } : s));
+        setStores(prev => prev.map(s => s.id === editingStore.id ? { ...s, ...submissionData, updatedAt: new Date() } as Store : s));
         toast({ title: "Store Updated", description: `${data.name} details saved.` });
       } else {
-        // --- Add New Store ---
         const storesCollection = collection(db, 'stores');
         const newDocRef = await addDoc(storesCollection, {
-          ...data,
-           logoUrl: data.logoUrl || null, // Ensure null if empty string
-           terms: data.terms || null,
+          ...submissionData,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        // Add to local state (or refetch)
-         const newStore: Store = { ...data, id: newDocRef.id, createdAt: new Date(), updatedAt: new Date() }; // Estimate dates
-         setStores(prev => [newStore, ...prev]); // Add to beginning
+         const newStore: Store = { ...submissionData, id: newDocRef.id, createdAt: new Date(), updatedAt: new Date() } as Store; 
+         setStores(prev => [newStore, ...prev]); 
         toast({ title: "Store Added", description: `${data.name} created successfully.` });
       }
-      setIsDialogOpen(false); // Close dialog on success
-      form.reset(); // Reset form after submission
+      setIsDialogOpen(false); 
+      form.reset(); 
     } catch (err) {
       console.error("Error saving store:", err);
       const errorMsg = err instanceof Error ? err.message : "Could not save store details.";
@@ -314,7 +383,7 @@ function AdminStoresPageContent() {
    // --- Delete Store ---
    const handleDeleteStore = async () => {
      if (!deletingStoreId) return;
-     console.log(`Attempting to delete store: ${deletingStoreId}`); // Debug log
+     console.log(`Attempting to delete store: ${deletingStoreId}`); 
      try {
        const storeDocRef = doc(db, 'stores', deletingStoreId);
        await deleteDoc(storeDocRef);
@@ -325,14 +394,14 @@ function AdminStoresPageContent() {
        const errorMsg = err instanceof Error ? err.message : "Could not delete the store.";
        toast({ variant: "destructive", title: "Deletion Failed", description: errorMsg });
      } finally {
-       setDeletingStoreId(null); // Reset deleting state
+       setDeletingStoreId(null); 
      }
    };
 
     // --- Toggle Active Status ---
     const handleToggleActiveStatus = async (storeToUpdate: Store) => {
       if (!storeToUpdate) return;
-      setUpdatingStoreId(storeToUpdate.id); // Indicate loading state for this specific store
+      setUpdatingStoreId(storeToUpdate.id); 
 
       const storeDocRef = doc(db, 'stores', storeToUpdate.id);
       const newStatus = !storeToUpdate.isActive;
@@ -343,10 +412,9 @@ function AdminStoresPageContent() {
           updatedAt: serverTimestamp(),
         });
 
-        // Update local state immediately
         setStores(prevStores =>
           prevStores.map(s =>
-            s.id === storeToUpdate.id ? { ...s, isActive: newStatus, updatedAt: new Date() } : s // Estimate updatedAt
+            s.id === storeToUpdate.id ? { ...s, isActive: newStatus, updatedAt: new Date() } : s 
           )
         );
 
@@ -363,7 +431,7 @@ function AdminStoresPageContent() {
           description: errorMsg,
         });
       } finally {
-        setUpdatingStoreId(null); // Reset loading state for this user
+        setUpdatingStoreId(null); 
       }
     };
 
@@ -389,10 +457,9 @@ function AdminStoresPageContent() {
         </Alert>
       )}
 
-      {/* Filtering and Searching Controls */}
       <Card>
         <CardHeader>
-          <CardTitle>Filter & Search Stores</CardTitle>
+          <CardTitle>Filter &amp; Search Stores</CardTitle>
           <CardDescription>Search by store name.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col sm:flex-row gap-4">
@@ -413,7 +480,6 @@ function AdminStoresPageContent() {
         </CardContent>
       </Card>
 
-      {/* Stores Table */}
       <Card>
         <CardHeader>
           <CardTitle>Store List</CardTitle>
@@ -484,7 +550,6 @@ function AdminStoresPageContent() {
                              <DropdownMenuSeparator />
                              <AlertDialog>
                                <AlertDialogTrigger asChild>
-                                   {/* Custom styled button to match DropdownMenuItem */}
                                    <Button variant="ghost" className="w-full justify-start px-2 py-1.5 text-sm font-normal text-destructive hover:bg-destructive/10 focus:text-destructive focus:bg-destructive/10 h-auto relative flex cursor-default select-none items-center rounded-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50">
                                       <Trash2 className="mr-2 h-4 w-4"/> Delete Store
                                    </Button>
@@ -500,8 +565,8 @@ function AdminStoresPageContent() {
                                    <AlertDialogCancel onClick={() => setDeletingStoreId(null)}>Cancel</AlertDialogCancel>
                                    <AlertDialogAction
                                       onClick={() => {
-                                           setDeletingStoreId(store.id); // Set the ID to delete
-                                           handleDeleteStore(); // Call delete handler
+                                           setDeletingStoreId(store.id); 
+                                           handleDeleteStore(); 
                                       }}
                                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
                                        Delete
@@ -531,145 +596,191 @@ function AdminStoresPageContent() {
 
        {/* Add/Edit Store Dialog */}
        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-         <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
            <DialogHeader>
              <DialogTitle>{editingStore ? 'Edit Store' : 'Add New Store'}</DialogTitle>
              <DialogDescription>
                {editingStore ? `Update details for ${editingStore.name}.` : 'Enter the details for the new store.'}
              </DialogDescription>
            </DialogHeader>
-           <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4 py-4">
-             {/* Store Name */}
-             <div className="grid grid-cols-4 items-center gap-4">
-               <Label htmlFor="name" className="text-right">Name</Label>
-               <Input id="name" {...form.register('name')} className="col-span-3" disabled={isSaving} />
-               {form.formState.errors.name && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.name.message}</p>}
-             </div>
+           <form onSubmit={form.handleSubmit(onSubmit)} className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 py-4">
+             
+             {/* Column 1 */}
+             <div className="space-y-4">
+                <div className="space-y-1">
+                  <Label htmlFor="name">Name*</Label>
+                  <Input id="name" {...form.register('name')} disabled={isSaving} />
+                  {form.formState.errors.name && <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>}
+                </div>
 
-              {/* Logo URL */}
-             <div className="grid grid-cols-4 items-center gap-4">
-               <Label htmlFor="logoUrl" className="text-right">Logo URL</Label>
-               <Input id="logoUrl" {...form.register('logoUrl')} className="col-span-3" placeholder="https://..." disabled={isSaving} />
-                {form.watch('logoUrl') && (
-                    <div className="col-span-4 col-start-2">
-                        <Image src={form.watch('logoUrl')!} alt="Logo Preview" width={80} height={40} className="object-contain border rounded-sm mt-1" />
+                <div className="space-y-1">
+                  <Label htmlFor="logoUrl">Logo URL</Label>
+                  <Input id="logoUrl" {...form.register('logoUrl')} placeholder="https://..." disabled={isSaving} />
+                  {form.watch('logoUrl') && (
+                      <div className="mt-1">
+                          <Image src={form.watch('logoUrl')!} alt="Logo Preview" width={80} height={40} className="object-contain border rounded-sm" />
+                      </div>
+                  )}
+                  {form.formState.errors.logoUrl && <p className="text-sm text-destructive">{form.formState.errors.logoUrl.message}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="heroImageUrl">Hero Image URL (for store page)</Label>
+                  <Input id="heroImageUrl" {...form.register('heroImageUrl')} placeholder="https://..." disabled={isSaving} />
+                  {form.watch('heroImageUrl') && (
+                      <div className="mt-1">
+                          <Image src={form.watch('heroImageUrl')!} alt="Hero Preview" width={160} height={80} className="object-cover border rounded-sm aspect-[2/1]" />
+                      </div>
+                  )}
+                  {form.formState.errors.heroImageUrl && <p className="text-sm text-destructive">{form.formState.errors.heroImageUrl.message}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="affiliateLink">Affiliate Link*</Label>
+                  <Input id="affiliateLink" {...form.register('affiliateLink')} placeholder="https://..." disabled={isSaving} />
+                  {form.formState.errors.affiliateLink && <p className="text-sm text-destructive">{form.formState.errors.affiliateLink.message}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="cashbackRate">Rate Display*</Label>
+                  <Input id="cashbackRate" {...form.register('cashbackRate')} placeholder="e.g., Up to 5% or Flat ₹100" disabled={isSaving} />
+                  {form.formState.errors.cashbackRate && <p className="text-sm text-destructive">{form.formState.errors.cashbackRate.message}</p>}
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                    <div className="space-y-1 col-span-2">
+                      <Label htmlFor="cashbackRateValue">Rate Value*</Label>
+                      <Input id="cashbackRateValue" type="number" step="0.01" {...form.register('cashbackRateValue', { valueAsNumber: true })} disabled={isSaving}/>
+                      {form.formState.errors.cashbackRateValue && <p className="text-sm text-destructive">{form.formState.errors.cashbackRateValue.message}</p>}
                     </div>
-                )}
-               {form.formState.errors.logoUrl && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.logoUrl.message}</p>}
+                    <div className="space-y-1">
+                        <Label htmlFor="cashbackType">Type*</Label>
+                        <Select value={form.watch('cashbackType')} onValueChange={(value) => form.setValue('cashbackType', value as CashbackType)} disabled={isSaving}>
+                          <SelectTrigger id="cashbackType"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="percentage">%</SelectItem>
+                            <SelectItem value="fixed">₹</SelectItem>
+                          </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+                 {form.formState.errors.cashbackType && <p className="text-sm text-destructive">{form.formState.errors.cashbackType.message}</p>}
+                
+                <div className="space-y-1">
+                  <Label htmlFor="description">Short Description*</Label>
+                  <Textarea id="description" {...form.register('description')} rows={3} disabled={isSaving} />
+                  {form.formState.errors.description && <p className="text-sm text-destructive">{form.formState.errors.description.message}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="detailedDescription">Detailed Description (for store page)</Label>
+                  <Textarea id="detailedDescription" {...form.register('detailedDescription')} rows={5} disabled={isSaving} />
+                </div>
              </div>
 
-             {/* Affiliate Link */}
-             <div className="grid grid-cols-4 items-center gap-4">
-               <Label htmlFor="affiliateLink" className="text-right">Affiliate Link</Label>
-               <Input id="affiliateLink" {...form.register('affiliateLink')} className="col-span-3" placeholder="https://..." disabled={isSaving} />
-               {form.formState.errors.affiliateLink && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.affiliateLink.message}</p>}
-             </div>
-
-             {/* Cashback Rate Display */}
-             <div className="grid grid-cols-4 items-center gap-4">
-               <Label htmlFor="cashbackRate" className="text-right">Rate Display</Label>
-               <Input id="cashbackRate" {...form.register('cashbackRate')} className="col-span-3" placeholder="e.g., Up to 5% or Flat ₹100" disabled={isSaving} />
-               {form.formState.errors.cashbackRate && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.cashbackRate.message}</p>}
-             </div>
-
-              {/* Cashback Rate Value & Type */}
-             <div className="grid grid-cols-4 items-center gap-4">
-               <Label htmlFor="cashbackRateValue" className="text-right">Rate Value</Label>
-               <div className="col-span-3 flex gap-2">
-                  <Input
-                    id="cashbackRateValue"
-                    type="number"
-                    step="0.01"
-                    {...form.register('cashbackRateValue', { valueAsNumber: true })}
-                    className="flex-1"
-                    disabled={isSaving}
-                  />
-                 <Select
-                   value={form.watch('cashbackType')}
-                   onValueChange={(value) => form.setValue('cashbackType', value as CashbackType)}
-                    disabled={isSaving}
-                 >
-                   <SelectTrigger className="w-[120px]">
-                     <SelectValue placeholder="Type" />
-                   </SelectTrigger>
-                   <SelectContent>
-                     <SelectItem value="percentage">%</SelectItem>
-                     <SelectItem value="fixed">₹ (Fixed)</SelectItem>
-                   </SelectContent>
-                 </Select>
-               </div>
-                {form.formState.errors.cashbackRateValue && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.cashbackRateValue.message}</p>}
-                {form.formState.errors.cashbackType && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.cashbackType.message}</p>}
-             </div>
-
-
-             {/* Description */}
-             <div className="grid grid-cols-4 items-center gap-4">
-               <Label htmlFor="description" className="text-right">Description</Label>
-               <Textarea id="description" {...form.register('description')} className="col-span-3" rows={3} disabled={isSaving} />
-               {form.formState.errors.description && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.description.message}</p>}
-             </div>
-
-             {/* Categories */}
-             <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="categories" className="text-right">Categories</Label>
-                <Input
-                    id="categories"
-                    {...form.register('categories')}
-                    className="col-span-3"
-                    placeholder="Comma-separated (e.g., Fashion, Electronics)"
-                    disabled={isSaving}
-                    // Custom parsing logic to handle comma-separated input
-                    onChange={(e) => {
-                       const categoriesArray = e.target.value.split(',').map(cat => cat.trim()).filter(Boolean);
-                       form.setValue('categories', categoriesArray);
-                    }}
-                    // Display the array back as a comma-separated string
-                    value={Array.isArray(form.watch('categories')) ? form.watch('categories').join(', ') : ''}
-                />
-                {form.formState.errors.categories && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.categories.message}</p>}
-             </div>
-
-
-             {/* Terms */}
-             <div className="grid grid-cols-4 items-center gap-4">
-               <Label htmlFor="terms" className="text-right">Terms</Label>
-               <Textarea id="terms" {...form.register('terms')} className="col-span-3" rows={2} placeholder="Optional terms and conditions" disabled={isSaving} />
-             </div>
-
-              {/* Flags: Featured & Active */}
-              <div className="grid grid-cols-4 items-start gap-4">
-                 <Label className="text-right pt-2">Flags</Label>
-                 <div className="col-span-3 space-y-3">
-                     <div className="flex items-center space-x-2">
-                         <Checkbox
-                           id="isFeatured"
-                           checked={form.watch('isFeatured')}
-                           onCheckedChange={(checked) => form.setValue('isFeatured', !!checked)}
-                           disabled={isSaving}
-                         />
-                         <Label htmlFor="isFeatured" className="font-normal">Featured Store (highlight on homepage)</Label>
-                     </div>
-                     <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="isActive"
-                          checked={form.watch('isActive')}
-                          onCheckedChange={(checked) => form.setValue('isActive', !!checked)}
+            {/* Column 2 */}
+             <div className="space-y-4">
+                <div className="space-y-1">
+                  <Label htmlFor="categories">Categories*</Label>
+                  <Controller
+                      control={form.control}
+                      name="categories"
+                      render={({ field }) => (
+                          <MultiSelect
+                          options={categoriesList}
+                          selected={field.value}
+                          onChange={field.onChange}
+                          isLoading={loadingCategories}
                           disabled={isSaving}
-                        />
-                         <Label htmlFor="isActive" className="font-normal">Active (visible to users)</Label>
-                     </div>
+                          placeholder="Select categories..."
+                          />
+                      )}
+                  />
+                  {form.formState.errors.categories && <p className="text-sm text-destructive">{form.formState.errors.categories.message}</p>}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                        <Label htmlFor="rating">Rating (0-5)</Label>
+                        <Input id="rating" type="number" step="0.1" {...form.register('rating', { valueAsNumber: true, setValueAs: v => v === null || v === '' ? null : parseFloat(v) })} disabled={isSaving} />
+                    </div>
+                    <div className="space-y-1">
+                        <Label htmlFor="ratingCount">Rating Count</Label>
+                        <Input id="ratingCount" type="number" {...form.register('ratingCount', { valueAsNumber: true, setValueAs: v => v === null || v === '' ? null : parseInt(v) })} disabled={isSaving} />
+                    </div>
+                </div>
+
+                <div className="space-y-1">
+                    <Label htmlFor="cashbackTrackingTime">Cashback Tracking Time</Label>
+                    <Input id="cashbackTrackingTime" {...form.register('cashbackTrackingTime')} placeholder="e.g., 36 Hours" disabled={isSaving} />
+                </div>
+                <div className="space-y-1">
+                    <Label htmlFor="cashbackConfirmationTime">Cashback Confirmation Time</Label>
+                    <Input id="cashbackConfirmationTime" {...form.register('cashbackConfirmationTime')} placeholder="e.g., 35 Days" disabled={isSaving} />
+                </div>
+                <div className="flex items-center space-x-2 pt-2">
+                    <Controller
+                        control={form.control}
+                        name="cashbackOnAppOrders"
+                        render={({ field }) => (
+                            <Checkbox id="cashbackOnAppOrders" checked={field.value ?? false} onCheckedChange={field.onChange} disabled={isSaving} />
+                        )}
+                    />
+                    <Label htmlFor="cashbackOnAppOrders" className="font-normal">Cashback on App Orders?</Label>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="detailedCashbackRatesLink">Detailed Cashback Rates Link</Label>
+                  <Input id="detailedCashbackRatesLink" type="url" {...form.register('detailedCashbackRatesLink')} placeholder="https://..." disabled={isSaving} />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="topOffersText">Top Offers Text (for store page)</Label>
+                  <Textarea id="topOffersText" {...form.register('topOffersText')} rows={3} disabled={isSaving} />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="offerDetailsLink">"See Offer Details" Link</Label>
+                  <Input id="offerDetailsLink" type="url" {...form.register('offerDetailsLink')} placeholder="https://..." disabled={isSaving} />
+                </div>
+                
+                <div className="space-y-1">
+                  <Label htmlFor="terms">Terms &amp; Conditions</Label>
+                  <Textarea id="terms" {...form.register('terms')} rows={3} placeholder="Optional terms and conditions" disabled={isSaving} />
+                </div>
+
+                 <div className="space-y-1">
+                    <Label htmlFor="dataAiHint">Logo AI Hint</Label>
+                    <Input id="dataAiHint" {...form.register('dataAiHint')} placeholder="Keywords for logo (e.g., company name logo)" disabled={isSaving} />
                  </div>
-              </div>
 
+                <div className="flex items-center space-x-2 pt-2">
+                    <Controller
+                        control={form.control}
+                        name="isFeatured"
+                        render={({ field }) => (
+                            <Checkbox id="isFeatured" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />
+                        )}
+                    />
+                    <Label htmlFor="isFeatured" className="font-normal">Featured Store</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                    <Controller
+                        control={form.control}
+                        name="isActive"
+                        render={({ field }) => (
+                           <Checkbox id="isActive" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />
+                        )}
+                    />
+                    <Label htmlFor="isActive" className="font-normal">Active (visible to users)</Label>
+                </div>
+            </div>
 
-             <DialogFooter>
+             <DialogFooter className="md:col-span-2">
                <DialogClose asChild>
                  <Button type="button" variant="outline" disabled={isSaving}>
                    Cancel
                  </Button>
                </DialogClose>
-               <Button type="submit" disabled={isSaving}>
+               <Button type="submit" disabled={isSaving || loadingCategories}>
                  {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                  {editingStore ? 'Save Changes' : 'Add Store'}
                </Button>

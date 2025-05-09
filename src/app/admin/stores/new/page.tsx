@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from 'react';
@@ -9,7 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { collection, addDoc, serverTimestamp, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import type { Store, CashbackType, Category } from '@/lib/types';
+import type { Store, CashbackType, Category, StoreFormValues as StoreFormType } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -23,23 +22,33 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import AdminGuard from '@/components/guards/admin-guard';
 import Image from 'next/image';
 import Link from 'next/link';
-import { MultiSelect } from '@/components/ui/multi-select'; // Assuming a MultiSelect component exists
+import { MultiSelect } from '@/components/ui/multi-select';
 
 
 // Zod schema for store form validation (same as in stores/page.tsx)
 const storeSchema = z.object({
   name: z.string().min(2, 'Store name must be at least 2 characters').max(100, 'Store name too long'),
+  logoUrl: z.string().url('Invalid URL format').optional().or(z.literal('')), 
+  heroImageUrl: z.string().url('Invalid URL format').optional().or(z.literal('')),
   affiliateLink: z.string().url('Invalid URL format'),
   cashbackRate: z.string().min(1, 'Cashback rate display is required').max(50, 'Rate display too long'),
   cashbackRateValue: z.number().min(0, 'Cashback value must be non-negative'),
   cashbackType: z.enum(['percentage', 'fixed']),
   description: z.string().min(10, 'Description must be at least 10 characters').max(500, 'Description too long'),
-  logoUrl: z.string().url('Invalid URL format').optional().or(z.literal('')),
+  detailedDescription: z.string().max(2000, "Detailed description too long").optional().nullable(),
   categories: z.array(z.string()).min(1, 'At least one category is required'),
-  terms: z.string().optional(),
+  rating: z.number().min(0).max(5).optional().nullable(),
+  ratingCount: z.number().min(0).optional().nullable(),
+  cashbackTrackingTime: z.string().max(50, "Tracking time too long").optional().nullable(),
+  cashbackConfirmationTime: z.string().max(50, "Confirmation time too long").optional().nullable(),
+  cashbackOnAppOrders: z.boolean().optional().nullable(),
+  detailedCashbackRatesLink: z.string().url("Invalid URL").optional().nullable(),
+  topOffersText: z.string().max(500, "Top offers text too long").optional().nullable(),
+  offerDetailsLink: z.string().url("Invalid URL").optional().nullable(),
+  terms: z.string().optional().nullable(),
   isFeatured: z.boolean().default(false),
   isActive: z.boolean().default(true),
-  dataAiHint: z.string().max(50, 'AI Hint too long').optional(),
+  dataAiHint: z.string().max(50, 'AI Hint too long').optional().nullable(),
 });
 
 type StoreFormValues = z.infer<typeof storeSchema>;
@@ -56,13 +65,23 @@ function AddStorePageContent() {
     resolver: zodResolver(storeSchema),
     defaultValues: {
       name: '',
+      logoUrl: '',
+      heroImageUrl: '',
       affiliateLink: '',
       cashbackRate: '',
       cashbackRateValue: 0,
       cashbackType: 'percentage',
       description: '',
-      logoUrl: '',
+      detailedDescription: '',
       categories: [],
+      rating: null,
+      ratingCount: null,
+      cashbackTrackingTime: null,
+      cashbackConfirmationTime: null,
+      cashbackOnAppOrders: null,
+      detailedCashbackRatesLink: null,
+      topOffersText: null,
+      offerDetailsLink: null,
       terms: '',
       isFeatured: false,
       isActive: true,
@@ -79,8 +98,8 @@ function AddStorePageContent() {
         const q = query(categoriesCollection, orderBy('name', 'asc'));
         const querySnapshot = await getDocs(q);
         const fetchedCategories = querySnapshot.docs.map(doc => ({
-           value: doc.id, // Use slug/ID as value
-           label: doc.data().name || doc.id, // Use name as label
+           value: doc.id, 
+           label: doc.data().name || doc.id, 
         }));
         setCategoriesList(fetchedCategories);
       } catch (err) {
@@ -98,13 +117,14 @@ function AddStorePageContent() {
     setIsSaving(true);
     setError(null);
 
+    const submissionData: Partial<StoreFormType> = Object.fromEntries(
+      Object.entries(data).map(([key, value]) => [key, value === '' ? null : value])
+    );
+
     try {
       const storesCollection = collection(db, 'stores');
       await addDoc(storesCollection, {
-        ...data,
-        logoUrl: data.logoUrl || null,
-        terms: data.terms || null,
-        dataAiHint: data.dataAiHint || null,
+        ...submissionData,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -113,7 +133,7 @@ function AddStorePageContent() {
         title: "Store Added",
         description: `Store "${data.name}" created successfully.`,
       });
-      router.push('/admin/stores'); // Redirect back to the stores list
+      router.push('/admin/stores'); 
 
     } catch (err) {
       console.error("Error adding store:", err);
@@ -150,151 +170,182 @@ function AddStorePageContent() {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-             {/* Store Name */}
-             <div className="space-y-2">
-               <Label htmlFor="name">Store Name*</Label>
-               <Input id="name" {...form.register('name')} disabled={isSaving} />
-               {form.formState.errors.name && <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>}
-             </div>
-
-              {/* Logo URL */}
-             <div className="space-y-2">
-               <Label htmlFor="logoUrl">Logo URL</Label>
-               <Input id="logoUrl" {...form.register('logoUrl')} placeholder="https://..." disabled={isSaving} />
-                {form.watch('logoUrl') && (
-                    <div className="mt-2">
-                        <Image src={form.watch('logoUrl')!} alt="Logo Preview" width={80} height={40} className="object-contain border rounded-sm" />
-                    </div>
-                )}
-               {form.formState.errors.logoUrl && <p className="text-sm text-destructive">{form.formState.errors.logoUrl.message}</p>}
-             </div>
-
-             {/* Affiliate Link */}
-             <div className="space-y-2">
-               <Label htmlFor="affiliateLink">Affiliate Link*</Label>
-               <Input id="affiliateLink" {...form.register('affiliateLink')} placeholder="https://..." disabled={isSaving} />
-               {form.formState.errors.affiliateLink && <p className="text-sm text-destructive">{form.formState.errors.affiliateLink.message}</p>}
-             </div>
-
-             {/* Cashback Rate Display */}
-             <div className="space-y-2">
-               <Label htmlFor="cashbackRate">Rate Display*</Label>
-               <Input id="cashbackRate" {...form.register('cashbackRate')} placeholder="e.g., Up to 5% or Flat ₹100" disabled={isSaving} />
-               {form.formState.errors.cashbackRate && <p className="text-sm text-destructive">{form.formState.errors.cashbackRate.message}</p>}
-             </div>
-
-              {/* Cashback Rate Value & Type */}
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2 md:col-span-2">
-                   <Label htmlFor="cashbackRateValue">Rate Value*</Label>
-                   <Input
-                     id="cashbackRateValue"
-                     type="number"
-                     step="0.01"
-                     {...form.register('cashbackRateValue', { valueAsNumber: true })}
-                     disabled={isSaving}
-                   />
-                   {form.formState.errors.cashbackRateValue && <p className="text-sm text-destructive">{form.formState.errors.cashbackRateValue.message}</p>}
+          <form onSubmit={form.handleSubmit(onSubmit)} className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+             
+             {/* Column 1 */}
+             <div className="space-y-4">
+                <div className="space-y-1">
+                  <Label htmlFor="name">Name*</Label>
+                  <Input id="name" {...form.register('name')} disabled={isSaving} />
+                  {form.formState.errors.name && <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>}
                 </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="cashbackType">Rate Type*</Label>
-                    <Select
-                      value={form.watch('cashbackType')}
-                      onValueChange={(value) => form.setValue('cashbackType', value as CashbackType)}
-                       disabled={isSaving}
-                    >
-                      <SelectTrigger id="cashbackType">
-                        <SelectValue placeholder="Type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="percentage">%</SelectItem>
-                        <SelectItem value="fixed">₹ (Fixed)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                     {form.formState.errors.cashbackType && <p className="text-sm text-destructive">{form.formState.errors.cashbackType.message}</p>}
+
+                <div className="space-y-1">
+                  <Label htmlFor="logoUrl">Logo URL</Label>
+                  <Input id="logoUrl" {...form.register('logoUrl')} placeholder="https://..." disabled={isSaving} />
+                  {form.watch('logoUrl') && (
+                      <div className="mt-1">
+                          <Image src={form.watch('logoUrl')!} alt="Logo Preview" width={80} height={40} className="object-contain border rounded-sm" />
+                      </div>
+                  )}
+                  {form.formState.errors.logoUrl && <p className="text-sm text-destructive">{form.formState.errors.logoUrl.message}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="heroImageUrl">Hero Image URL (for store page)</Label>
+                  <Input id="heroImageUrl" {...form.register('heroImageUrl')} placeholder="https://..." disabled={isSaving} />
+                  {form.watch('heroImageUrl') && (
+                      <div className="mt-1">
+                          <Image src={form.watch('heroImageUrl')!} alt="Hero Preview" width={160} height={80} className="object-cover border rounded-sm aspect-[2/1]" />
+                      </div>
+                  )}
+                  {form.formState.errors.heroImageUrl && <p className="text-sm text-destructive">{form.formState.errors.heroImageUrl.message}</p>}
+                </div>
+                
+                <div className="space-y-1">
+                  <Label htmlFor="affiliateLink">Affiliate Link*</Label>
+                  <Input id="affiliateLink" {...form.register('affiliateLink')} placeholder="https://..." disabled={isSaving} />
+                  {form.formState.errors.affiliateLink && <p className="text-sm text-destructive">{form.formState.errors.affiliateLink.message}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="cashbackRate">Rate Display*</Label>
+                  <Input id="cashbackRate" {...form.register('cashbackRate')} placeholder="e.g., Up to 5% or Flat ₹100" disabled={isSaving} />
+                  {form.formState.errors.cashbackRate && <p className="text-sm text-destructive">{form.formState.errors.cashbackRate.message}</p>}
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                    <div className="space-y-1 col-span-2">
+                      <Label htmlFor="cashbackRateValue">Rate Value*</Label>
+                      <Input id="cashbackRateValue" type="number" step="0.01" {...form.register('cashbackRateValue', { valueAsNumber: true })} disabled={isSaving}/>
+                      {form.formState.errors.cashbackRateValue && <p className="text-sm text-destructive">{form.formState.errors.cashbackRateValue.message}</p>}
+                    </div>
+                    <div className="space-y-1">
+                        <Label htmlFor="cashbackType">Type*</Label>
+                        <Select value={form.watch('cashbackType')} onValueChange={(value) => form.setValue('cashbackType', value as CashbackType)} disabled={isSaving}>
+                          <SelectTrigger id="cashbackType"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="percentage">%</SelectItem>
+                            <SelectItem value="fixed">₹</SelectItem>
+                          </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+                 {form.formState.errors.cashbackType && <p className="text-sm text-destructive">{form.formState.errors.cashbackType.message}</p>}
+                
+                <div className="space-y-1">
+                  <Label htmlFor="description">Short Description*</Label>
+                  <Textarea id="description" {...form.register('description')} rows={3} disabled={isSaving} />
+                  {form.formState.errors.description && <p className="text-sm text-destructive">{form.formState.errors.description.message}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="detailedDescription">Detailed Description (for store page)</Label>
+                  <Textarea id="detailedDescription" {...form.register('detailedDescription')} rows={5} disabled={isSaving} />
+                </div>
+             </div>
+
+            {/* Column 2 */}
+             <div className="space-y-4">
+                <div className="space-y-1">
+                  <Label htmlFor="categories">Categories*</Label>
+                  <Controller
+                      control={form.control}
+                      name="categories"
+                      render={({ field }) => (
+                          <MultiSelect
+                          options={categoriesList}
+                          selected={field.value}
+                          onChange={field.onChange}
+                          isLoading={loadingCategories}
+                          disabled={isSaving}
+                          placeholder="Select categories..."
+                          />
+                      )}
+                  />
+                  {form.formState.errors.categories && <p className="text-sm text-destructive">{form.formState.errors.categories.message}</p>}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                        <Label htmlFor="rating">Rating (0-5)</Label>
+                        <Input id="rating" type="number" step="0.1" {...form.register('rating', { valueAsNumber: true, setValueAs: v => v === null || v === '' ? null : parseFloat(v) })} disabled={isSaving} />
+                    </div>
+                    <div className="space-y-1">
+                        <Label htmlFor="ratingCount">Rating Count</Label>
+                        <Input id="ratingCount" type="number" {...form.register('ratingCount', { valueAsNumber: true, setValueAs: v => v === null || v === '' ? null : parseInt(v) })} disabled={isSaving} />
+                    </div>
+                </div>
+
+                <div className="space-y-1">
+                    <Label htmlFor="cashbackTrackingTime">Cashback Tracking Time</Label>
+                    <Input id="cashbackTrackingTime" {...form.register('cashbackTrackingTime')} placeholder="e.g., 36 Hours" disabled={isSaving} />
+                </div>
+                <div className="space-y-1">
+                    <Label htmlFor="cashbackConfirmationTime">Cashback Confirmation Time</Label>
+                    <Input id="cashbackConfirmationTime" {...form.register('cashbackConfirmationTime')} placeholder="e.g., 35 Days" disabled={isSaving} />
+                </div>
+                <div className="flex items-center space-x-2 pt-2">
+                    <Controller
+                        control={form.control}
+                        name="cashbackOnAppOrders"
+                        render={({ field }) => (
+                            <Checkbox id="cashbackOnAppOrders" checked={field.value ?? false} onCheckedChange={field.onChange} disabled={isSaving} />
+                        )}
+                    />
+                    <Label htmlFor="cashbackOnAppOrders" className="font-normal">Cashback on App Orders?</Label>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="detailedCashbackRatesLink">Detailed Cashback Rates Link</Label>
+                  <Input id="detailedCashbackRatesLink" type="url" {...form.register('detailedCashbackRatesLink')} placeholder="https://..." disabled={isSaving} />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="topOffersText">Top Offers Text (for store page)</Label>
+                  <Textarea id="topOffersText" {...form.register('topOffersText')} rows={3} disabled={isSaving} />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="offerDetailsLink">"See Offer Details" Link</Label>
+                  <Input id="offerDetailsLink" type="url" {...form.register('offerDetailsLink')} placeholder="https://..." disabled={isSaving} />
+                </div>
+                
+                <div className="space-y-1">
+                  <Label htmlFor="terms">Terms &amp; Conditions</Label>
+                  <Textarea id="terms" {...form.register('terms')} rows={3} placeholder="Optional terms and conditions" disabled={isSaving} />
+                </div>
+
+                 <div className="space-y-1">
+                    <Label htmlFor="dataAiHint">Logo AI Hint</Label>
+                    <Input id="dataAiHint" {...form.register('dataAiHint')} placeholder="Keywords for logo (e.g., company name logo)" disabled={isSaving} />
                  </div>
-             </div>
 
-             {/* Description */}
-             <div className="space-y-2">
-               <Label htmlFor="description">Description*</Label>
-               <Textarea id="description" {...form.register('description')} rows={4} disabled={isSaving} />
-               {form.formState.errors.description && <p className="text-sm text-destructive">{form.formState.errors.description.message}</p>}
-             </div>
+                <div className="flex items-center space-x-2 pt-2">
+                    <Controller
+                        control={form.control}
+                        name="isFeatured"
+                        render={({ field }) => (
+                            <Checkbox id="isFeatured" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />
+                        )}
+                    />
+                    <Label htmlFor="isFeatured" className="font-normal">Featured Store</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                    <Controller
+                        control={form.control}
+                        name="isActive"
+                        render={({ field }) => (
+                           <Checkbox id="isActive" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />
+                        )}
+                    />
+                    <Label htmlFor="isActive" className="font-normal">Active (visible to users)</Label>
+                </div>
+            </div>
 
-             {/* Categories */}
-             <div className="space-y-2">
-               <Label htmlFor="categories">Categories*</Label>
-                <Controller
-                    control={form.control}
-                    name="categories"
-                    render={({ field }) => (
-                        <MultiSelect
-                        options={categoriesList}
-                        selected={field.value}
-                        onChange={field.onChange}
-                        isLoading={loadingCategories}
-                        disabled={isSaving}
-                        placeholder="Select categories..."
-                        />
-                    )}
-                />
-               {form.formState.errors.categories && <p className="text-sm text-destructive">{form.formState.errors.categories.message}</p>}
-             </div>
-
-
-             {/* Terms */}
-             <div className="space-y-2">
-               <Label htmlFor="terms">Terms</Label>
-               <Textarea id="terms" {...form.register('terms')} rows={3} placeholder="Optional terms and conditions" disabled={isSaving} />
-             </div>
-
-             {/* AI Hint */}
-             <div className="space-y-2">
-               <Label htmlFor="dataAiHint">AI Hint</Label>
-               <Input id="dataAiHint" {...form.register('dataAiHint')} placeholder="Optional keywords for AI (e.g., fashion sale)" disabled={isSaving} />
-             </div>
-
-              {/* Flags: Featured & Active */}
-              <div className="space-y-4">
-                  <div className="flex items-center space-x-2">
-                      <Controller
-                         control={form.control}
-                         name="isFeatured"
-                         render={({ field }) => (
-                            <Checkbox
-                               id="isFeatured"
-                               checked={field.value}
-                               onCheckedChange={field.onChange}
-                               disabled={isSaving}
-                            />
-                         )}
-                      />
-                      <Label htmlFor="isFeatured" className="font-normal">Featured Store (highlight on homepage)</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                      <Controller
-                         control={form.control}
-                         name="isActive"
-                         render={({ field }) => (
-                            <Checkbox
-                               id="isActive"
-                               checked={field.value}
-                               onCheckedChange={field.onChange}
-                               disabled={isSaving}
-                            />
-                         )}
-                      />
-                      <Label htmlFor="isActive" className="font-normal">Active (visible to users)</Label>
-                  </div>
-              </div>
-
-             <div className="flex justify-end gap-2 pt-4">
+             <div className="md:col-span-2 flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => router.push('/admin/stores')} disabled={isSaving}>
                    Cancel
                 </Button>
-               <Button type="submit" disabled={isSaving}>
+               <Button type="submit" disabled={isSaving || loadingCategories}>
                  {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4"/>}
                  Add Store
                </Button>
