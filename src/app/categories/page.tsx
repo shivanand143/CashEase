@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from 'react';
-import { collection, query, orderBy, getDocs, where } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, where, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import type { Category } from '@/lib/types';
 import Link from 'next/link';
@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, List } from 'lucide-react';
+import { safeToDate } from '@/lib/utils';
 
 export default function CategoriesPage() {
   const [categories, setCategories] = React.useState<Category[]>([]);
@@ -17,20 +18,25 @@ export default function CategoriesPage() {
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
+    let isMounted = true;
     const fetchCategories = async () => {
+      if (!isMounted) return;
+
       setLoading(true);
       setError(null);
+
       if (!db) {
-         setError("Database connection not available.");
-         setLoading(false);
-         return;
+        if (isMounted) {
+          setError("Database connection not available.");
+          setLoading(false);
+        }
+        return;
       }
+
       try {
         const categoriesCollection = collection(db, 'categories');
-        // Fetch active categories, ordered by 'order' field, then 'name'
         const q = query(
             categoriesCollection,
-            // where('isActive', '==', true), // Add this if you have an 'isActive' field
             orderBy('order', 'asc'),
             orderBy('name', 'asc')
         );
@@ -38,17 +44,30 @@ export default function CategoriesPage() {
         const fetchedCategories = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
+          createdAt: safeToDate(doc.data().createdAt as Timestamp | undefined),
+          updatedAt: safeToDate(doc.data().updatedAt as Timestamp | undefined),
         } as Category));
-        setCategories(fetchedCategories);
+        
+        if (isMounted) {
+          setCategories(fetchedCategories);
+        }
       } catch (err) {
         console.error("Error fetching categories:", err);
-        setError(err instanceof Error ? err.message : "Failed to load categories.");
+        if (isMounted) {
+          setError(err instanceof Error ? err.message : "Failed to load categories.");
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchCategories();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   return (
@@ -75,7 +94,7 @@ export default function CategoriesPage() {
           ))}
         </div>
       ) : categories.length === 0 ? (
-         <div className="text-center py-16 text-muted-foreground bg-muted/30 rounded-lg">
+         <div className="text-center py-16 text-muted-foreground bg-muted/30 rounded-lg border">
             <p className="text-xl">No categories found.</p>
             <p className="mt-2">Please check back later or contact support if you believe this is an error.</p>
          </div>

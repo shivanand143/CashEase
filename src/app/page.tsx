@@ -9,34 +9,32 @@ import { Input } from '@/components/ui/input';
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import Image from 'next/image';
-import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info } from 'lucide-react'; // Added missing icons
+import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info, AlertCircle, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { collection, getDocs, query, where, limit, orderBy, QueryConstraint, DocumentData, getDoc, doc, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase/config';
-import type { Store, Coupon, Banner, Category } from '@/lib/types'; // Added Category
+import { db, firebaseInitializationError } from '@/lib/firebase/config';
+import type { Store, Coupon, Banner, Category } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import StoreCard from '@/components/store-card'; // Assuming you have this component
-import CouponCard from '@/components/coupon-card'; // Assuming you have this component
-import { useRouter } from 'next/navigation'; // Import useRouter
-import { safeToDate } from '@/lib/utils'; // Import safeToDate
-import { ProductCard } from '@/components/product-card'; // Fixed import path
-import { AmazonProduct } from '@/lib/amazon/amazon-paapi'; // Import AmazonProduct type
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'; // Added Alert components
-import { AlertCircle } from 'lucide-react'; // Added AlertCircle
+import StoreCard from '@/components/store-card'; // Corrected import path
+import CouponCard from '@/components/coupon-card';
+import { useRouter } from 'next/navigation';
+import { safeToDate } from '@/lib/utils';
+import { ProductCard } from '@/components/product-card';
+import { AmazonProduct } from '@/lib/amazon/amazon-paapi';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+
 
 // --- Helper Types ---
 interface CouponWithStore extends Coupon {
-  store?: Store; // Optional nested store data
+  store?: Store;
 }
 
 // --- Helper to fetch data ---
 async function fetchData<T>(collectionName: string, constraints: QueryConstraint[] = [], orderField?: string, orderDirection?: 'asc' | 'desc', fetchLimit?: number): Promise<T[]> {
     let data: T[] = [];
-    if (!db) {
-        console.warn(`Firestore DB not initialized when fetching ${collectionName}.`);
-        // Return empty array instead of throwing error to allow partial page load
+    if (!db || firebaseInitializationError) {
+        console.warn(`Firestore DB not initialized or error during init when fetching ${collectionName}. Error: ${firebaseInitializationError}`);
         return [];
-        // throw new Error("Database not available.");
     }
     try {
         const dataRef = collection(db, collectionName);
@@ -50,35 +48,32 @@ async function fetchData<T>(collectionName: string, constraints: QueryConstraint
         const querySnapshot = await getDocs(q);
         data = querySnapshot.docs.map(docSnap => {
             const docData = docSnap.data();
-            // Convert timestamps proactively
             const convertedData = Object.keys(docData).reduce((acc, key) => {
                 if (docData[key] instanceof Timestamp) {
-                    acc[key] = safeToDate(docData[key]); // Convert timestamp to Date
+                    acc[key] = safeToDate(docData[key]);
                 } else {
                     acc[key] = docData[key];
                 }
                 return acc;
-            }, {} as any); // Use 'any' carefully or define a more specific type transformation
-
+            }, {} as any);
             return { id: docSnap.id, ...convertedData } as T;
         });
     } catch (err) {
         console.error(`Error fetching ${collectionName}:`, err);
-        // Don't re-throw, allow function to return empty array on error
-        // throw err;
     }
     return data;
 }
-
 
 // --- Helper to fetch coupons and enrich with store data ---
 async function fetchCouponsWithStoreData(constraints: QueryConstraint[], orderField?: string, orderDirection?: 'asc' | 'desc', fetchLimit?: number): Promise<CouponWithStore[]> {
     let coupons: Coupon[] = [];
     let enrichedCoupons: CouponWithStore[] = [];
-
+    if (!db || firebaseInitializationError) {
+        console.warn(`Firestore DB not initialized or error during init in fetchCouponsWithStoreData. Error: ${firebaseInitializationError}`);
+        return [];
+    }
     try {
         coupons = await fetchData<Coupon>('coupons', constraints, orderField, orderDirection, fetchLimit);
-
         if (coupons.length > 0) {
             const storeCache = new Map<string, Store>();
             const storePromises = coupons.map(async (coupon) => {
@@ -98,7 +93,6 @@ async function fetchCouponsWithStoreData(constraints: QueryConstraint[], orderFi
                          const storeData = {
                              id: storeSnap.id,
                              ...storeDataRaw,
-                             // Ensure timestamps are converted if they exist
                              createdAt: safeToDate(storeDataRaw.createdAt),
                              updatedAt: safeToDate(storeDataRaw.updatedAt),
                          } as Store;
@@ -115,14 +109,11 @@ async function fetchCouponsWithStoreData(constraints: QueryConstraint[], orderFi
         }
     } catch (err) {
         console.error("Error in fetchCouponsWithStoreData:", err);
-        // Don't re-throw, allow function to return empty array on error
-        // throw err;
     }
     return enrichedCoupons;
 }
 
 // --- Amazon Products (Placeholder/Example) ---
-// In a real scenario, this would come from an API call
 const exampleAmazonProducts: AmazonProduct[] = [
     { ASIN: 'B08N5WRWNW', Title: 'Echo Dot (4th Gen) | Smart speaker with Alexa | Glacier White', Price: '₹3,499', ImageURL: 'https://picsum.photos/seed/echodot/200/200', DetailPageURL: '#', Category: 'Electronics' },
     { ASIN: 'B09G9HD6PD', Title: 'Fire TV Stick 4K Max streaming device, Wi-Fi 6 compatible', Price: '₹4,499', ImageURL: 'https://picsum.photos/seed/firetv/200/200', DetailPageURL: '#', Category: 'Electronics' },
@@ -139,39 +130,59 @@ export default function HomePage() {
   const [banners, setBanners] = React.useState<Banner[]>([]);
   const [featuredStores, setFeaturedStores] = React.useState<Store[]>([]);
   const [topCoupons, setTopCoupons] = React.useState<CouponWithStore[]>([]);
-  const [categories, setCategories] = React.useState<Category[]>([]); // State for categories
+  const [categories, setCategories] = React.useState<Category[]>([]);
   const [amazonProducts, setAmazonProducts] = React.useState<AmazonProduct[]>([]);
   const [loadingBanners, setLoadingBanners] = React.useState(true);
   const [loadingStores, setLoadingStores] = React.useState(true);
   const [loadingCoupons, setLoadingCoupons] = React.useState(true);
-  const [loadingCategories, setLoadingCategories] = React.useState(true); // Loading state for categories
-  const [loadingProducts, setLoadingProducts] = React.useState(true); // Added loading state for products
-  const [error, setError] = React.useState<string | null>(null);
+  const [loadingCategories, setLoadingCategories] = React.useState(true);
+  const [loadingProducts, setLoadingProducts] = React.useState(true);
+  const [pageError, setPageError] = React.useState<string | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
 
-  // Combined data loading effect
   React.useEffect(() => {
-    let isMounted = true; // Flag to prevent state updates on unmounted component
+    let isMounted = true;
     const loadAllData = async () => {
+      if (firebaseInitializationError) {
+        if (isMounted) {
+            setPageError(`Failed to connect to the database: ${firebaseInitializationError}`);
+            setLoadingBanners(false);
+            setLoadingStores(false);
+            setLoadingCoupons(false);
+            setLoadingCategories(false);
+            setLoadingProducts(false);
+        }
+        return;
+      }
+      if (!db) {
+        if(isMounted) {
+            setPageError("Database not available. Please try again later.");
+            setLoadingBanners(false);
+            setLoadingStores(false);
+            setLoadingCoupons(false);
+            setLoadingCategories(false);
+            setLoadingProducts(false);
+        }
+        return;
+      }
+
       setLoadingBanners(true);
       setLoadingStores(true);
       setLoadingCoupons(true);
-      setLoadingCategories(true); // Set loading true for categories
+      setLoadingCategories(true);
       setLoadingProducts(true);
-      setError(null);
-      let combinedErrorMessages: string[] = []; // Store multiple error messages
+      setPageError(null);
+      let combinedErrorMessages: string[] = [];
 
       try {
-        // Fetch Banners
         const bannerFetchPromise = fetchData<Banner>(
-          'banners', [where('isActive', '==', true)], 'order', 'asc', 5 // Limit banners
+          'banners', [where('isActive', '==', true)], 'order', 'asc', 5
         ).catch(err => {
             console.error("Banner fetch failed:", err);
             combinedErrorMessages.push("banners");
             return [];
         });
 
-        // Fetch Featured Stores
         const storeFetchPromise = fetchData<Store>(
           'stores', [where('isActive', '==', true), where('isFeatured', '==', true)], 'name', 'asc', 12
         ).catch(err => {
@@ -180,90 +191,81 @@ export default function HomePage() {
             return [];
         });
 
-        // Fetch Top Coupons (enriched)
         const couponFetchPromise = fetchCouponsWithStoreData(
-          [where('isActive', '==', true)], 'isFeatured', 'desc', 6
+          [where('isActive', '==', true)], 'createdAt', 'desc', 6 // Changed order to createdAt for "latest"
         ).catch(err => {
             console.error("Coupon fetch failed:", err);
             combinedErrorMessages.push("coupons");
             return [];
         });
 
-         // Fetch Top Categories
          const categoryFetchPromise = fetchData<Category>(
-             'categories', [], 'order', 'asc', 12 // Limit categories for homepage display
+             'categories', [where('isActive', '==', true)], 'order', 'asc', 12
          ).catch(err => {
              console.error("Category fetch failed:", err);
              combinedErrorMessages.push("categories");
              return [];
          });
 
-        // Fetch Amazon Products (Placeholder)
         const productFetchPromise = new Promise<AmazonProduct[]>((resolve) => {
-          setTimeout(() => resolve(exampleAmazonProducts), 700);
+          setTimeout(() => resolve(exampleAmazonProducts), 300); // Reduced delay for products
         }).catch(err => {
             console.error("Product fetch failed:", err);
             combinedErrorMessages.push("products");
             return [];
         });
 
-
-        // Await all promises
         const [bannerData, storeData, couponData, categoryData, productData] = await Promise.all([
             bannerFetchPromise,
             storeFetchPromise,
             couponFetchPromise,
-            categoryFetchPromise, // Add category promise
+            categoryFetchPromise,
             productFetchPromise
         ]);
 
-        // Update state only if component is still mounted
         if (isMounted) {
           setBanners(bannerData);
           setFeaturedStores(storeData);
           setTopCoupons(couponData);
-          setCategories(categoryData); // Set categories state
+          setCategories(categoryData);
           setAmazonProducts(productData);
            if (combinedErrorMessages.length > 0) {
-               setError(`Failed to load: ${combinedErrorMessages.join(', ')}.`);
+               setPageError(`Failed to load some data: ${combinedErrorMessages.join(', ')}.`);
            }
         }
-
-      } catch (err) { // Catch potential errors from Promise.all itself
+      } catch (err) {
         if (isMounted) {
            console.error("Error loading page data:", err);
-           setError("Failed to load some page data. Please try again.");
+           setPageError("Failed to load page data. Please try again.");
         }
       } finally {
-        // Set loading states regardless of errors, only if mounted
         if (isMounted) {
           setLoadingBanners(false);
           setLoadingStores(false);
           setLoadingCoupons(false);
-          setLoadingCategories(false); // Set loading false for categories
+          setLoadingCategories(false);
           setLoadingProducts(false);
         }
       }
     };
 
     loadAllData();
-
-    // Cleanup function to set isMounted to false when the component unmounts
     return () => {
       isMounted = false;
     };
-  }, []); // Empty dependency array ensures this runs only once on mount
+  }, []);
 
 
   React.useEffect(() => {
-    if (error) {
+    if (pageError) {
       toast({
         variant: "destructive",
         title: "Error Loading Data",
-        description: error,
+        description: pageError,
+        duration: 7000,
       });
     }
-  }, [error, toast]);
+  }, [pageError, toast]);
 
   const handleSearchSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -278,21 +280,18 @@ export default function HomePage() {
     router.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`);
   };
 
-
-  // --- Carousel Plugin ---
   const plugin = React.useRef(
     Autoplay({ delay: 4000, stopOnInteraction: true })
   );
 
-  const isLoading = loadingBanners || loadingStores || loadingCoupons || loadingCategories || loadingProducts;
+  // Check if all critical data sections are loading
+  const isPageLoading = loadingBanners || loadingStores || loadingCoupons || loadingCategories;
+
 
   return (
     <div className="space-y-12 md:space-y-16 lg:space-y-20">
-
       {/* Hero Section with Search */}
        <section className="relative text-center py-12 md:py-16 lg:py-20 bg-gradient-to-br from-primary/10 via-background to-secondary/10 rounded-lg shadow-sm overflow-hidden border border-border/50">
-           {/* Background Image/Pattern (Optional) */}
-           {/* <div className="absolute inset-0 opacity-5 bg-[url('/hero-pattern.svg')] bg-repeat"></div> */}
            <div className="container relative z-10 px-4 md:px-6">
              <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-4 text-foreground">
                Shop Smarter, Earn <span className="text-primary">CashEase</span> Back!
@@ -304,7 +303,8 @@ export default function HomePage() {
                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground z-10" />
                <Input
                  type="search"
-                 placeholder="Search Stores & Offers (e.g., Amazon, Myntra...)"
+                 name="search" // Add name attribute
+                 placeholder="Search for stores, brands or products..."
                  className="pl-12 pr-24 py-3 w-full h-14 text-lg rounded-full shadow-md focus:ring-2 focus:ring-primary focus:border-border"
                  aria-label="Search stores and offers"
                  value={searchTerm}
@@ -327,6 +327,18 @@ export default function HomePage() {
            </div>
        </section>
 
+       {/* Overall Page Error Alert */}
+        {pageError && !isPageLoading && (
+         <div className="container px-4 md:px-6">
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Failed to Load Page Data</AlertTitle>
+              <AlertDescription>
+                {pageError} Some sections might be unavailable. Please try refreshing.
+              </AlertDescription>
+            </Alert>
+         </div>
+       )}
 
        {/* --- Banner Carousel Section --- */}
        <section className="container px-4 md:px-6">
@@ -376,13 +388,12 @@ export default function HomePage() {
                </>
              )}
            </Carousel>
-         ) : !error ? ( // Show "No deals" only if not loading and no error
+         ) : !pageError ? (
              <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border">
                 No special deals featured right now. Check back soon!
              </div>
-          ) : null /* Don't show anything if there was an error */ }
+          ) : null}
        </section>
-
 
       {/* --- How it Works Section --- */}
       <section className="container px-4 md:px-6 py-12 text-center bg-muted/30 rounded-lg border">
@@ -460,11 +471,10 @@ export default function HomePage() {
                    </Link>
                  ))}
                </div>
-           ) : !error ? (
+           ) : !pageError ? (
                <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No categories found.</p>
            ): null}
        </section>
-
 
       {/* --- Featured Stores Section --- */}
       <section className="container px-4 md:px-6">
@@ -490,7 +500,7 @@ export default function HomePage() {
               <StoreCard key={store.id} store={store} />
             ))}
           </div>
-        ) : !error ? (
+        ) : !pageError ? (
           <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No featured stores available right now.</p>
         ) : null}
       </section>
@@ -519,7 +529,7 @@ export default function HomePage() {
               <CouponCard key={coupon.id} coupon={coupon} />
             ))}
           </div>
-        ) : !error ? (
+        ) : !pageError ? (
           <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No top coupons available at the moment.</p>
         ): null}
       </section>
@@ -528,11 +538,8 @@ export default function HomePage() {
       <section className="container px-4 md:px-6">
          <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
             <h2 className="text-3xl font-bold flex items-center gap-2">
-               {/* Use an inline SVG or a simple text fallback if image isn't available */}
-                {/* <Image src="/amazon-logo.svg" alt="Amazon Logo" width={100} height={30} className="h-8 w-auto object-contain"/> */}
                 <span className="font-amazon-ember" aria-label="Amazon">Amazon</span> Today's Picks
             </h2>
-             {/* Link to a potential Amazon store page on your site */}
             <Button variant="outline" size="sm" asChild>
               <Link href="/stores/amazon" className="flex items-center gap-1">
                  View Amazon Offers <ArrowRight className="w-4 h-4" />
@@ -551,15 +558,13 @@ export default function HomePage() {
                       <ProductCard key={product.ASIN} product={product} />
                   ))}
               </div>
-          ) : !error ? (
+          ) : !pageError ? (
               <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">Could not load product recommendations.</p>
           ) : null}
        </section>
 
-
       {/* --- Maximize Savings & Referral Sections --- */}
        <section className="container px-4 md:px-6 grid md:grid-cols-2 gap-8">
-           {/* Maximize Savings */}
            <Card className="shadow-sm bg-gradient-to-tr from-amber-50 to-yellow-100 border-amber-300">
                <CardHeader>
                    <CardTitle className="flex items-center gap-2 text-amber-800"><Zap className="text-amber-600 w-6 h-6" />Maximize Your Savings</CardTitle>
@@ -574,7 +579,6 @@ export default function HomePage() {
                    </Button>
                </CardContent>
            </Card>
-            {/* Referral */}
             <Card className="shadow-sm bg-gradient-to-tr from-green-50 to-emerald-100 border-green-300">
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-green-800"><Gift className="text-green-600 w-6 h-6" /> Refer & Earn More!</CardTitle>
@@ -590,35 +594,6 @@ export default function HomePage() {
                 </CardContent>
             </Card>
        </section>
-
-      {/* Optional: Error Alert for partial data load */}
-      {error && !isLoading && (
-         <div className="container px-4 md:px-6">
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Data Loading Issue</AlertTitle>
-              <AlertDescription>
-                Some sections of the page might not have loaded correctly ({error}). Please try refreshing the page.
-              </AlertDescription>
-            </Alert>
-         </div>
-       )}
-
     </div>
   );
 }
-
-// Basic CSS for Amazon font (add to globals.css or similar)
-/*
-@font-face {
-  font-family: 'Amazon Ember';
-  src: url('/fonts/AmazonEmber_Rg.woff2') format('woff2'),
-       url('/fonts/AmazonEmber_Rg.woff') format('woff');
-  font-weight: normal;
-  font-style: normal;
-  font-display: swap;
-}
-.font-amazon-ember {
-  font-family: 'Amazon Ember', Arial, sans-serif;
-}
-*/
