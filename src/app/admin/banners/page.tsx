@@ -11,7 +11,7 @@ import {
   orderBy,
   getDocs,
   doc,
-  setDoc, // Use setDoc for create/update with custom ID or auto ID
+  addDoc, // Import addDoc
   deleteDoc,
   serverTimestamp,
   updateDoc,
@@ -100,6 +100,11 @@ function AdminBannersPageContent() {
   const fetchBanners = useCallback(async () => {
     setLoading(true);
     setError(null);
+    if (!db) {
+        setError("Database not available. Please try again later.");
+        setLoading(false);
+        return;
+    }
     try {
       const bannersCollection = collection(db, 'banners');
       const q = query(bannersCollection, orderBy('order', 'asc')); // Order by 'order'
@@ -143,6 +148,10 @@ function AdminBannersPageContent() {
 
    // --- Update Banner Order in Firestore ---
    const updateBannerOrderInFirestore = async (orderedBanners: Banner[]) => {
+     if (!db) {
+        toast({ variant: "destructive", title: "DB Error", description: "Database not available." });
+        return;
+    }
      const batch = writeBatch(db);
      orderedBanners.forEach((banner) => {
        const bannerRef = doc(db, 'banners', banner.id);
@@ -187,6 +196,11 @@ function AdminBannersPageContent() {
   const onSubmit = async (data: BannerFormValues) => {
     setIsSaving(true);
     setError(null);
+    if (!db) {
+        setError("Database not available. Please try again later.");
+        setIsSaving(false);
+        return;
+    }
      const submissionData = {
        ...data,
        link: data.link || null, // Ensure null if empty
@@ -214,7 +228,7 @@ function AdminBannersPageContent() {
          // Ensure the order is set correctly for a new banner
          const finalOrder = typeof data.order === 'number' ? data.order : (banners.length > 0 ? Math.max(...banners.map(b => b.order)) + 1 : 0);
         const bannersCollection = collection(db, 'banners');
-        const newDocRef = await addDoc(bannersCollection, {
+        const newDocRef = await addDoc(bannersCollection, { // Using addDoc here
           ...submissionData,
            order: finalOrder, // Use calculated order
           createdAt: serverTimestamp(),
@@ -239,7 +253,7 @@ function AdminBannersPageContent() {
 
    // --- Delete Banner ---
    const handleDeleteBanner = async () => {
-     if (!deletingBannerId) return;
+     if (!deletingBannerId || !db) return;
      const bannerToDelete = banners.find(b => b.id === deletingBannerId);
      if (!bannerToDelete) return;
 
@@ -266,7 +280,7 @@ function AdminBannersPageContent() {
 
     // --- Toggle Active Status ---
     const handleToggleActiveStatus = async (bannerToUpdate: Banner) => {
-      if (!bannerToUpdate) return;
+      if (!bannerToUpdate || !db) return;
       setUpdatingBannerId(bannerToUpdate.id);
 
       const bannerDocRef = doc(db, 'banners', bannerToUpdate.id);
@@ -321,7 +335,7 @@ function AdminBannersPageContent() {
     };
 
 
-  if (loading) {
+  if (loading && banners.length === 0 && !error) {
     return <BannersTableSkeleton />;
   }
 
