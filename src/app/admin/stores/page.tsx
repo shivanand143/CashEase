@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from 'react';
@@ -22,10 +23,10 @@ import {
   QueryConstraint,
   DocumentData,
   QueryDocumentSnapshot,
-  addDoc 
+  addDoc
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase/config';
-import type { Store, CashbackType, Category, StoreFormValues as StoreFormType } from '@/lib/types'; 
+import { db, firebaseInitializationError } from '@/lib/firebase/config';
+import type { Store, CashbackType, Category, StoreFormValues as StoreFormType } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -54,7 +55,6 @@ import {
   DialogDescription,
   DialogFooter,
   DialogClose,
-  DialogTrigger
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -67,9 +67,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import AdminGuard from '@/components/guards/admin-guard'; 
-import Image from 'next/image'; 
-import { Switch } from '@/components/ui/switch'; 
+import AdminGuard from '@/components/guards/admin-guard';
+import Image from 'next/image';
+import { Switch } from '@/components/ui/switch';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -79,8 +79,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
-import { safeToDate } from '@/lib/utils'; 
+import { safeToDate } from '@/lib/utils';
 import { MultiSelect } from '@/components/ui/multi-select';
+import { useDebounce } from '@/hooks/use-debounce';
 
 
 const STORES_PER_PAGE = 15;
@@ -88,7 +89,7 @@ const STORES_PER_PAGE = 15;
 // Zod schema for store form validation
 const storeSchema = z.object({
   name: z.string().min(2, 'Store name must be at least 2 characters').max(100, 'Store name too long'),
-  logoUrl: z.string().url('Invalid URL format').optional().or(z.literal('')), 
+  logoUrl: z.string().url('Invalid URL format').optional().or(z.literal('')),
   heroImageUrl: z.string().url('Invalid URL format').optional().or(z.literal('')),
   affiliateLink: z.string().url('Invalid URL format'),
   cashbackRate: z.string().min(1, 'Cashback rate display is required').max(50, 'Rate display too long'),
@@ -131,15 +132,16 @@ function AdminStoresPageContent() {
   const router = useRouter();
 
   // Filtering and Searching State
-  const [searchTerm, setSearchTerm] = useState(''); // For searching by Name
+  const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const [isSearching, setIsSearching] = useState(false);
 
   // State for Add/Edit Dialog
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingStore, setEditingStore] = useState<Store | null>(null); // null for Add, Store object for Edit
+  const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [deletingStoreId, setDeletingStoreId] = useState<string | null>(null); // Track which store is being deleted
-  const [updatingStoreId, setUpdatingStoreId] = useState<string | null>(null); // Track status updates
+  const [deletingStoreId, setDeletingStoreId] = useState<string | null>(null);
+  const [updatingStoreId, setUpdatingStoreId] = useState<string | null>(null);
   const [categoriesList, setCategoriesList] = useState<{ value: string; label: string }[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
 
@@ -176,14 +178,19 @@ function AdminStoresPageContent() {
    // Fetch categories for the multi-select dropdown
    useEffect(() => {
     const fetchCategories = async () => {
+      if (!db || firebaseInitializationError) {
+        setError(firebaseInitializationError || "Database not available for fetching categories.");
+        setLoadingCategories(false);
+        return;
+      }
       setLoadingCategories(true);
       try {
         const categoriesCollection = collection(db, 'categories');
         const q = query(categoriesCollection, orderBy('name', 'asc'));
         const querySnapshot = await getDocs(q);
         const fetchedCategories = querySnapshot.docs.map(doc => ({
-           value: doc.id, // Use slug/ID as value
-           label: doc.data().name || doc.id, // Use name as label
+           value: doc.id, 
+           label: doc.data().name || doc.id,
         }));
         setCategoriesList(fetchedCategories);
       } catch (err) {
@@ -198,6 +205,14 @@ function AdminStoresPageContent() {
 
 
   const fetchStores = useCallback(async (loadMore = false, search = false) => {
+    if (!db || firebaseInitializationError) {
+      setError(firebaseInitializationError || "Database connection not available.");
+      setLoading(false);
+      setLoadingMore(false);
+      setHasMore(false);
+      return;
+    }
+
     if (!loadMore) {
       setLoading(true);
       setLastVisible(null);
@@ -210,17 +225,18 @@ function AdminStoresPageContent() {
 
     try {
       const storesCollection = collection(db, 'stores');
-      const constraints: QueryConstraint[] = [];
+      let constraints: QueryConstraint[] = [];
 
-      if (search && searchTerm) {
-        constraints.push(where('name', '>=', searchTerm));
-        constraints.push(where('name', '<=', searchTerm + '\uf8ff'));
+      if (search && debouncedSearchTerm) {
+        constraints.push(where('isActive', '==', true)); // Always filter by active
+        constraints.push(where('name', '>=', debouncedSearchTerm));
+        constraints.push(where('name', '<=', debouncedSearchTerm + '\uf8ff'));
+        constraints.push(orderBy('name'));
+      } else {
+        constraints.push(where('isActive', '==', true));
+        constraints.push(orderBy('isFeatured', 'desc'));
+        constraints.push(orderBy('createdAt', 'desc'));
       }
-
-       constraints.push(orderBy('name')); 
-       if (!search) {
-         constraints.push(orderBy('createdAt', 'desc')); 
-       }
 
       if (loadMore && lastVisible) {
         constraints.push(startAfter(lastVisible));
@@ -256,8 +272,8 @@ function AdminStoresPageContent() {
             isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
             isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
             dataAiHint: data.dataAiHint || null,
-            createdAt: safeToDate(data.createdAt) || new Date(0),
-            updatedAt: safeToDate(data.updatedAt) || new Date(0),
+            createdAt: safeToDate(data.createdAt),
+            updatedAt: safeToDate(data.updatedAt),
           } as Store;
       });
 
@@ -281,39 +297,32 @@ function AdminStoresPageContent() {
       setLoadingMore(false);
       setIsSearching(false);
     }
-  }, [searchTerm, lastVisible, toast]); 
+  }, [debouncedSearchTerm, lastVisible, toast]);
 
   useEffect(() => {
-    fetchStores(false, false); 
-  }, [fetchStores]); 
+    fetchStores(false, debouncedSearchTerm !== '');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm, fetchStores]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchStores(false, true); 
+    // fetchStores is already called by useEffect when debouncedSearchTerm changes
   };
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      fetchStores(true, searchTerm !== ''); 
+      fetchStores(true, debouncedSearchTerm !== '');
     }
   };
 
   // --- Dialog and Form Handlers ---
   const openAddDialog = () => {
-    setEditingStore(null);
-    form.reset({ 
-        name: '', logoUrl: '', heroImageUrl: '', affiliateLink: '', cashbackRate: '', cashbackRateValue: 0,
-        cashbackType: 'percentage', description: '', detailedDescription: '',
-        categories: [], rating: null, ratingCount: null, cashbackTrackingTime: null,
-        cashbackConfirmationTime: null, cashbackOnAppOrders: null, detailedCashbackRatesLink: null,
-        topOffersText: null, offerDetailsLink: null, terms: '', isFeatured: false, isActive: true, dataAiHint: '',
-    });
-    setIsDialogOpen(true);
+    router.push('/admin/stores/new');
   };
 
   const openEditDialog = (store: Store) => {
     setEditingStore(store);
-    form.reset({ 
+    form.reset({
       name: store.name,
       logoUrl: store.logoUrl || '',
       heroImageUrl: store.heroImageUrl || '',
@@ -328,7 +337,7 @@ function AdminStoresPageContent() {
       ratingCount: store.ratingCount || null,
       cashbackTrackingTime: store.cashbackTrackingTime || null,
       cashbackConfirmationTime: store.cashbackConfirmationTime || null,
-      cashbackOnAppOrders: store.cashbackOnAppOrders === undefined ? null : store.cashbackOnAppOrders,
+      cashbackOnAppOrders: store.cashbackOnAppOrders === undefined ? null : data.cashbackOnAppOrders,
       detailedCashbackRatesLink: store.detailedCashbackRatesLink || null,
       topOffersText: store.topOffersText || null,
       offerDetailsLink: store.offerDetailsLink || null,
@@ -341,11 +350,16 @@ function AdminStoresPageContent() {
   };
 
   const onSubmit = async (data: StoreFormValues) => {
+    if (!db) {
+        setError("Database not available. Please try again later.");
+        setIsSaving(false);
+        return;
+    }
     setIsSaving(true);
     setError(null);
 
     const submissionData: Partial<StoreFormType> = Object.fromEntries(
-      Object.entries(data).map(([key, value]) => [key, value === '' ? null : value])
+      Object.entries(data).map(([key, value]) => [key, value === '' || value === undefined ? null : value])
     );
 
     try {
@@ -358,18 +372,20 @@ function AdminStoresPageContent() {
         setStores(prev => prev.map(s => s.id === editingStore.id ? { ...s, ...submissionData, updatedAt: new Date() } as Store : s));
         toast({ title: "Store Updated", description: `${data.name} details saved.` });
       } else {
+        // This case should ideally be handled by the /admin/stores/new page
+        // but kept here as a fallback if dialog was used for adding.
         const storesCollection = collection(db, 'stores');
         const newDocRef = await addDoc(storesCollection, {
           ...submissionData,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-         const newStore: Store = { ...submissionData, id: newDocRef.id, createdAt: new Date(), updatedAt: new Date() } as Store; 
-         setStores(prev => [newStore, ...prev]); 
+         const newStore: Store = { ...submissionData, id: newDocRef.id, createdAt: new Date(), updatedAt: new Date() } as Store;
+         setStores(prev => [newStore, ...prev]);
         toast({ title: "Store Added", description: `${data.name} created successfully.` });
       }
-      setIsDialogOpen(false); 
-      form.reset(); 
+      setIsDialogOpen(false);
+      form.reset();
     } catch (err) {
       console.error("Error saving store:", err);
       const errorMsg = err instanceof Error ? err.message : "Could not save store details.";
@@ -382,8 +398,8 @@ function AdminStoresPageContent() {
 
    // --- Delete Store ---
    const handleDeleteStore = async () => {
-     if (!deletingStoreId) return;
-     console.log(`Attempting to delete store: ${deletingStoreId}`); 
+     if (!deletingStoreId || !db) return;
+     console.log(`Attempting to delete store: ${deletingStoreId}`);
      try {
        const storeDocRef = doc(db, 'stores', deletingStoreId);
        await deleteDoc(storeDocRef);
@@ -394,14 +410,14 @@ function AdminStoresPageContent() {
        const errorMsg = err instanceof Error ? err.message : "Could not delete the store.";
        toast({ variant: "destructive", title: "Deletion Failed", description: errorMsg });
      } finally {
-       setDeletingStoreId(null); 
+       setDeletingStoreId(null);
      }
    };
 
     // --- Toggle Active Status ---
     const handleToggleActiveStatus = async (storeToUpdate: Store) => {
-      if (!storeToUpdate) return;
-      setUpdatingStoreId(storeToUpdate.id); 
+      if (!storeToUpdate || !db) return;
+      setUpdatingStoreId(storeToUpdate.id);
 
       const storeDocRef = doc(db, 'stores', storeToUpdate.id);
       const newStatus = !storeToUpdate.isActive;
@@ -414,7 +430,7 @@ function AdminStoresPageContent() {
 
         setStores(prevStores =>
           prevStores.map(s =>
-            s.id === storeToUpdate.id ? { ...s, isActive: newStatus, updatedAt: new Date() } : s 
+            s.id === storeToUpdate.id ? { ...s, isActive: newStatus, updatedAt: new Date() } : s
           )
         );
 
@@ -431,12 +447,12 @@ function AdminStoresPageContent() {
           description: errorMsg,
         });
       } finally {
-        setUpdatingStoreId(null); 
+        setUpdatingStoreId(null);
       }
     };
 
 
-  if (loading && stores.length === 0) {
+  if (loading && stores.length === 0 && !error) {
     return <StoresTableSkeleton />;
   }
 
@@ -449,7 +465,7 @@ function AdminStoresPageContent() {
         </Button>
       </div>
 
-      {error && (
+      {error && !loading && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
@@ -472,8 +488,8 @@ function AdminStoresPageContent() {
               disabled={isSearching}
               className="h-10 text-base"
             />
-            <Button type="submit" disabled={isSearching} className="h-10">
-              {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            <Button type="submit" disabled={isSearching || loading} className="h-10">
+              {isSearching || (loading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                <span className="sr-only sm:not-sr-only sm:ml-2">Search</span>
             </Button>
           </form>
@@ -486,10 +502,12 @@ function AdminStoresPageContent() {
           <CardDescription>View and manage partner stores.</CardDescription>
         </CardHeader>
         <CardContent>
-           {loading && stores.length === 0 ? (
+           {loading && stores.length === 0 && !error ? ( // Initial loading skeleton
              <StoresTableSkeleton />
-           ) : stores.length === 0 ? (
-             <p className="text-center text-muted-foreground py-8">No stores found matching your criteria.</p>
+           ) : !loading && stores.length === 0 && !error ? ( // No stores found (after loading, no error)
+             <p className="text-center text-muted-foreground py-8">
+                {debouncedSearchTerm ? `No stores found matching "${debouncedSearchTerm}".` : "No stores found."}
+             </p>
            ) : (
              <div className="overflow-x-auto">
                <Table>
@@ -565,8 +583,8 @@ function AdminStoresPageContent() {
                                    <AlertDialogCancel onClick={() => setDeletingStoreId(null)}>Cancel</AlertDialogCancel>
                                    <AlertDialogAction
                                       onClick={() => {
-                                           setDeletingStoreId(store.id); 
-                                           handleDeleteStore(); 
+                                           setDeletingStoreId(store.id);
+                                           handleDeleteStore();
                                       }}
                                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
                                        Delete
@@ -583,7 +601,7 @@ function AdminStoresPageContent() {
                </Table>
              </div>
            )}
-           {hasMore && (
+           {hasMore && !loading && stores.length > 0 && (
             <div className="mt-6 text-center">
               <Button onClick={handleLoadMore} disabled={loadingMore}>
                 {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -591,6 +609,7 @@ function AdminStoresPageContent() {
               </Button>
             </div>
           )}
+           {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
         </CardContent>
       </Card>
 
@@ -604,7 +623,7 @@ function AdminStoresPageContent() {
              </DialogDescription>
            </DialogHeader>
            <form onSubmit={form.handleSubmit(onSubmit)} className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 py-4">
-             
+
              {/* Column 1 */}
              <div className="space-y-4">
                 <div className="space-y-1">
@@ -655,17 +674,23 @@ function AdminStoresPageContent() {
                     </div>
                     <div className="space-y-1">
                         <Label htmlFor="cashbackType">Type*</Label>
-                        <Select value={form.watch('cashbackType')} onValueChange={(value) => form.setValue('cashbackType', value as CashbackType)} disabled={isSaving}>
-                          <SelectTrigger id="cashbackType"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="percentage">%</SelectItem>
-                            <SelectItem value="fixed">₹</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <Controller
+                            name="cashbackType"
+                            control={form.control}
+                            render={({ field }) => (
+                                <Select value={field.value} onValueChange={field.onChange} disabled={isSaving}>
+                                <SelectTrigger id="cashbackType"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="percentage">%</SelectItem>
+                                    <SelectItem value="fixed">₹</SelectItem>
+                                </SelectContent>
+                                </Select>
+                            )}
+                        />
                     </div>
                 </div>
                  {form.formState.errors.cashbackType && <p className="text-sm text-destructive">{form.formState.errors.cashbackType.message}</p>}
-                
+
                 <div className="space-y-1">
                   <Label htmlFor="description">Short Description*</Label>
                   <Textarea id="description" {...form.register('description')} rows={3} disabled={isSaving} />
@@ -741,7 +766,7 @@ function AdminStoresPageContent() {
                   <Label htmlFor="offerDetailsLink">"See Offer Details" Link</Label>
                   <Input id="offerDetailsLink" type="url" {...form.register('offerDetailsLink')} placeholder="https://..." disabled={isSaving} />
                 </div>
-                
+
                 <div className="space-y-1">
                   <Label htmlFor="terms">Terms &amp; Conditions</Label>
                   <Textarea id="terms" {...form.register('terms')} rows={3} placeholder="Optional terms and conditions" disabled={isSaving} />

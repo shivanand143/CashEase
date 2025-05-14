@@ -5,7 +5,7 @@ import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
@@ -23,11 +23,11 @@ import {
   QueryConstraint,
   DocumentData,
   QueryDocumentSnapshot,
-  addDoc, // Import addDoc for creating new coupons
-  getDoc // To fetch store name for display
+  addDoc, 
+  getDoc
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase/config';
-import type { Coupon, Store } from '@/lib/types'; // Ensure Coupon type is defined
+import { db, firebaseInitializationError } from '@/lib/firebase/config';
+import type { Coupon, Store } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -46,7 +46,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; // Import Select components
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, CheckCircle, XCircle, ExternalLink, CalendarIcon } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -70,9 +70,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import AdminGuard from '@/components/guards/admin-guard'; // Ensure page is protected
-import { format, isValid } from 'date-fns'; // For date formatting
-import { cn, safeToDate } from '@/lib/utils'; // Utility functions
+import AdminGuard from '@/components/guards/admin-guard';
+import { format, isValid } from 'date-fns';
+import { cn, safeToDate } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -82,15 +82,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
+import { useDebounce } from '@/hooks/use-debounce';
 
 const COUPONS_PER_PAGE = 20;
 
-// Interface for Coupon with Store Name (fetched separately)
 interface CouponWithStoreName extends Coupon {
   storeName?: string;
 }
 
-// Zod schema for coupon form validation
 const couponSchema = z.object({
   storeId: z.string().min(1, 'Store is required'),
   code: z.string().optional().nullable(),
@@ -101,12 +100,11 @@ const couponSchema = z.object({
   isActive: z.boolean().default(true),
 }).refine(data => data.code || data.link, {
   message: "Either a Coupon Code or a Link is required",
-  path: ["code"], // Attach error to 'code' field for simplicity
+  path: ["code"],
 });
 
 type CouponFormValues = z.infer<typeof couponSchema>;
 
-// Helper function to map status to badge variant
 const getStatusVariant = (isActive: boolean, expiryDate?: Date | null): "default" | "secondary" | "destructive" => {
    const isExpired = expiryDate ? expiryDate < new Date() : false;
    if (isExpired) return 'destructive';
@@ -123,20 +121,22 @@ function AdminCouponsPageContent() {
   const { toast } = useToast();
   const router = useRouter();
 
-  // Filtering and Searching State
-  const [searchTerm, setSearchTerm] = useState(''); // For searching by Store ID or Description
+  const [searchTermInput, setSearchTermInput] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTermInput, 500);
   const [isSearching, setIsSearching] = useState(false);
 
-  // State for Add/Edit Dialog
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null); // null for Add, Coupon object for Edit
+  const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [deletingCouponId, setDeletingCouponId] = useState<string | null>(null); // Track deletion
+  const [deletingCouponId, setDeletingCouponId] = useState<string | null>(null);
 
-  // Store List for Dropdown (simplified - fetch all for now, consider pagination/search if many stores)
   const [storeList, setStoreList] = useState<{ id: string; name: string }[]>([]);
    useEffect(() => {
      const fetchStores = async () => {
+       if (!db || firebaseInitializationError) {
+         setError(firebaseInitializationError || "Database not available for fetching stores.");
+         return;
+       }
        try {
          const storesCollection = collection(db, 'stores');
          const q = query(storesCollection, orderBy('name'));
@@ -150,7 +150,6 @@ function AdminCouponsPageContent() {
      fetchStores();
    }, [toast]);
 
-  // React Hook Form setup
   const form = useForm<CouponFormValues>({
     resolver: zodResolver(couponSchema),
     defaultValues: {
@@ -164,42 +163,48 @@ function AdminCouponsPageContent() {
     },
   });
 
-  // Fetch Coupons with Store Names
-  const fetchCoupons = useCallback(async (loadMore = false, search = false) => {
-    if (!loadMore) {
+  const fetchCoupons = useCallback(async (loadMore = false) => {
+    if (!db || firebaseInitializationError) {
+      setError(firebaseInitializationError || "Database connection not available.");
+      setLoading(false);
+      setLoadingMore(false);
+      setHasMore(false);
+      return;
+    }
+
+    const isInitialOrNewSearch = !loadMore;
+    if (isInitialOrNewSearch) {
       setLoading(true);
       setLastVisible(null);
-      setCoupons([]);
+      setCoupons([]); // Clear previous results for a new search/initial load
+      setHasMore(true); // Assume there might be more until proven otherwise
     } else {
       setLoadingMore(true);
     }
     setError(null);
-    setIsSearching(search);
+    setIsSearching(debouncedSearchTerm !== '');
+
 
     try {
       const couponsCollection = collection(db, 'coupons');
-      const constraints: QueryConstraint[] = [];
+      let constraints: QueryConstraint[] = [];
 
-      // --- Simple Search Logic (by Store ID first) ---
-      // A more complex search would involve multiple queries or a dedicated search service.
-      if (search && searchTerm) {
-         // Example: Prioritize searching by storeId if the term looks like an ID
-         // This is basic; a real app might need regex or better logic
-         if (searchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(searchTerm)) { // Basic check for Firestore ID format
-             constraints.push(where('storeId', '==', searchTerm));
-         } else {
-             // Fallback: Basic description search (often requires indexing)
-             // Note: Firestore doesn't support case-insensitive or partial text search well natively.
-             // This might require indexing description or using a different approach.
-             // constraints.push(where('description', '>=', searchTerm));
-             // constraints.push(where('description', '<=', searchTerm + '\uf8ff'));
-              console.warn("Description search is limited in Firestore. Consider searching by Store ID.");
-              // For now, let's keep it simple and maybe rely on client-side filtering if needed
-         }
+      if (debouncedSearchTerm) {
+        // Firestore doesn't support case-insensitive search or partial text search on multiple fields easily.
+        // A common approach for simple search is to query by a primary field and then filter client-side,
+        // or implement a more complex solution with a search service like Algolia/Typesense.
+        // For this, let's assume search by storeId if it looks like an ID, otherwise, no server-side filtering for description.
+        if (debouncedSearchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(debouncedSearchTerm)) { // Basic check for Firestore ID format
+             constraints.push(where('storeId', '==', debouncedSearchTerm));
+        }
+        // Add other server-side filters if applicable (e.g., status)
+        constraints.push(where('isActive', '==', true)); // Example: only active coupons
+        constraints.push(orderBy('createdAt', 'desc')); // Order results
+      } else {
+        constraints.push(where('isActive', '==', true)); // Default: fetch active coupons
+        constraints.push(orderBy('createdAt', 'desc'));
       }
 
-      // Apply ordering and pagination
-       constraints.push(orderBy('createdAt', 'desc')); // Default order
 
       if (loadMore && lastVisible) {
         constraints.push(startAfter(lastVisible));
@@ -220,14 +225,13 @@ function AdminCouponsPageContent() {
           expiryDate: safeToDate(data.expiryDate),
           isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
           isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
-          createdAt: safeToDate(data.createdAt) || new Date(0),
-          updatedAt: safeToDate(data.updatedAt) || new Date(0),
-          storeName: 'Loading...' // Placeholder
+          createdAt: safeToDate(data.createdAt),
+          updatedAt: safeToDate(data.updatedAt),
+          storeName: 'Loading...'
         };
 
-        // Fetch store name
         try {
-          if (coupon.storeId) {
+          if (coupon.storeId && db) { // ensure db is available
             const storeDocRef = doc(db, 'stores', coupon.storeId);
             const storeSnap = await getDoc(storeDocRef);
             if (storeSnap.exists()) {
@@ -235,7 +239,7 @@ function AdminCouponsPageContent() {
             } else {
                coupon.storeName = 'Store Not Found';
             }
-          } else {
+          } else if (!coupon.storeId) {
              coupon.storeName = 'No Store ID';
           }
         } catch (storeFetchError) {
@@ -245,23 +249,27 @@ function AdminCouponsPageContent() {
         return coupon;
       });
 
-       const couponsWithNames = await Promise.all(couponsDataPromises);
+       let couponsWithNames = await Promise.all(couponsDataPromises);
 
-      // Apply client-side filtering if description search was intended
-       const filteredCoupons = (search && searchTerm && !(searchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(searchTerm)))
-         ? couponsWithNames.filter(c => c.description.toLowerCase().includes(searchTerm.toLowerCase()))
-         : couponsWithNames;
+      // Client-side filtering for description if search term is present and not an ID-like string
+      if (debouncedSearchTerm && !(debouncedSearchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(debouncedSearchTerm))) {
+          couponsWithNames = couponsWithNames.filter(c =>
+              c.description.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+              (c.storeName && c.storeName !== 'Loading...' && c.storeName.toLowerCase().includes(debouncedSearchTerm.toLowerCase()))
+          );
+      }
 
-
-      if (loadMore) {
-        setCoupons(prev => [...prev, ...filteredCoupons]);
+      if (isInitialOrNewSearch) {
+        setCoupons(couponsWithNames);
       } else {
-        setCoupons(filteredCoupons);
+        setCoupons(prev => [...prev, ...couponsWithNames]);
       }
 
       setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-      // Adjust hasMore based on whether client-side filtering happened
-       setHasMore(filteredCoupons.length === COUPONS_PER_PAGE && querySnapshot.docs.length === COUPONS_PER_PAGE);
+      // If client-side filtering happened, hasMore might be true even if fewer than COUPONS_PER_PAGE are displayed
+      // A more accurate hasMore would be based on `querySnapshot.docs.length === COUPONS_PER_PAGE`
+      // And if client-side filtering results in 0 items but snapshot had items, means all filtered out.
+      setHasMore(querySnapshot.docs.length === COUPONS_PER_PAGE && couponsWithNames.length > 0);
 
 
     } catch (err) {
@@ -274,36 +282,31 @@ function AdminCouponsPageContent() {
       setLoadingMore(false);
       setIsSearching(false);
     }
-  }, [searchTerm, lastVisible, toast]); // Add toast
+  }, [debouncedSearchTerm, lastVisible, toast]);
 
   useEffect(() => {
-    fetchCoupons(false, false); // Initial fetch on mount
-  }, [fetchCoupons]);
+    fetchCoupons(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm, fetchCoupons]); // fetchCoupons is now stable
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchCoupons(false, true); // Fetch with search term, reset pagination
+    // The useEffect already handles fetching when debouncedSearchTerm changes
   };
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      fetchCoupons(true, searchTerm !== ''); // Pass true for loadMore
+      fetchCoupons(true);
     }
   };
 
-  // --- Dialog and Form Handlers ---
   const openAddDialog = () => {
-    setEditingCoupon(null);
-    form.reset({ // Reset form to defaults
-      storeId: '', code: null, description: '', link: null,
-      expiryDate: null, isFeatured: false, isActive: true,
-    });
-    setIsDialogOpen(true);
+    router.push('/admin/coupons/new');
   };
 
   const openEditDialog = (coupon: Coupon) => {
     setEditingCoupon(coupon);
-    form.reset({ // Populate form with existing data
+    form.reset({
       storeId: coupon.storeId,
       code: coupon.code ?? null,
       description: coupon.description,
@@ -316,43 +319,45 @@ function AdminCouponsPageContent() {
   };
 
   const onSubmit = async (data: CouponFormValues) => {
+    if (!db) {
+        setError("Database not available. Please try again later.");
+        setIsSaving(false);
+        return;
+    }
     setIsSaving(true);
     setError(null);
     const submissionData = {
         ...data,
-        code: data.code || null, // Ensure null if empty string
+        code: data.code || null,
         link: data.link || null,
-        expiryDate: data.expiryDate ? data.expiryDate : null, // Keep as Date or null
+        expiryDate: data.expiryDate ? data.expiryDate : null,
     };
 
 
     try {
       if (editingCoupon) {
-        // Update Existing Coupon
         const couponDocRef = doc(db, 'coupons', editingCoupon.id);
         await updateDoc(couponDocRef, {
           ...submissionData,
           updatedAt: serverTimestamp(),
         });
-         // Update local state - fetch store name again if storeId changed (unlikely here)
          const updatedCoupon: CouponWithStoreName = {
-             ...editingCoupon, // Keep original timestamps and ID
-             ...submissionData, // Apply updated data
-             updatedAt: new Date(), // Estimate update time
-             storeName: storeList.find(s => s.id === submissionData.storeId)?.name || 'Unknown Store' // Update store name based on ID
+             ...editingCoupon,
+             ...submissionData,
+             updatedAt: new Date(),
+             storeName: storeList.find(s => s.id === submissionData.storeId)?.name || 'Unknown Store'
          };
          setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? updatedCoupon : c));
 
         toast({ title: "Coupon Updated", description: `Details for coupon updated.` });
       } else {
-        // Add New Coupon
+        // This path should ideally not be hit if 'Add New' redirects to a new page
         const couponsCollection = collection(db, 'coupons');
         const newDocRef = await addDoc(couponsCollection, {
           ...submissionData,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-         // Add to local state with store name
          const newCoupon: CouponWithStoreName = {
              ...submissionData,
              id: newDocRef.id,
@@ -360,7 +365,7 @@ function AdminCouponsPageContent() {
              updatedAt: new Date(),
              storeName: storeList.find(s => s.id === submissionData.storeId)?.name || 'Unknown Store'
          };
-         setCoupons(prev => [newCoupon, ...prev]); // Add to beginning
+         setCoupons(prev => [newCoupon, ...prev]);
         toast({ title: "Coupon Added", description: `New coupon created successfully.` });
       }
       setIsDialogOpen(false);
@@ -375,9 +380,8 @@ function AdminCouponsPageContent() {
     }
   };
 
-   // --- Delete Coupon ---
    const handleDeleteCoupon = async () => {
-     if (!deletingCouponId) return;
+     if (!deletingCouponId || !db) return;
      try {
        const couponDocRef = doc(db, 'coupons', deletingCouponId);
        await deleteDoc(couponDocRef);
@@ -388,12 +392,12 @@ function AdminCouponsPageContent() {
        const errorMsg = err instanceof Error ? err.message : "Could not delete the coupon.";
        toast({ variant: "destructive", title: "Deletion Failed", description: errorMsg });
      } finally {
-       setDeletingCouponId(null); // Reset deleting state
+       setDeletingCouponId(null);
      }
    };
 
 
-  if (loading && coupons.length === 0) {
+  if (loading && coupons.length === 0 && !error) {
     return <CouponsTableSkeleton />;
   }
 
@@ -406,7 +410,7 @@ function AdminCouponsPageContent() {
         </Button>
       </div>
 
-      {error && (
+      {error && !loading && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
@@ -414,41 +418,41 @@ function AdminCouponsPageContent() {
         </Alert>
       )}
 
-      {/* Filtering and Searching Controls */}
       <Card>
         <CardHeader>
           <CardTitle>Filter & Search</CardTitle>
-          <CardDescription>Search by Store ID or Description (case-sensitive).</CardDescription>
+          <CardDescription>Search by Store ID or Description.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col sm:flex-row gap-4">
           <form onSubmit={handleSearch} className="flex-1 flex gap-2">
             <Input
               type="search"
               placeholder="Search by Store ID or Description..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              disabled={isSearching}
+              value={searchTermInput}
+              onChange={(e) => setSearchTermInput(e.target.value)}
+              disabled={isSearching || loading}
               className="h-10 text-base"
             />
-            <Button type="submit" disabled={isSearching} className="h-10">
-              {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            <Button type="submit" disabled={isSearching || loading} className="h-10">
+              {isSearching || (loading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
               <span className="sr-only sm:not-sr-only sm:ml-2">Search</span>
             </Button>
           </form>
         </CardContent>
       </Card>
 
-      {/* Coupons Table */}
       <Card>
         <CardHeader>
           <CardTitle>Coupon List</CardTitle>
           <CardDescription>View and manage coupons and promotional offers.</CardDescription>
         </CardHeader>
         <CardContent>
-           {loading && coupons.length === 0 ? (
+           {loading && coupons.length === 0 && !error ? (
              <CouponsTableSkeleton />
-           ) : coupons.length === 0 ? (
-             <p className="text-center text-muted-foreground py-8">No coupons found matching your criteria.</p>
+           ) : !loading && coupons.length === 0 && !error ? (
+             <p className="text-center text-muted-foreground py-8">
+                {debouncedSearchTerm ? `No coupons found matching "${debouncedSearchTerm}".` : "No coupons found."}
+             </p>
            ) : (
              <div className="overflow-x-auto">
                <Table>
@@ -529,8 +533,8 @@ function AdminCouponsPageContent() {
                                        <AlertDialogCancel onClick={() => setDeletingCouponId(null)}>Cancel</AlertDialogCancel>
                                        <AlertDialogAction
                                           onClick={() => {
-                                               setDeletingCouponId(coupon.id); // Set ID to delete
-                                               handleDeleteCoupon(); // Call handler
+                                               setDeletingCouponId(coupon.id);
+                                               handleDeleteCoupon();
                                           }}
                                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
                                            Delete
@@ -548,7 +552,7 @@ function AdminCouponsPageContent() {
                </Table>
              </div>
            )}
-           {hasMore && (
+           {hasMore && !loading && coupons.length > 0 && (
             <div className="mt-6 text-center">
               <Button onClick={handleLoadMore} disabled={loadingMore}>
                 {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -556,6 +560,7 @@ function AdminCouponsPageContent() {
               </Button>
             </div>
           )}
+           {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
         </CardContent>
       </Card>
 
@@ -574,23 +579,29 @@ function AdminCouponsPageContent() {
              <div className="grid grid-cols-4 items-center gap-4">
                <Label htmlFor="storeId" className="text-right">Store*</Label>
                <div className="col-span-3">
-                   <Select
-                       value={form.watch('storeId')}
-                       onValueChange={(value) => form.setValue('storeId', value, { shouldValidate: true })}
-                       disabled={isSaving}
-                   >
-                       <SelectTrigger id="storeId">
-                           <SelectValue placeholder="Select a store..." />
-                       </SelectTrigger>
-                       <SelectContent>
-                           {storeList.length === 0 && <SelectItem value="loading" disabled>Loading stores...</SelectItem>}
-                           {storeList.map(store => (
-                               <SelectItem key={store.id} value={store.id}>
-                                   {store.name}
-                               </SelectItem>
-                           ))}
-                       </SelectContent>
-                   </Select>
+                   <Controller
+                        name="storeId"
+                        control={form.control}
+                        render={({ field }) => (
+                            <Select
+                                value={field.value}
+                                onValueChange={field.onChange}
+                                disabled={isSaving}
+                            >
+                                <SelectTrigger id="storeId">
+                                    <SelectValue placeholder="Select a store..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {storeList.length === 0 && <SelectItem value="loading" disabled>Loading stores...</SelectItem>}
+                                    {storeList.map(store => (
+                                        <SelectItem key={store.id} value={store.id}>
+                                            {store.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        )}
+                    />
                     {form.formState.errors.storeId && <p className="text-sm text-destructive mt-1">{form.formState.errors.storeId.message}</p>}
                </div>
              </div>
@@ -618,29 +629,35 @@ function AdminCouponsPageContent() {
              {/* Expiry Date */}
              <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="expiryDate" className="text-right">Expiry Date</Label>
-                <Popover>
-                    <PopoverTrigger asChild>
-                        <Button
-                        variant={"outline"}
-                        className={cn(
-                            "col-span-3 justify-start text-left font-normal h-10", // Match input height
-                            !form.watch('expiryDate') && "text-muted-foreground"
-                        )}
-                        disabled={isSaving}
-                        >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {form.watch('expiryDate') ? format(form.watch('expiryDate')!, "PPP") : <span>Optional: Pick a date</span>}
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                        <Calendar
-                           mode="single"
-                           selected={form.watch('expiryDate') ?? undefined}
-                           onSelect={(date) => form.setValue('expiryDate', date ?? null)} // Handle null case
-                           initialFocus
-                         />
-                    </PopoverContent>
-                </Popover>
+                <Controller
+                    name="expiryDate"
+                    control={form.control}
+                    render={({ field }) => (
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button
+                                variant={"outline"}
+                                className={cn(
+                                    "col-span-3 justify-start text-left font-normal h-10",
+                                    !field.value && "text-muted-foreground"
+                                )}
+                                disabled={isSaving}
+                                >
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {field.value ? format(field.value, "PPP") : <span>Optional: Pick a date</span>}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <Calendar
+                                mode="single"
+                                selected={field.value || undefined} // Ensure undefined if null
+                                onSelect={(date) => field.onChange(date || null)}
+                                initialFocus
+                                />
+                            </PopoverContent>
+                        </Popover>
+                    )}
+                />
              </div>
 
 
@@ -649,27 +666,38 @@ function AdminCouponsPageContent() {
                 <Label className="text-right pt-2">Flags</Label>
                 <div className="col-span-3 space-y-3">
                     <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="isFeatured"
-                          checked={form.watch('isFeatured')}
-                          onCheckedChange={(checked) => form.setValue('isFeatured', !!checked)}
-                           disabled={isSaving}
+                         <Controller
+                            name="isFeatured"
+                            control={form.control}
+                            render={({ field }) => (
+                                <Checkbox
+                                id="isFeatured"
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                disabled={isSaving}
+                                />
+                            )}
                         />
                         <Label htmlFor="isFeatured" className="font-normal">Featured Coupon (highlighted)</Label>
                     </div>
                     <div className="flex items-center space-x-2">
-                        <Checkbox
-                         id="isActive"
-                         checked={form.watch('isActive')}
-                         onCheckedChange={(checked) => form.setValue('isActive', !!checked)}
-                          disabled={isSaving}
-                       />
+                        <Controller
+                            name="isActive"
+                            control={form.control}
+                            render={({ field }) => (
+                                <Checkbox
+                                id="isActive"
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                disabled={isSaving}
+                                />
+                            )}
+                        />
                         <Label htmlFor="isActive" className="font-normal">Active (visible to users)</Label>
                     </div>
                 </div>
              </div>
 
-             {/* General form error (e.g., code OR link required) */}
              {form.formState.errors.code && form.formState.errors.code.type === 'refine' && (
                 <Alert variant="destructive" className="col-span-4">
                    <AlertCircle className="h-4 w-4" />

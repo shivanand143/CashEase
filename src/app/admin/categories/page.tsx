@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from 'react';
@@ -11,13 +12,13 @@ import {
   orderBy,
   getDocs,
   doc,
-  setDoc, // Use setDoc with merge option for create/update
+  setDoc, 
   deleteDoc,
   serverTimestamp,
   DocumentData
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase/config';
-import type { Category } from '@/lib/types'; // Assume Category type exists
+import { db, firebaseInitializationError } from '@/lib/firebase/config';
+import type { Category } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -56,17 +57,17 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
-import { safeToDate } from '@/lib/utils'; // Utility function
-import Image from 'next/image'; // For image preview
+import { safeToDate } from '@/lib/utils';
+import Image from 'next/image';
 
 
 // Zod schema for category form validation
 const categorySchema = z.object({
   name: z.string().min(2, 'Category name must be at least 2 characters').max(50, 'Category name too long'),
   slug: z.string().min(2, 'Slug must be at least 2 characters').max(50, 'Slug too long').regex(/^[a-z0-9-]+$/, 'Slug can only contain lowercase letters, numbers, and hyphens'),
-  description: z.string().max(200, 'Description too long').optional(),
-  imageUrl: z.string().url('Invalid URL format').optional().or(z.literal('')), // Optional image URL
-  order: z.number().min(0).default(0), // Order for display
+  description: z.string().max(200, 'Description too long').optional().nullable(),
+  imageUrl: z.string().url('Invalid URL format').optional().nullable().or(z.literal('')),
+  order: z.number().min(0).default(0),
 });
 
 type CategoryFormValues = z.infer<typeof categorySchema>;
@@ -77,13 +78,11 @@ function AdminCategoriesPageContent() {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  // State for Add/Edit Dialog
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<Category | null>(null); // null for Add, Category object for Edit
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null); // Track which category is being deleted
+  const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null);
 
-  // React Hook Form setup
   const form = useForm<CategoryFormValues>({
     resolver: zodResolver(categorySchema),
     defaultValues: {
@@ -95,13 +94,17 @@ function AdminCategoriesPageContent() {
     },
   });
 
-  // --- Fetch Categories ---
   const fetchCategories = useCallback(async () => {
+    if (!db || firebaseInitializationError) {
+      setError(firebaseInitializationError || "Database connection not available.");
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const categoriesCollection = collection(db, 'categories');
-      const q = query(categoriesCollection, orderBy('order', 'asc'), orderBy('name', 'asc')); // Order by 'order' then 'name'
+      const q = query(categoriesCollection, orderBy('order', 'asc'), orderBy('name', 'asc'));
       const querySnapshot = await getDocs(q);
       const categoriesData = querySnapshot.docs.map(docSnap => {
           const data = docSnap.data();
@@ -112,8 +115,8 @@ function AdminCategoriesPageContent() {
             description: data.description || '',
             imageUrl: data.imageUrl || null,
             order: typeof data.order === 'number' ? data.order : 0,
-            createdAt: safeToDate(data.createdAt) || new Date(0),
-            updatedAt: safeToDate(data.updatedAt) || new Date(0),
+            createdAt: safeToDate(data.createdAt),
+            updatedAt: safeToDate(data.updatedAt),
           } as Category;
       });
       setCategories(categoriesData);
@@ -131,10 +134,9 @@ function AdminCategoriesPageContent() {
     fetchCategories();
   }, [fetchCategories]);
 
-  // --- Dialog and Form Handlers ---
   const openAddDialog = () => {
     setEditingCategory(null);
-    form.reset({ // Reset form to defaults for adding
+    form.reset({
       name: '', slug: '', description: '', imageUrl: '', order: 0
     });
     setIsDialogOpen(true);
@@ -142,7 +144,7 @@ function AdminCategoriesPageContent() {
 
   const openEditDialog = (category: Category) => {
     setEditingCategory(category);
-    form.reset({ // Reset form with the category's data for editing
+    form.reset({
       name: category.name,
       slug: category.slug,
       description: category.description || '',
@@ -152,19 +154,17 @@ function AdminCategoriesPageContent() {
     setIsDialogOpen(true);
   };
 
-   // Generate slug from name
    const generateSlug = (name: string) => {
      return name
        .toLowerCase()
-       .replace(/[^a-z0-9\s-]/g, '') // Remove special chars except space/hyphen
+       .replace(/[^a-z0-9\s-]/g, '')
        .trim()
-       .replace(/\s+/g, '-') // Replace spaces with hyphens
-       .replace(/-+/g, '-'); // Replace multiple hyphens with single
+       .replace(/\s+/g, '-')
+       .replace(/-+/g, '-');
    };
 
-   // Update slug field when name changes (if adding new)
    useEffect(() => {
-     if (!editingCategory) { // Only auto-generate for new categories
+     if (!editingCategory) {
        const subscription = form.watch((value, { name }) => {
          if (name === 'name' && value.name) {
            form.setValue('slug', generateSlug(value.name), { shouldValidate: true });
@@ -176,42 +176,44 @@ function AdminCategoriesPageContent() {
 
 
   const onSubmit = async (data: CategoryFormValues) => {
+    if (!db) {
+        setError("Database not available. Please try again later.");
+        setIsSaving(false);
+        return;
+    }
     setIsSaving(true);
     setError(null);
 
     try {
-       // Use the slug as the document ID for simplicity and SEO-friendliness
        const categoryId = data.slug;
        const categoryDocRef = doc(db, 'categories', categoryId);
 
       if (editingCategory) {
-         // Update Existing Category (Note: slug change not allowed easily if it's the ID)
-         // If you need to allow slug changes, the ID structure needs rethinking
          if (editingCategory.slug !== data.slug) {
              throw new Error("Changing the slug (which acts as ID) is not allowed directly. Delete and recreate if necessary.");
          }
          await setDoc(categoryDocRef, {
            ...data,
-           imageUrl: data.imageUrl || null, // Ensure null if empty
+           imageUrl: data.imageUrl || null,
+           description: data.description || null,
            updatedAt: serverTimestamp(),
-         }, { merge: true }); // Merge to update existing fields
+         }, { merge: true });
          setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, ...data, updatedAt: new Date() } : c));
          toast({ title: "Category Updated", description: `${data.name} details saved.` });
       } else {
-        // Add New Category
         await setDoc(categoryDocRef, {
           ...data,
-           imageUrl: data.imageUrl || null, // Ensure null if empty
+           imageUrl: data.imageUrl || null,
+           description: data.description || null,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        // Add to local state
         const newCategory: Category = { ...data, id: categoryId, createdAt: new Date(), updatedAt: new Date() };
-        setCategories(prev => [...prev, newCategory].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))); // Add and resort
+        setCategories(prev => [...prev, newCategory].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)));
         toast({ title: "Category Added", description: `${data.name} created successfully.` });
       }
-      setIsDialogOpen(false); // Close dialog on success
-      form.reset(); // Reset form after submission
+      setIsDialogOpen(false);
+      form.reset();
     } catch (err) {
       console.error("Error saving category:", err);
       const errorMsg = err instanceof Error ? err.message : "Could not save category details.";
@@ -222,9 +224,8 @@ function AdminCategoriesPageContent() {
     }
   };
 
-   // --- Delete Category ---
    const handleDeleteCategory = async () => {
-     if (!deletingCategoryId) return;
+     if (!deletingCategoryId || !db) return;
      try {
        const categoryDocRef = doc(db, 'categories', deletingCategoryId);
        await deleteDoc(categoryDocRef);
@@ -235,11 +236,11 @@ function AdminCategoriesPageContent() {
        const errorMsg = err instanceof Error ? err.message : "Could not delete the category.";
        toast({ variant: "destructive", title: "Deletion Failed", description: errorMsg });
      } finally {
-       setDeletingCategoryId(null); // Reset deleting state
+       setDeletingCategoryId(null);
      }
    };
 
-  if (loading) {
+  if (loading && categories.length === 0 && !error) {
     return <CategoriesTableSkeleton />;
   }
 
@@ -252,7 +253,7 @@ function AdminCategoriesPageContent() {
         </Button>
       </div>
 
-      {error && (
+      {error && !loading && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
@@ -260,16 +261,15 @@ function AdminCategoriesPageContent() {
         </Alert>
       )}
 
-      {/* Categories Table */}
       <Card>
         <CardHeader>
           <CardTitle>Category List</CardTitle>
           <CardDescription>View and manage store categories.</CardDescription>
         </CardHeader>
         <CardContent>
-           {loading && categories.length === 0 ? (
+           {loading && categories.length === 0 && !error ? (
              <CategoriesTableSkeleton />
-           ) : categories.length === 0 ? (
+           ) : !loading && categories.length === 0 && !error ? (
              <p className="text-center text-muted-foreground py-8">No categories found.</p>
            ) : (
             <div className="overflow-x-auto">
@@ -290,7 +290,7 @@ function AdminCategoriesPageContent() {
                       <TableCell className="w-16 text-center">{category.order}</TableCell>
                       <TableCell>
                         {category.imageUrl ? (
-                          <Image src={category.imageUrl} alt={`${category.name} image`} width={50} height={50} className="object-cover rounded-sm w-12 h-12" data-ai-hint={`${category.name} category image`}/>
+                          <Image src={category.imageUrl} alt={`${category.name} image`} width={50} height={50} className="object-cover rounded-sm w-12 h-12" data-ai-hint={`${category.name} category icon`}/>
                         ) : (
                           <div className="w-12 h-12 bg-muted flex items-center justify-center text-xs text-muted-foreground rounded-sm">No Img</div>
                         )}
@@ -323,7 +323,7 @@ function AdminCategoriesPageContent() {
                                  <AlertDialogFooter>
                                    <AlertDialogCancel onClick={() => setDeletingCategoryId(null)}>Cancel</AlertDialogCancel>
                                    <AlertDialogAction
-                                      onClick={handleDeleteCategory} // Call delete handler
+                                      onClick={handleDeleteCategory}
                                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
                                        Delete
                                     </AlertDialogAction>
@@ -341,7 +341,6 @@ function AdminCategoriesPageContent() {
         </CardContent>
       </Card>
 
-      {/* Add/Edit Category Dialog */}
        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
          <DialogContent className="sm:max-w-lg">
            <DialogHeader>
@@ -351,7 +350,6 @@ function AdminCategoriesPageContent() {
              </DialogDescription>
            </DialogHeader>
            <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4 py-4">
-              {/* Order */}
              <div className="grid grid-cols-4 items-center gap-4">
                <label htmlFor="order" className="text-right">Display Order</label>
                <Input
@@ -364,13 +362,11 @@ function AdminCategoriesPageContent() {
                />
                {form.formState.errors.order && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.order.message}</p>}
              </div>
-             {/* Category Name */}
              <div className="grid grid-cols-4 items-center gap-4">
-               <label htmlFor="name" className="text-right">Name</label>
+               <label htmlFor="name" className="text-right">Name</Label>
                <Input id="name" {...form.register('name')} className="col-span-3" disabled={isSaving} />
                {form.formState.errors.name && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.name.message}</p>}
              </div>
-             {/* Slug */}
              <div className="grid grid-cols-4 items-center gap-4">
                <label htmlFor="slug" className="text-right">Slug</label>
                <Input
@@ -378,12 +374,11 @@ function AdminCategoriesPageContent() {
                  {...form.register('slug')}
                  className="col-span-3"
                  placeholder="auto-generated or custom"
-                 disabled={isSaving || !!editingCategory} // Disable editing slug for existing categories via this form
+                 disabled={isSaving || !!editingCategory}
                />
                 {editingCategory && <p className="col-span-4 text-xs text-muted-foreground">Slug cannot be changed after creation.</p>}
                {form.formState.errors.slug && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.slug.message}</p>}
              </div>
-             {/* Image URL */}
              <div className="grid grid-cols-4 items-center gap-4">
                <label htmlFor="imageUrl" className="text-right">Image URL</label>
                <Input id="imageUrl" {...form.register('imageUrl')} className="col-span-3" placeholder="https://... (Optional)" disabled={isSaving} />
@@ -394,7 +389,6 @@ function AdminCategoriesPageContent() {
                 )}
                {form.formState.errors.imageUrl && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.imageUrl.message}</p>}
              </div>
-             {/* Description */}
              <div className="grid grid-cols-4 items-center gap-4">
                <label htmlFor="description" className="text-right">Description</label>
                <Textarea id="description" {...form.register('description')} className="col-span-3" rows={2} placeholder="Optional short description" disabled={isSaving} />
@@ -419,7 +413,6 @@ function AdminCategoriesPageContent() {
   );
 }
 
-// Skeleton Loader for the Table
 function CategoriesTableSkeleton() {
    return (
     <Card>

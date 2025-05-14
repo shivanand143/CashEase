@@ -1,3 +1,4 @@
+
 // src/app/admin/transactions/page.tsx
 "use client";
 
@@ -19,8 +20,8 @@ import {
   QueryDocumentSnapshot,
   Timestamp
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase/config';
-import type { Transaction, CashbackStatus } from '@/lib/types'; // Ensure Transaction type is defined
+import { db, firebaseInitializationError } from '@/lib/firebase/config';
+import type { Transaction, CashbackStatus } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,22 +37,22 @@ import { format } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea'; // For admin notes
+import { Textarea } from '@/components/ui/textarea';
 import { AlertCircle, Loader2, Search, Edit, Save, X } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { formatCurrency, safeToDate } from '@/lib/utils'; // Assuming utils
-import AdminGuard from '@/components/guards/admin-guard'; // Ensure page is protected
+import { formatCurrency, safeToDate } from '@/lib/utils';
+import AdminGuard from '@/components/guards/admin-guard';
+import { useDebounce } from '@/hooks/use-debounce';
 
 const TRANSACTIONS_PER_PAGE = 20;
 
-// Helper function to map status to badge variant
 const getStatusVariant = (status: CashbackStatus): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
-    case 'confirmed': return 'default'; // Use primary color for confirmed
-    case 'paid': return 'secondary'; // Use secondary for paid
-    case 'pending': return 'outline'; // Outline for pending
-    case 'rejected': return 'destructive'; // Destructive for rejected
+    case 'confirmed': return 'default';
+    case 'paid': return 'secondary';
+    case 'pending': return 'outline';
+    case 'rejected': return 'destructive';
     default: return 'outline';
   }
 };
@@ -65,45 +66,48 @@ function AdminTransactionsPageContent() {
   const [loadingMore, setLoadingMore] = useState(false);
   const { toast } = useToast();
 
-  // Filtering and Searching State
   const [filterStatus, setFilterStatus] = useState<CashbackStatus | 'all'>('all');
-  const [searchTerm, setSearchTerm] = useState(''); // For searching by User ID or Store ID
+  const [searchTermInput, setSearchTermInput] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTermInput, 500);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Editing State
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
   const [editData, setEditData] = useState<{ status: CashbackStatus; adminNotes: string }>({ status: 'pending', adminNotes: '' });
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
-  const fetchTransactions = useCallback(async (loadMore = false, search = false) => {
-    if (!loadMore) {
+  const fetchTransactions = useCallback(async (loadMore = false) => {
+    if (!db || firebaseInitializationError) {
+      setError(firebaseInitializationError || "Database connection not available.");
+      setLoading(false);
+      setLoadingMore(false);
+      setHasMore(false);
+      return;
+    }
+
+    const isInitialOrNewSearch = !loadMore;
+    if (isInitialOrNewSearch) {
       setLoading(true);
-      setLastVisible(null); // Reset pagination for new searches/filters
-      setTransactions([]); // Clear existing data for new load
+      setLastVisible(null);
+      setTransactions([]);
+      setHasMore(true);
     } else {
       setLoadingMore(true);
     }
     setError(null);
-    setIsSearching(search);
+    setIsSearching(debouncedSearchTerm !== '');
 
     try {
       const transactionsCollection = collection(db, 'transactions');
       const constraints: QueryConstraint[] = [];
 
-      // Apply filters
       if (filterStatus !== 'all') {
         constraints.push(where('status', '==', filterStatus));
       }
-      if (search && searchTerm) {
-        // Basic search - adjust query if needed (e.g., search multiple fields)
-        // NOTE: Firestore doesn't support partial string search natively.
-        // This searches for exact User ID match for simplicity.
-        constraints.push(where('userId', '==', searchTerm));
-        // If you need broader search, consider Firestore extensions or Algolia.
+      if (debouncedSearchTerm) {
+        constraints.push(where('userId', '==', debouncedSearchTerm));
       }
 
-      // Apply ordering and pagination
-      constraints.push(orderBy('transactionDate', 'desc')); // Default order
+      constraints.push(orderBy('transactionDate', 'desc'));
       if (loadMore && lastVisible) {
         constraints.push(startAfter(lastVisible));
       }
@@ -122,10 +126,10 @@ function AdminTransactionsPageContent() {
         paidDate: safeToDate(doc.data().paidDate),
       } as Transaction));
 
-      if (loadMore) {
-        setTransactions(prev => [...prev, ...transactionsData]);
-      } else {
+      if (isInitialOrNewSearch) {
         setTransactions(transactionsData);
+      } else {
+        setTransactions(prev => [...prev, ...transactionsData]);
       }
 
       setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
@@ -140,25 +144,24 @@ function AdminTransactionsPageContent() {
       setLoadingMore(false);
       setIsSearching(false);
     }
-  }, [filterStatus, searchTerm, lastVisible, toast]); // Removed error and toast from dependency array
+  }, [filterStatus, debouncedSearchTerm, lastVisible, toast]);
 
   useEffect(() => {
-    fetchTransactions(false, false); // Initial fetch on mount and filter change
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterStatus]); // Re-fetch only when filter status changes
+    fetchTransactions(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterStatus, debouncedSearchTerm, fetchTransactions]); // fetchTransactions is now stable
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchTransactions(false, true); // Fetch with search term, reset pagination
+    // useEffect will trigger fetch due to debouncedSearchTerm change
   };
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      fetchTransactions(true, searchTerm !== ''); // Pass true for loadMore, and true for search if searchTerm exists
+      fetchTransactions(true);
     }
   };
 
-  // --- Edit Handlers ---
   const handleEditClick = (transaction: Transaction) => {
     setEditingTransactionId(transaction.id);
     setEditData({ status: transaction.status, adminNotes: transaction.adminNotes || '' });
@@ -169,30 +172,31 @@ function AdminTransactionsPageContent() {
   };
 
   const handleSaveEdit = async () => {
-     if (!editingTransactionId) return;
+     if (!editingTransactionId || !db) return;
      setIsSavingEdit(true);
      try {
          const transactionRef = doc(db, 'transactions', editingTransactionId);
          await updateDoc(transactionRef, {
              status: editData.status,
-             adminNotes: editData.adminNotes.trim() || null, // Store null if empty
+             adminNotes: editData.adminNotes.trim() || null,
              updatedAt: serverTimestamp(),
-             // Potentially update confirmation/paid dates based on status change logic
-             confirmationDate: editData.status === 'confirmed' ? serverTimestamp() : null, // Example: set confirm date
-             paidDate: editData.status === 'paid' ? serverTimestamp() : null, // Example: set paid date
+             confirmationDate: editData.status === 'confirmed' && !transactions.find(tx => tx.id === editingTransactionId)?.confirmationDate ? serverTimestamp() : transactions.find(tx => tx.id === editingTransactionId)?.confirmationDate || null,
+             paidDate: editData.status === 'paid' && !transactions.find(tx => tx.id === editingTransactionId)?.paidDate ? serverTimestamp() : transactions.find(tx => tx.id === editingTransactionId)?.paidDate || null,
          });
 
-         // Update local state immediately for better UX
          setTransactions(prev =>
              prev.map(tx =>
                  tx.id === editingTransactionId
-                     ? { ...tx, status: editData.status, adminNotes: editData.adminNotes.trim() || null, updatedAt: new Date() } // Estimate date
+                     ? { ...tx, status: editData.status, adminNotes: editData.adminNotes.trim() || null, updatedAt: new Date(),
+                         confirmationDate: editData.status === 'confirmed' ? new Date() : tx.confirmationDate,
+                         paidDate: editData.status === 'paid' ? new Date() : tx.paidDate,
+                       }
                      : tx
              )
          );
 
          toast({ title: "Transaction Updated", description: "Status and notes saved." });
-         setEditingTransactionId(null); // Exit edit mode
+         setEditingTransactionId(null);
      } catch (err) {
          console.error("Error updating transaction:", err);
          toast({ variant: "destructive", title: "Update Failed", description: err instanceof Error ? err.message : "Could not save changes." });
@@ -201,7 +205,7 @@ function AdminTransactionsPageContent() {
      }
   };
 
-  if (loading && transactions.length === 0) {
+  if (loading && transactions.length === 0 && !error) {
     return <TransactionsTableSkeleton />;
   }
 
@@ -209,7 +213,7 @@ function AdminTransactionsPageContent() {
     <div className="space-y-6">
       <h1 className="text-3xl font-bold">Manage Transactions</h1>
 
-      {error && (
+      {error && !loading && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
@@ -217,7 +221,6 @@ function AdminTransactionsPageContent() {
         </Alert>
       )}
 
-      {/* Filtering and Searching Controls */}
       <Card>
         <CardHeader>
           <CardTitle>Filter & Search</CardTitle>
@@ -242,31 +245,32 @@ function AdminTransactionsPageContent() {
             <Input
               type="search"
               placeholder="Search by User ID..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              disabled={isSearching}
+              value={searchTermInput}
+              onChange={(e) => setSearchTermInput(e.target.value)}
+              disabled={isSearching || loading}
             />
-            <Button type="submit" disabled={isSearching}>
-              {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            <Button type="submit" disabled={isSearching || loading}>
+              {isSearching || (loading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
               <span className="sr-only sm:not-sr-only sm:ml-2">Search</span>
             </Button>
           </form>
         </CardContent>
       </Card>
 
-      {/* Transactions Table */}
       <Card>
         <CardHeader>
           <CardTitle>Transactions</CardTitle>
           <CardDescription>View and manage user cashback transactions.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading && transactions.length === 0 ? (
+          {loading && transactions.length === 0 && !error ? (
              <TransactionsTableSkeleton />
-           ) : transactions.length === 0 ? (
-             <p className="text-center text-muted-foreground py-8">No transactions found matching your criteria.</p>
+           ) : !loading && transactions.length === 0 && !error ? (
+             <p className="text-center text-muted-foreground py-8">
+                {debouncedSearchTerm || filterStatus !== 'all' ? 'No transactions found matching your criteria.' : 'No transactions found.'}
+             </p>
            ) : (
-            <div className="overflow-x-auto"> {/* Wrap table */}
+            <div className="overflow-x-auto">
                 <Table>
                 <TableHeader>
                     <TableRow>
@@ -349,7 +353,7 @@ function AdminTransactionsPageContent() {
                 </Table>
             </div>
           )}
-          {hasMore && (
+          {hasMore && !loading && transactions.length > 0 && (
             <div className="mt-4 text-center">
               <Button onClick={handleLoadMore} disabled={loadingMore}>
                 {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -357,13 +361,13 @@ function AdminTransactionsPageContent() {
               </Button>
             </div>
           )}
+          {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
         </CardContent>
       </Card>
     </div>
   );
 }
 
-// Skeleton Loader for the Table
 function TransactionsTableSkeleton() {
   return (
     <Card>
@@ -372,7 +376,7 @@ function TransactionsTableSkeleton() {
          <Skeleton className="h-4 w-1/2"/>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto"> {/* Wrap skeleton table */}
+        <div className="overflow-x-auto">
             <Table>
             <TableHeader>
                 <TableRow>
@@ -404,4 +408,3 @@ export default function AdminTransactionsPage() {
       </AdminGuard>
     );
 }
-    
