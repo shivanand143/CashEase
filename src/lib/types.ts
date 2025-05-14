@@ -1,3 +1,4 @@
+
 import type { Timestamp } from 'firebase/firestore';
 
 // Basic user type from Firebase Auth
@@ -61,7 +62,6 @@ export interface Click {
     affiliateLink: string; // The specific link that was clicked (with clickId appended if applicable)
     timestamp: Date | Timestamp; // Firestore server timestamp preferred
     userAgent?: string; // Optional: User agent string
-    // Add other relevant details if needed, e.g., source page, IP address (handle privacy carefully)
 }
 
 
@@ -123,6 +123,7 @@ export interface Category {
     description?: string | null;
     imageUrl?: string | null; // Optional image for the category
     order: number; // For custom sorting of categories
+    isActive: boolean; // Added for homepage/general visibility control
     createdAt: Date | Timestamp;
     updatedAt: Date | Timestamp;
 }
@@ -140,6 +141,32 @@ export interface Banner {
     isActive: boolean; // Whether the banner is currently displayed
     createdAt: Date | Timestamp;
     updatedAt: Date | Timestamp;
+}
+
+// Product information
+export interface Product {
+  id: string; // Firestore document ID
+  storeId: string; // ID of the store this product belongs to
+  storeName?: string; // Denormalized store name for display convenience
+  name: string;
+  description?: string | null;
+  imageUrl: string | null;
+  affiliateLink: string; // Specific affiliate link for this product
+  price?: number | null; // Numeric price for sorting/filtering if needed
+  priceDisplay?: string | null; // Formatted price string (e.g., "₹1,999", "₹1,999 - ₹2,499")
+  category?: string; // Slug of the primary category this product falls into (can be an array if multi-category)
+  // Example: categories: string[]; // If a product can belong to multiple categories
+  brand?: string | null;
+  sku?: string | null; // Stock Keeping Unit
+  rating?: number | null;
+  ratingCount?: number | null;
+  features?: string[]; // Array of key feature strings
+  specifications?: Record<string, string>; // Key-value pairs for detailed specifications
+  isActive: boolean; // Is the product currently active and visible?
+  isFeatured?: boolean; // Should this product be highlighted?
+  dataAiHint?: string | null; // For placeholder image generation
+  createdAt: Date | Timestamp;
+  updatedAt: Date | Timestamp;
 }
 
 
@@ -171,3 +198,5 @@ export interface CouponFormValues extends Omit<Coupon, 'id' | 'createdAt' | 'upd
 export interface BannerFormValues extends Omit<Banner, 'id' | 'createdAt' | 'updatedAt'> {}
 // Form values for Category, used in admin panel
 export interface CategoryFormValues extends Omit<Category, 'id' | 'createdAt' | 'updatedAt'> {}
+// Form values for Product, used in admin panel
+export interface ProductFormValues extends Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'storeName'> {}

@@ -1,9 +1,10 @@
+
 "use client";
 
 import * as React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Users, Store as StoreIconLucide, Tag, CreditCard, ArrowRight, Activity, AlertCircle, BadgePercent, Building2, TicketPercent, BarChart3 } from 'lucide-react'; // Renamed Store import
+import { Users, Store as StoreIconLucide, Tag, CreditCard, ArrowRight, Activity, AlertCircle, BadgePercent, Building2, TicketPercent, BarChart3, Package } from 'lucide-react'; // Renamed Store import
 import Link from 'next/link';
 import AdminGuard from '@/components/guards/admin-guard';
 import { collection, getDocs, query, where, limit, getCountFromServer } from 'firebase/firestore';
@@ -41,7 +42,7 @@ function StatCard({ title, value, icon: Icon, link, linkText, isLoading, error }
              </div>
         ): (
           <>
-            <div className="text-2xl font-bold">{typeof value === 'number' && title !== "Total Users" && title !== "Pending Payouts" ? formatCurrency(value) : value}</div>
+            <div className="text-2xl font-bold">{typeof value === 'number' && title !== "Total Users" && title !== "Pending Payouts" && title !== "Total Products" ? formatCurrency(value) : value}</div>
             <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs text-muted-foreground mt-1">
               <Link href={link} className="flex items-center gap-1">
                 {linkText} <ArrowRight className="h-3 w-3" />
@@ -61,6 +62,7 @@ function AdminOverviewPageContent() {
     coupons: { value: 0, isLoading: true, error: null as string | null },
     categories: { value: 0, isLoading: true, error: null as string | null },
     banners: { value: 0, isLoading: true, error: null as string | null },
+    products: { value: 0, isLoading: true, error: null as string | null }, // New product stat
     transactions: { value: 0, isLoading: true, error: null as string | null },
     pendingPayouts: { value: 0, isLoading: true, error: null as string | null },
   });
@@ -72,7 +74,6 @@ function AdminOverviewPageContent() {
     const fetchAllStats = async () => {
       if (!isMounted) return;
 
-      // Helper to update a single stat's loading and error state
       const updateStatState = (key: keyof typeof stats, loading: boolean, errorMsg: string | null = null, valueIfError = 0) => {
         if (isMounted) {
           setStats(prev => ({
@@ -87,7 +88,6 @@ function AdminOverviewPageContent() {
           console.error("Firestore not initialized for fetching admin stats");
           const dbErrorMsg = "Database Error";
           setOverallError(dbErrorMsg);
-          // Set all individual stats to error state
           (Object.keys(stats) as Array<keyof typeof stats>).forEach(key => {
             updateStatState(key, false, dbErrorMsg);
           });
@@ -128,25 +128,23 @@ function AdminOverviewPageContent() {
         }
       };
 
-      // Fetch all stats in parallel
       await Promise.allSettled([
         fetchCollectionCount('users', 'users'),
         fetchCollectionCount('stores', 'stores'),
         fetchCollectionCount('coupons', 'coupons'),
         fetchCollectionCount('categories', 'categories'),
         fetchCollectionCount('banners', 'banners'),
+        fetchCollectionCount('products', 'products'), // Fetch product count
         fetchCollectionCount('transactions', 'transactions'),
         fetchPendingPayoutsCount(),
       ]);
 
-      // Final pass to ensure all loading flags are false if component is still mounted
       if (isMounted) {
         setStats(prev => {
           const updatedStats = { ...prev };
           for (const key in updatedStats) {
             if (updatedStats[key as keyof typeof stats].isLoading) {
               updatedStats[key as keyof typeof stats].isLoading = false;
-              // If still loading but no error, assume it failed silently or db was issue
               if (!updatedStats[key as keyof typeof stats].error && !db) {
                  updatedStats[key as keyof typeof stats].error = "DB Error (Final Check)";
               }
@@ -159,12 +157,12 @@ function AdminOverviewPageContent() {
 
     fetchAllStats();
     return () => { isMounted = false; };
-     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const statCards = [
     { title: "Total Users", value: stats.users.value, icon: Users, link: "/admin/users", linkText: "Manage Users", isLoading: stats.users.isLoading, error: stats.users.error },
     { title: "Total Stores", value: stats.stores.value, icon: StoreIconLucide, link: "/admin/stores", linkText: "Manage Stores", isLoading: stats.stores.isLoading, error: stats.stores.error },
+    { title: "Total Products", value: stats.products.value, icon: Package, link: "/admin/products", linkText: "Manage Products", isLoading: stats.products.isLoading, error: stats.products.error }, // New Product Card
     { title: "Total Coupons", value: stats.coupons.value, icon: BadgePercent, link: "/admin/coupons", linkText: "Manage Coupons", isLoading: stats.coupons.isLoading, error: stats.coupons.error },
     { title: "Total Categories", value: stats.categories.value, icon: Building2, link: "/admin/categories", linkText: "Manage Categories", isLoading: stats.categories.isLoading, error: stats.categories.error },
     { title: "Total Banners", value: stats.banners.value, icon: TicketPercent, link: "/admin/banners", linkText: "Manage Banners", isLoading: stats.banners.isLoading, error: stats.banners.error },
@@ -200,6 +198,9 @@ function AdminOverviewPageContent() {
         <CardContent className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
            <Button asChild variant="outline">
              <Link href="/admin/stores/new"> <StoreIconLucide className="mr-2 h-4 w-4"/>Add New Store</Link>
+           </Button>
+            <Button asChild variant="outline">
+             <Link href="/admin/products/new"> <Package className="mr-2 h-4 w-4"/>Add New Product</Link>
            </Button>
            <Button asChild variant="outline">
              <Link href="/admin/coupons/new"><BadgePercent className="mr-2 h-4 w-4"/>Add New Coupon/Offer</Link>
