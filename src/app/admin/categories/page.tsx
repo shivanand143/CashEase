@@ -3,7 +3,7 @@
 
 import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
@@ -12,9 +12,10 @@ import {
   orderBy,
   getDocs,
   doc,
-  setDoc, 
+  setDoc,
   deleteDoc,
   serverTimestamp,
+  getDoc,
   DocumentData
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
@@ -54,14 +55,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialogTrigger, // Ensure AlertDialogTrigger is imported
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { safeToDate } from '@/lib/utils';
 import Image from 'next/image';
 
-
-// Zod schema for category form validation
 const categorySchema = z.object({
   name: z.string().min(2, 'Category name must be at least 2 characters').max(50, 'Category name too long'),
   slug: z.string().min(2, 'Slug must be at least 2 characters').max(50, 'Slug too long').regex(/^[a-z0-9-]+$/, 'Slug can only contain lowercase letters, numbers, and hyphens'),
@@ -95,8 +94,13 @@ function AdminCategoriesPageContent() {
   });
 
   const fetchCategories = useCallback(async () => {
-    if (!db || firebaseInitializationError) {
-      setError(firebaseInitializationError || "Database connection not available.");
+    if (firebaseInitializationError) {
+      setError(`Firebase initialization error: ${firebaseInitializationError}`);
+      setLoading(false);
+      return;
+    }
+    if (!db) {
+      setError("Database connection not available.");
       setLoading(false);
       return;
     }
@@ -137,7 +141,7 @@ function AdminCategoriesPageContent() {
   const openAddDialog = () => {
     setEditingCategory(null);
     form.reset({
-      name: '', slug: '', description: '', imageUrl: '', order: 0
+      name: '', slug: '', description: '', imageUrl: '', order: categories.length > 0 ? Math.max(...categories.map(c => c.order)) + 1 : 0
     });
     setIsDialogOpen(true);
   };
@@ -164,15 +168,15 @@ function AdminCategoriesPageContent() {
    };
 
    useEffect(() => {
-     if (!editingCategory) {
+     if (!editingCategory && isDialogOpen) { // Only watch when adding and dialog is open
        const subscription = form.watch((value, { name }) => {
-         if (name === 'name' && value.name) {
+         if (name === 'name' && value.name && !form.formState.dirtyFields.slug) { // Don't overwrite if slug was manually touched
            form.setValue('slug', generateSlug(value.name), { shouldValidate: true });
          }
        });
        return () => subscription.unsubscribe();
      }
-   }, [form, editingCategory]);
+   }, [form, editingCategory, isDialogOpen]);
 
 
   const onSubmit = async (data: CategoryFormValues) => {
@@ -185,22 +189,39 @@ function AdminCategoriesPageContent() {
     setError(null);
 
     try {
-       const categoryId = data.slug;
+       const categoryId = data.slug; // Use slug as document ID
        const categoryDocRef = doc(db, 'categories', categoryId);
 
       if (editingCategory) {
          if (editingCategory.slug !== data.slug) {
-             throw new Error("Changing the slug (which acts as ID) is not allowed directly. Delete and recreate if necessary.");
+             toast({
+                 variant: "destructive",
+                 title: "Slug Change Not Allowed",
+                 description: "Changing the category slug (ID) is not permitted for existing categories.",
+             });
+             setIsSaving(false);
+             return;
          }
          await setDoc(categoryDocRef, {
            ...data,
            imageUrl: data.imageUrl || null,
            description: data.description || null,
            updatedAt: serverTimestamp(),
-         }, { merge: true });
-         setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, ...data, updatedAt: new Date() } : c));
+         }, { merge: true }); // Merge to avoid overwriting createdAt
+         setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, ...data, updatedAt: new Date() } : c).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)));
          toast({ title: "Category Updated", description: `${data.name} details saved.` });
       } else {
+        // Check if slug already exists for new category
+        const existingDoc = await getDoc(categoryDocRef);
+        if (existingDoc.exists()) {
+            toast({
+                variant: "destructive",
+                title: "Slug Already Exists",
+                description: `The slug "${data.slug}" is already in use. Please choose a unique slug.`,
+            });
+            setIsSaving(false);
+            return;
+        }
         await setDoc(categoryDocRef, {
           ...data,
            imageUrl: data.imageUrl || null,
@@ -360,38 +381,39 @@ function AdminCategoriesPageContent() {
                  placeholder="0"
                  disabled={isSaving}
                />
-               {form.formState.errors.order && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.order.message}</p>}
+               {form.formState.errors.order && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.order.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
-               <label htmlFor="name" className="text-right">Name</Label>
+               <label htmlFor="name" className="text-right">Name*</label>
                <Input id="name" {...form.register('name')} className="col-span-3" disabled={isSaving} />
-               {form.formState.errors.name && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.name.message}</p>}
+               {form.formState.errors.name && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.name.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
-               <label htmlFor="slug" className="text-right">Slug</label>
+               <label htmlFor="slug" className="text-right">Slug*</label>
                <Input
                  id="slug"
                  {...form.register('slug')}
                  className="col-span-3"
                  placeholder="auto-generated or custom"
-                 disabled={isSaving || !!editingCategory}
+                 disabled={isSaving || !!editingCategory} // Disable slug editing for existing categories
                />
-                {editingCategory && <p className="col-span-4 text-xs text-muted-foreground">Slug cannot be changed after creation.</p>}
-               {form.formState.errors.slug && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.slug.message}</p>}
+                {editingCategory && <p className="col-span-4 text-xs text-muted-foreground text-right">Slug cannot be changed after creation.</p>}
+               {form.formState.errors.slug && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.slug.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
                <label htmlFor="imageUrl" className="text-right">Image URL</label>
                <Input id="imageUrl" {...form.register('imageUrl')} className="col-span-3" placeholder="https://... (Optional)" disabled={isSaving} />
                 {form.watch('imageUrl') && (
-                    <div className="col-span-4 col-start-2">
-                        <Image src={form.watch('imageUrl')!} alt="Image Preview" width={60} height={60} className="object-cover border rounded-sm mt-1 w-16 h-16" />
+                    <div className="col-start-2 col-span-3 mt-1">
+                        <Image src={form.watch('imageUrl')!} alt="Image Preview" width={60} height={60} className="object-cover border rounded-sm w-16 h-16" />
                     </div>
                 )}
-               {form.formState.errors.imageUrl && <p className="col-span-4 text-sm text-destructive">{form.formState.errors.imageUrl.message}</p>}
+               {form.formState.errors.imageUrl && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.imageUrl.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
                <label htmlFor="description" className="text-right">Description</label>
                <Textarea id="description" {...form.register('description')} className="col-span-3" rows={2} placeholder="Optional short description" disabled={isSaving} />
+               {form.formState.errors.description && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.description.message}</p>}
              </div>
 
              <DialogFooter>
@@ -408,10 +430,9 @@ function AdminCategoriesPageContent() {
            </form>
          </DialogContent>
        </Dialog>
-
     </div>
   );
-}
+} // Closing brace for AdminCategoriesPageContent
 
 function CategoriesTableSkeleton() {
    return (
@@ -444,7 +465,7 @@ function CategoriesTableSkeleton() {
       </CardContent>
     </Card>
   );
-}
+} // Closing brace for CategoriesTableSkeleton
 
 export default function AdminCategoriesPage() {
     return (
@@ -452,4 +473,4 @@ export default function AdminCategoriesPage() {
         <AdminCategoriesPageContent />
       </AdminGuard>
     );
-}
+} // Closing brace for AdminCategoriesPage
