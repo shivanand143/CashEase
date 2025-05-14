@@ -1,3 +1,4 @@
+
 // src/app/page.tsx
 "use client";
 
@@ -13,14 +14,13 @@ import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePerc
 import { useToast } from '@/hooks/use-toast';
 import { collection, getDocs, query, where, limit, orderBy, QueryConstraint, DocumentData, getDoc, doc, Timestamp } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Store, Coupon, Banner, Category } from '@/lib/types';
+import type { Store, Coupon, Banner, Category, Product } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import StoreCard from '@/components/store-card';
 import CouponCard from '@/components/coupon-card';
 import { useRouter } from 'next/navigation';
 import { safeToDate } from '@/lib/utils';
 import { ProductCard } from '@/components/product-card';
-import type { AmazonProduct } from '@/lib/amazon/amazon-paapi'; // Ensure this type is correctly defined
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 
@@ -60,7 +60,6 @@ async function fetchData<T>(collectionName: string, constraints: QueryConstraint
         });
     } catch (err) {
         console.error(`Error fetching ${collectionName}:`, err);
-        // Re-throw or return an error indicator if needed by the caller
         throw new Error(`Failed to fetch ${collectionName}`);
     }
     return data;
@@ -116,15 +115,6 @@ async function fetchCouponsWithStoreData(constraints: QueryConstraint[], orderFi
     return enrichedCoupons;
 }
 
-// --- Amazon Products (Placeholder/Example) ---
-const exampleAmazonProducts: AmazonProduct[] = [
-    { ASIN: 'B08N5WRWNW', Title: 'Echo Dot (4th Gen) | Smart speaker with Alexa | Glacier White', Price: '3499', ImageURL: 'https://placehold.co/200x200.png', DetailPageURL: '#', Category: 'Electronics' },
-    { ASIN: 'B09G9HD6PD', Title: 'Fire TV Stick 4K Max streaming device, Wi-Fi 6 compatible', Price: '4499', ImageURL: 'https://placehold.co/200x200.png', DetailPageURL: '#', Category: 'Electronics' },
-    { ASIN: 'B08C1KN5J2', Title: 'OnePlus Nord CE 2 Lite 5G (Blue Tide, 6GB RAM, 128GB Storage)', Price: '18999', ImageURL: 'https://placehold.co/200x200.png', DetailPageURL: '#', Category: 'Mobiles & Tablets' },
-    { ASIN: 'B09WQY65HN', Title: 'boAt Airdopes 141 Bluetooth Truly Wireless in Ear Earbuds', Price: '1099', ImageURL: 'https://placehold.co/200x200.png', DetailPageURL: '#', Category: 'Electronics' },
-    { ASIN: 'B07HHD7SXM', Title: 'MI Power Bank 3i 20000mAh Lithium Polymer 18W Fast PD Charging', Price: '1799', ImageURL: 'https://placehold.co/200x200.png', DetailPageURL: '#', Category: 'Mobiles & Tablets' },
-    { ASIN: 'B09MQ9X6XZ', Title: 'HP 15s, 11th Gen Intel Core i3-1115G4, 15.6-inch Laptop', Price: '38990', ImageURL: 'https://placehold.co/200x200.png', DetailPageURL: '#', Category: 'Electronics' },
-];
 
 // --- HomePage Component ---
 export default function HomePage() {
@@ -134,12 +124,14 @@ export default function HomePage() {
   const [featuredStores, setFeaturedStores] = React.useState<Store[]>([]);
   const [topCoupons, setTopCoupons] = React.useState<CouponWithStore[]>([]);
   const [categories, setCategories] = React.useState<Category[]>([]);
-  const [amazonProducts, setAmazonProducts] = React.useState<AmazonProduct[]>([]);
+  const [amazonTodaysPicks, setAmazonTodaysPicks] = React.useState<Product[]>([]);
+  const [amazonStoreData, setAmazonStoreData] = React.useState<Store | null>(null);
+
   const [loadingBanners, setLoadingBanners] = React.useState(true);
   const [loadingStores, setLoadingStores] = React.useState(true);
   const [loadingCoupons, setLoadingCoupons] = React.useState(true);
   const [loadingCategories, setLoadingCategories] = React.useState(true);
-  const [loadingProducts, setLoadingProducts] = React.useState(true);
+  const [loadingTodaysPicks, setLoadingTodaysPicks] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
 
@@ -149,84 +141,55 @@ export default function HomePage() {
       if (firebaseInitializationError) {
         if (isMounted) {
             setPageError(`Failed to connect to the database: ${firebaseInitializationError}`);
-            setLoadingBanners(false);
-            setLoadingStores(false);
-            setLoadingCoupons(false);
-            setLoadingCategories(false);
-            setLoadingProducts(false);
+            setLoadingBanners(false); setLoadingStores(false); setLoadingCoupons(false); setLoadingCategories(false); setLoadingTodaysPicks(false);
         }
         return;
       }
       if (!db) {
         if(isMounted) {
             setPageError("Database not available. Please try again later.");
-            setLoadingBanners(false);
-            setLoadingStores(false);
-            setLoadingCoupons(false);
-            setLoadingCategories(false);
-            setLoadingProducts(false);
+            setLoadingBanners(false); setLoadingStores(false); setLoadingCoupons(false); setLoadingCategories(false); setLoadingTodaysPicks(false);
         }
         return;
       }
 
-      setLoadingBanners(true);
-      setLoadingStores(true);
-      setLoadingCoupons(true);
-      setLoadingCategories(true);
-      setLoadingProducts(true);
+      setLoadingBanners(true); setLoadingStores(true); setLoadingCoupons(true); setLoadingCategories(true); setLoadingTodaysPicks(true);
       setPageError(null);
       let combinedErrorMessages: string[] = [];
+
+      // Define Amazon Store ID/Slug (ensure this matches your Firestore data for Amazon store)
+      const amazonStoreIdentifier = "amazon"; // Example: using 'amazon' as the document ID or a specific slug
 
       try {
         const bannerFetchPromise = fetchData<Banner>(
           'banners', [where('isActive', '==', true)], [{field: 'order', direction: 'asc'}], 5
-        ).catch(err => {
-            console.error("Banner fetch failed:", err);
-            combinedErrorMessages.push("banners");
-            return [];
-        });
+        ).catch(err => { console.error("Banner fetch failed:", err); combinedErrorMessages.push("banners"); return []; });
 
         const storeFetchPromise = fetchData<Store>(
           'stores', [where('isActive', '==', true), where('isFeatured', '==', true)], [{field: 'name', direction: 'asc'}], 12
-        ).catch(err => {
-            console.error("Store fetch failed:", err);
-            combinedErrorMessages.push("stores");
-            return [];
-        });
+        ).catch(err => { console.error("Store fetch failed:", err); combinedErrorMessages.push("stores"); return []; });
 
         const couponFetchPromise = fetchCouponsWithStoreData(
           [where('isActive', '==', true), where('isFeatured', '==', true)], [{field: 'createdAt', direction: 'desc'}], 6
-        ).catch(err => {
-            console.error("Coupon fetch failed:", err);
-            combinedErrorMessages.push("coupons");
-            return [];
-        });
+        ).catch(err => { console.error("Coupon fetch failed:", err); combinedErrorMessages.push("coupons"); return []; });
 
          const categoryFetchPromise = fetchData<Category>(
-             'categories', 
-             [where('isActive', '==', true)], 
-             [{field: 'order', direction: 'asc'}, {field: 'name', direction: 'asc'}], 
-             12
-         ).catch(err => {
-             console.error("Category fetch failed:", err);
-             combinedErrorMessages.push("categories");
-             return [];
-         });
+             'categories', [where('isActive', '==', true)], 
+             [{field: 'order', direction: 'asc'}, {field: 'name', direction: 'asc'}], 12
+         ).catch(err => { console.error("Category fetch failed:", err); combinedErrorMessages.push("categories"); return []; });
+        
+        const amazonStoreFetchPromise = getDoc(doc(db, 'stores', amazonStoreIdentifier))
+            .then(docSnap => {
+                if (docSnap.exists()) {
+                    return { id: docSnap.id, ...docSnap.data() } as Store;
+                }
+                console.warn(`Amazon store with ID/slug '${amazonStoreIdentifier}' not found.`);
+                return null;
+            })
+            .catch(err => { console.error("Amazon store data fetch failed:", err); combinedErrorMessages.push("amazon store details"); return null; });
 
-        const productFetchPromise = new Promise<AmazonProduct[]>((resolve) => {
-          setTimeout(() => resolve(exampleAmazonProducts), 300);
-        }).catch(err => {
-            console.error("Product fetch failed:", err);
-            combinedErrorMessages.push("products");
-            return [];
-        });
-
-        const [bannerData, storeData, couponData, categoryData, productData] = await Promise.all([
-            bannerFetchPromise,
-            storeFetchPromise,
-            couponFetchPromise,
-            categoryFetchPromise,
-            productFetchPromise
+        const [bannerData, storeData, couponData, categoryData, fetchedAmazonStoreData] = await Promise.all([
+            bannerFetchPromise, storeFetchPromise, couponFetchPromise, categoryFetchPromise, amazonStoreFetchPromise
         ]);
 
         if (isMounted) {
@@ -234,10 +197,36 @@ export default function HomePage() {
           setFeaturedStores(storeData);
           setTopCoupons(couponData);
           setCategories(categoryData);
-          setAmazonProducts(productData);
-           if (combinedErrorMessages.length > 0) {
-               setPageError(`Failed to load some data sections: ${combinedErrorMessages.join(', ')}.`);
-           }
+          setAmazonStoreData(fetchedAmazonStoreData);
+
+          if (fetchedAmazonStoreData) { // Only fetch picks if Amazon store was found
+            fetchData<Product>(
+              'products',
+              [
+                where('storeId', '==', fetchedAmazonStoreData.id),
+                where('isTodaysPick', '==', true),
+                where('isActive', '==', true)
+              ],
+              [{ field: 'createdAt', direction: 'desc' }],
+              6
+            ).then(picksData => {
+              if(isMounted) setAmazonTodaysPicks(picksData);
+            }).catch(err => {
+              console.error("Today's Picks fetch failed:", err);
+              combinedErrorMessages.push("today's picks");
+            }).finally(() => {
+              if(isMounted) setLoadingTodaysPicks(false);
+            });
+          } else {
+             if(isMounted) {
+                setAmazonTodaysPicks([]);
+                setLoadingTodaysPicks(false); // No store, so no picks to load
+             }
+          }
+
+          if (combinedErrorMessages.length > 0) {
+             setPageError(`Failed to load some data sections: ${combinedErrorMessages.join(', ')}.`);
+          }
         }
       } catch (err) {
         if (isMounted) {
@@ -246,19 +235,14 @@ export default function HomePage() {
         }
       } finally {
         if (isMounted) {
-          setLoadingBanners(false);
-          setLoadingStores(false);
-          setLoadingCoupons(false);
-          setLoadingCategories(false);
-          setLoadingProducts(false);
+          setLoadingBanners(false); setLoadingStores(false); setLoadingCoupons(false); setLoadingCategories(false);
+          // setLoadingTodaysPicks is handled within its own fetch block
         }
       }
     };
 
     loadAllData();
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, []);
 
 
@@ -290,11 +274,10 @@ export default function HomePage() {
     Autoplay({ delay: 4000, stopOnInteraction: true })
   );
 
-  const isPageLoading = loadingBanners || loadingStores || loadingCoupons || loadingCategories || loadingProducts;
+  const isPageLoading = loadingBanners || loadingStores || loadingCoupons || loadingCategories || loadingTodaysPicks;
 
   return (
     <div className="container mx-auto px-4 py-8 space-y-12 md:space-y-16 lg:space-y-20">
-      {/* Hero Section with Search */}
        <section className="relative text-center py-12 md:py-16 lg:py-20 bg-gradient-to-br from-primary/10 via-background to-secondary/10 rounded-lg shadow-sm overflow-hidden border border-border/50">
            <div className="container relative z-10 px-4 md:px-6">
              <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-4 text-foreground">
@@ -335,7 +318,6 @@ export default function HomePage() {
            </div>
        </section>
 
-       {/* Overall Page Error Alert - More prominent if critical data failed */}
         {pageError && !isPageLoading && (
           <Alert variant="destructive" className="mt-8">
             <AlertCircle className="h-4 w-4" />
@@ -346,7 +328,6 @@ export default function HomePage() {
           </Alert>
        )}
 
-       {/* --- Banner Carousel Section --- */}
        <section>
          <h2 className="text-3xl font-bold text-center mb-6 md:mb-8 flex items-center justify-center gap-2">
            <TrendingUp className="text-primary w-7 h-7"/> Today's Top Deals
@@ -376,7 +357,7 @@ export default function HomePage() {
                        className="object-cover transition-transform duration-300 group-hover:scale-105"
                        priority={index === 0}
                        data-ai-hint={banner.dataAiHint || 'promotional banner sale offer'}
-                       onError={(e) => (e.currentTarget.src = 'https://placehold.co/1200x400.png')}
+                       onError={(e) => ((e.target as HTMLImageElement).src = 'https://placehold.co/1200x400.png')}
                      />
                      {(banner.title || banner.subtitle) && (
                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent p-4 md:p-6 flex flex-col justify-end">
@@ -395,14 +376,13 @@ export default function HomePage() {
                </>
              )}
            </Carousel>
-         ) : !pageError ? ( // Only show "no deals" if there wasn't a page-level error
+         ) : !pageError ? ( 
              <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border">
                 No special deals featured right now. Check back soon!
              </div>
           ) : null }
        </section>
 
-      {/* --- How it Works Section --- */}
       <section className="py-12 text-center bg-muted/30 rounded-lg border">
         <h2 className="text-3xl font-bold mb-4">How CashEase Works</h2>
         <p className="text-muted-foreground mb-8 max-w-xl mx-auto">Earn cashback in 3 simple steps!</p>
@@ -434,7 +414,6 @@ export default function HomePage() {
          </Button>
       </section>
 
-        {/* --- Popular Categories Section --- */}
         <section>
            <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
                <h2 className="text-3xl font-bold flex items-center gap-2">
@@ -466,7 +445,7 @@ export default function HomePage() {
                              height={60}
                              className="object-contain mb-3 h-16 w-16 rounded-md"
                              data-ai-hint={`${category.name} icon illustration`}
-                             onError={(e) => (e.currentTarget.src = 'https://placehold.co/60x60.png')}
+                             onError={(e) => ((e.target as HTMLImageElement).src = 'https://placehold.co/60x60.png')}
                            />
                          ) : (
                            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-3 border">
@@ -484,7 +463,6 @@ export default function HomePage() {
            ): null}
        </section>
 
-      {/* --- Featured Stores Section --- */}
       <section>
         <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
           <h2 className="text-3xl font-bold flex items-center gap-2">
@@ -513,7 +491,6 @@ export default function HomePage() {
         ) : null}
       </section>
 
-      {/* --- Top Coupons Section --- */}
       <section>
         <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
           <h2 className="text-3xl font-bold flex items-center gap-2">
@@ -542,37 +519,43 @@ export default function HomePage() {
         ): null}
       </section>
 
-       {/* --- Amazon Products Feed --- */}
-      <section>
+       <section>
          <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
             <h2 className="text-3xl font-bold flex items-center gap-2">
-                {/* Slightly better Amazon text styling attempt */}
-                <span style={{fontFamily: "'Amazon Ember', Arial, sans-serif"}} className="font-bold">Amazon</span> Today's Picks
+                <Image src="https://placehold.co/100x30.png?text=Amazon" alt="Amazon Logo" width={100} height={30} data-ai-hint="amazon brand logo" />
+                Today's Picks
             </h2>
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/stores/amazon" className="flex items-center gap-1"> {/* Assuming amazon has a slug 'amazon' */}
-                 View Amazon Offers <ArrowRight className="w-4 h-4" />
-              </Link>
-            </Button>
+            {amazonStoreData && amazonStoreData.id ? (
+                <Button variant="outline" size="sm" asChild>
+                    <Link href={`/stores/${amazonStoreData.id}/products`} className="flex items-center gap-1">
+                        View All Amazon Offers <ArrowRight className="w-4 h-4" />
+                    </Link>
+                </Button>
+            ) : amazonStoreData?.affiliateLink ? (
+                <Button variant="outline" size="sm" asChild>
+                    <a href={amazonStoreData.affiliateLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1">
+                        Shop on Amazon <ExternalLink className="w-4 h-4" />
+                    </a>
+                </Button>
+            ) : null }
          </div>
-          {loadingProducts ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
+          {loadingTodaysPicks ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
                   {Array.from({ length: 6 }).map((_, index) => (
-                      <Skeleton key={`product-skel-${index}`} className="h-64 rounded-lg" />
+                      <Skeleton key={`todayspick-skel-page-${index}`} className="h-64 rounded-lg" />
                   ))}
               </div>
-          ) : amazonProducts.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
-                  {amazonProducts.map((product) => (
-                      <ProductCard key={product.ASIN} product={product} />
+          ) : amazonTodaysPicks.length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
+                  {amazonTodaysPicks.map((product) => (
+                      <ProductCard key={product.id} product={product} storeContext={amazonStoreData || undefined} />
                   ))}
               </div>
           ) : !pageError ? (
-              <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">Could not load product recommendations.</p>
+              <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No Today's Picks available from Amazon right now.</p>
           ) : null}
        </section>
 
-      {/* --- Maximize Savings & Referral Sections --- */}
        <section className="grid md:grid-cols-2 gap-8">
            <Card className="shadow-sm bg-gradient-to-tr from-amber-50 to-yellow-100 border-amber-300">
                <CardHeader>

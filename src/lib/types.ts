@@ -59,6 +59,8 @@ export interface Click {
     storeId: string;
     storeName?: string; // Optional: Denormalized store name
     couponId?: string | null; // Optional: if the click was on a specific coupon
+    productId?: string | null; // Optional: if the click was on a specific product
+    productName?: string | null; // Optional: Denormalized product name
     affiliateLink: string; // The specific link that was clicked (with clickId appended if applicable)
     timestamp: Date | Timestamp; // Firestore server timestamp preferred
     userAgent?: string; // Optional: User agent string
@@ -74,6 +76,7 @@ export type PayoutStatus = 'pending' | 'approved' | 'processing' | 'paid' | 'rej
 export interface Store {
   id: string; // Firestore document ID
   name: string;
+  slug?: string; // URL-friendly identifier, often same as ID if using slugs as IDs
   logoUrl: string | null;
   heroImageUrl?: string | null; // For the store detail page hero banner
   affiliateLink: string; // The BASE tracking link (clickId added dynamically)
@@ -154,8 +157,7 @@ export interface Product {
   affiliateLink: string; // Specific affiliate link for this product
   price?: number | null; // Numeric price for sorting/filtering if needed
   priceDisplay?: string | null; // Formatted price string (e.g., "₹1,999", "₹1,999 - ₹2,499")
-  category?: string; // Slug of the primary category this product falls into (can be an array if multi-category)
-  // Example: categories: string[]; // If a product can belong to multiple categories
+  category?: string | null; // Slug of the primary category this product falls into (can be an array if multi-category)
   brand?: string | null;
   sku?: string | null; // Stock Keeping Unit
   rating?: number | null;
@@ -164,6 +166,7 @@ export interface Product {
   specifications?: Record<string, string>; // Key-value pairs for detailed specifications
   isActive: boolean; // Is the product currently active and visible?
   isFeatured?: boolean; // Should this product be highlighted?
+  isTodaysPick?: boolean; // New field for "Today's Picks"
   dataAiHint?: string | null; // For placeholder image generation
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
@@ -199,4 +202,6 @@ export interface BannerFormValues extends Omit<Banner, 'id' | 'createdAt' | 'upd
 // Form values for Category, used in admin panel
 export interface CategoryFormValues extends Omit<Category, 'id' | 'createdAt' | 'updatedAt'> {}
 // Form values for Product, used in admin panel
-export interface ProductFormValues extends Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'storeName'> {}
+export interface ProductFormValues extends Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'storeName'> {
+  isTodaysPick?: boolean;
+}

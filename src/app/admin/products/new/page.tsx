@@ -10,7 +10,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { collection, addDoc, serverTimestamp, getDocs, query, orderBy, where } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { ProductFormValues as ProductFormValuesType, Store, Category } from '@/lib/types'; // Renamed to avoid conflict
+import type { ProductFormValues as ProductFormValuesType, Store, Category } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -38,6 +38,7 @@ const productSchema = z.object({
   sku: z.string().max(50, "SKU too long").optional().nullable(),
   isActive: z.boolean().default(true),
   isFeatured: z.boolean().default(false),
+  isTodaysPick: z.boolean().default(false), // New field
   dataAiHint: z.string().max(50, "AI Hint too long").optional().nullable(),
 });
 
@@ -58,13 +59,14 @@ function AddProductPageContent() {
       description: '',
       imageUrl: '',
       affiliateLink: '',
-      price: undefined, // Explicitly undefined for optional number
+      price: undefined,
       priceDisplay: '',
       category: '',
       brand: '',
       sku: '',
       isActive: true,
       isFeatured: false,
+      isTodaysPick: false, // Default value
       dataAiHint: '',
     },
   });
@@ -104,7 +106,7 @@ function AddProductPageContent() {
 
     const submissionData: Omit<ProductFormValuesType, 'price'> & { price?: number | null } = {
       ...data,
-      price: data.price === undefined || isNaN(data.price) ? null : Number(data.price),
+      price: data.price === undefined || isNaN(data.price as number) ? null : Number(data.price),
       imageUrl: data.imageUrl || null,
       description: data.description || null,
       priceDisplay: data.priceDisplay || null,
@@ -112,6 +114,7 @@ function AddProductPageContent() {
       brand: data.brand || null,
       sku: data.sku || null,
       dataAiHint: data.dataAiHint || null,
+      isTodaysPick: !!data.isTodaysPick,
     };
 
     try {
@@ -244,6 +247,10 @@ function AddProductPageContent() {
                 <Controller name="isFeatured" control={form.control} render={({ field }) => (<Checkbox id="isFeatured" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />)} />
                 <Label htmlFor="isFeatured" className="font-normal">Featured Product (Highlight on relevant pages)</Label>
               </div>
+              <div className="flex items-center space-x-2">
+                <Controller name="isTodaysPick" control={form.control} render={({ field }) => (<Checkbox id="isTodaysPick" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />)} />
+                <Label htmlFor="isTodaysPick" className="font-normal">Today's Pick (Feature on homepage Amazon section)</Label>
+              </div>
             </div>
 
             <div className="md:col-span-2 flex justify-end gap-2 pt-4">
@@ -257,8 +264,6 @@ function AddProductPageContent() {
   );
 }
 
-export default function AddProductAdminPage() { // Renamed export
+export default function AddProductAdminPage() {
   return <AdminGuard><AddProductPageContent /></AdminGuard>;
 }
-
-    

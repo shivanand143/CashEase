@@ -26,7 +26,7 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Product, ProductFormValues as ProductFormValuesType, Store, Category } from '@/lib/types'; // Renamed ProductFormValuesType
+import type { Product, ProductFormValues as ProductFormValuesType, Store, Category } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -43,11 +43,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, CheckCircle, XCircle, ExternalLink } from 'lucide-react';
+import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, ExternalLink, Star } from 'lucide-react'; // Added Star
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"; // Removed AlertDialogTrigger as it's used with asChild
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import Image from 'next/image';
 import { Switch } from '@/components/ui/switch';
@@ -71,6 +71,7 @@ const productSchema = z.object({
   sku: z.string().max(50, "SKU too long").optional().nullable(),
   isActive: z.boolean().default(true),
   isFeatured: z.boolean().default(false),
+  isTodaysPick: z.boolean().default(false), // New field
   dataAiHint: z.string().max(50, "AI Hint too long").optional().nullable(),
 });
 
@@ -107,7 +108,11 @@ function AdminProductsPageContent() {
 
   const form = useForm<ProductFormValuesType>({
     resolver: zodResolver(productSchema),
-    defaultValues: { /* Default values will be set when opening dialog */ },
+    defaultValues: {
+      isActive: true,
+      isFeatured: false,
+      isTodaysPick: false,
+    },
   });
 
   useEffect(() => {
@@ -136,8 +141,8 @@ function AdminProductsPageContent() {
 
   const fetchProducts = useCallback(async (
     loadMore = false,
-    currentSearchTerm = debouncedSearchTerm, // Use current debounced term
-    currentFilterStoreId = filterStoreId, // Use current filter
+    currentSearchTerm = debouncedSearchTerm,
+    currentFilterStoreId = filterStoreId,
     docToStartAfter = loadMore ? lastVisible : null
   ) => {
     let isMounted = true;
@@ -163,12 +168,11 @@ function AdminProductsPageContent() {
       }
 
       if (currentSearchTerm) {
-        // For simplicity, searching name field. For multi-field search, consider a search service.
         constraints.push(where('name', '>=', currentSearchTerm));
         constraints.push(where('name', '<=', currentSearchTerm + '\uf8ff'));
-        constraints.push(orderBy('name')); // Firestore requires orderBy on the same field as inequality
+        constraints.push(orderBy('name'));
       } else if (currentFilterStoreId !== 'all') {
-        constraints.push(orderBy('name')); // If filtering by store, order by name
+        constraints.push(orderBy('name'));
       }
       else {
         constraints.push(orderBy('createdAt', 'desc'));
@@ -196,9 +200,10 @@ function AdminProductsPageContent() {
           brand: data.brand || null,
           isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
           isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
+          isTodaysPick: typeof data.isTodaysPick === 'boolean' ? data.isTodaysPick : false, // Handle new field
           createdAt: safeToDate(data.createdAt),
           updatedAt: safeToDate(data.updatedAt),
-          storeName: 'Loading...' // Placeholder, will be fetched
+          storeName: 'Loading...'
         };
 
         if (product.storeId && db) {
@@ -228,18 +233,16 @@ function AdminProductsPageContent() {
       if (isMounted) { setLoading(false); setLoadingMore(false); setIsSearching(false); }
     }
     return () => { isMounted = false; };
-  }, [toast, debouncedSearchTerm, filterStoreId, lastVisible]); // Include lastVisible for pagination re-fetch if it changes elsewhere
+  }, [toast, debouncedSearchTerm, filterStoreId, lastVisible]);
 
 
   useEffect(() => {
     fetchProducts(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearchTerm, filterStoreId]); // fetchProducts is stable now
+  }, [debouncedSearchTerm, filterStoreId, fetchProducts]);
 
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // fetchProducts is called by useEffect when debouncedSearchTerm or filterStoreId changes
   };
 
   const handleLoadMore = () => {
@@ -265,13 +268,14 @@ function AdminProductsPageContent() {
       sku: product.sku || '',
       isActive: product.isActive,
       isFeatured: product.isFeatured || false,
+      isTodaysPick: product.isTodaysPick || false, // Handle new field
       dataAiHint: product.dataAiHint || '',
     });
     setIsDialogOpen(true);
   };
 
   const onSubmit = async (data: ProductFormValuesType) => {
-    if (!db || !editingProduct) { // Should only be called for editing in this page
+    if (!db || !editingProduct) {
       setPageError("Database not available or no product selected for editing.");
       setIsSaving(false);
       return;
@@ -281,7 +285,7 @@ function AdminProductsPageContent() {
 
      const submissionData: Omit<ProductFormValuesType, 'price'> & { price?: number | null } = {
       ...data,
-      price: data.price === undefined || isNaN(data.price) ? null : Number(data.price),
+      price: data.price === undefined || isNaN(data.price as number) ? null : Number(data.price),
       imageUrl: data.imageUrl || null,
       description: data.description || null,
       priceDisplay: data.priceDisplay || null,
@@ -289,6 +293,7 @@ function AdminProductsPageContent() {
       brand: data.brand || null,
       sku: data.sku || null,
       dataAiHint: data.dataAiHint || null,
+      isTodaysPick: !!data.isTodaysPick, // Ensure boolean
     };
 
     try {
@@ -324,14 +329,14 @@ function AdminProductsPageContent() {
     }
   };
 
-  const handleToggleStatus = async (product: ProductWithStoreName, field: 'isActive' | 'isFeatured') => {
+  const handleToggleStatus = async (product: ProductWithStoreName, field: 'isActive' | 'isFeatured' | 'isTodaysPick') => {
     if (!product.id || !db) return;
     setUpdatingProductId(product.id);
     try {
       const newStatus = !product[field];
       await updateDoc(doc(db, 'products', product.id), { [field]: newStatus, updatedAt: serverTimestamp() });
       setProducts(prev => prev.map(p => p.id === product.id ? { ...p, [field]: newStatus, updatedAt: new Date() } : p));
-      toast({ title: `Product ${field === 'isActive' ? (newStatus ? 'Activated' : 'Deactivated') : (newStatus ? 'Featured' : 'Unfeatured')}` });
+      toast({ title: `Product ${field === 'isActive' ? (newStatus ? 'Activated' : 'Deactivated') : field === 'isFeatured' ? (newStatus ? 'Featured' : 'Unfeatured') : (newStatus ? "Set as Today's Pick" : "Removed from Today's Picks")}` });
     } catch (err) {
       console.error(`Error toggling product ${field} status:`, err);
       toast({ variant: "destructive", title: "Status Update Failed", description: String(err) });
@@ -389,8 +394,8 @@ function AdminProductsPageContent() {
                     <TableHead>Name</TableHead>
                     <TableHead>Store</TableHead>
                     <TableHead>Price</TableHead>
-                    <TableHead>Category</TableHead>
                     <TableHead>Featured</TableHead>
+                    <TableHead>Today's Pick</TableHead>
                     <TableHead>Active</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -406,9 +411,11 @@ function AdminProductsPageContent() {
                       <TableCell className="font-medium max-w-[200px] truncate" title={product.name}>{product.name}</TableCell>
                       <TableCell className="text-xs truncate max-w-[100px]" title={product.storeName}>{product.storeName || product.storeId}</TableCell>
                       <TableCell className="text-xs">{product.priceDisplay || (product.price !== null && product.price !== undefined ? formatCurrency(product.price) : '-')}</TableCell>
-                      <TableCell className="text-xs capitalize truncate max-w-[100px]" title={product.category}>{categoryList.find(c=>c.slug === product.category)?.name || product.category || '-'}</TableCell>
                       <TableCell>
                           <Switch id={`featured-${product.id}`} checked={!!product.isFeatured} onCheckedChange={() => handleToggleStatus(product, 'isFeatured')} disabled={updatingProductId === product.id} aria-label="Toggle Featured"/>
+                      </TableCell>
+                       <TableCell>
+                          <Switch id={`todaysPick-${product.id}`} checked={!!product.isTodaysPick} onCheckedChange={() => handleToggleStatus(product, 'isTodaysPick')} disabled={updatingProductId === product.id} aria-label="Toggle Today's Pick"/>
                       </TableCell>
                       <TableCell>
                         <Switch id={`active-${product.id}`} checked={product.isActive} onCheckedChange={() => handleToggleStatus(product, 'isActive')} disabled={updatingProductId === product.id} aria-label="Toggle Active" />
@@ -538,6 +545,10 @@ function AdminProductsPageContent() {
                 <Controller name="isFeatured" control={form.control} render={({ field }) => (<Checkbox id="isFeaturedDialog" checked={!!field.value} onCheckedChange={field.onChange} disabled={isSaving} />)} />
                 <Label htmlFor="isFeaturedDialog" className="font-normal">Featured</Label>
               </div>
+              <div className="flex items-center space-x-2">
+                <Controller name="isTodaysPick" control={form.control} render={({ field }) => (<Checkbox id="isTodaysPickDialog" checked={!!field.value} onCheckedChange={field.onChange} disabled={isSaving} />)} />
+                <Label htmlFor="isTodaysPickDialog" className="font-normal">Today's Pick</Label>
+              </div>
             </div>
             <DialogFooter className="md:col-span-2">
               <DialogClose asChild><Button type="button" variant="outline" disabled={isSaving}>Cancel</Button></DialogClose>
@@ -566,8 +577,6 @@ function ProductsTableSkeleton() {
   );
 }
 
-export default function AdminProductsListPage() { // Renamed export
+export default function AdminProductsListPage() {
   return <AdminGuard><AdminProductsPageContent /></AdminGuard>;
 }
-
-    
