@@ -16,6 +16,7 @@ import {
   deleteDoc,
   serverTimestamp,
   getDoc,
+  updateDoc,
   DocumentData
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
@@ -55,11 +56,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger, // Ensure AlertDialogTrigger is imported
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { safeToDate } from '@/lib/utils';
 import Image from 'next/image';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch'; // Import Switch
 
 const categorySchema = z.object({
   name: z.string().min(2, 'Category name must be at least 2 characters').max(50, 'Category name too long'),
@@ -67,6 +71,7 @@ const categorySchema = z.object({
   description: z.string().max(200, 'Description too long').optional().nullable(),
   imageUrl: z.string().url('Invalid URL format').optional().nullable().or(z.literal('')),
   order: z.number().min(0).default(0),
+  isActive: z.boolean().default(true), // Added isActive
 });
 
 type CategoryFormValues = z.infer<typeof categorySchema>;
@@ -81,6 +86,8 @@ function AdminCategoriesPageContent() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+
 
   const form = useForm<CategoryFormValues>({
     resolver: zodResolver(categorySchema),
@@ -90,6 +97,7 @@ function AdminCategoriesPageContent() {
       description: '',
       imageUrl: '',
       order: 0,
+      isActive: true, // Default for new categories
     },
   });
 
@@ -119,6 +127,7 @@ function AdminCategoriesPageContent() {
             description: data.description || '',
             imageUrl: data.imageUrl || null,
             order: typeof data.order === 'number' ? data.order : 0,
+            isActive: typeof data.isActive === 'boolean' ? data.isActive : true, // Ensure isActive is handled
             createdAt: safeToDate(data.createdAt),
             updatedAt: safeToDate(data.updatedAt),
           } as Category;
@@ -141,7 +150,9 @@ function AdminCategoriesPageContent() {
   const openAddDialog = () => {
     setEditingCategory(null);
     form.reset({
-      name: '', slug: '', description: '', imageUrl: '', order: categories.length > 0 ? Math.max(...categories.map(c => c.order)) + 1 : 0
+      name: '', slug: '', description: '', imageUrl: '', 
+      order: categories.length > 0 ? Math.max(...categories.map(c => c.order)) + 1 : 0,
+      isActive: true,
     });
     setIsDialogOpen(true);
   };
@@ -154,6 +165,7 @@ function AdminCategoriesPageContent() {
       description: category.description || '',
       imageUrl: category.imageUrl || '',
       order: category.order,
+      isActive: category.isActive,
     });
     setIsDialogOpen(true);
   };
@@ -168,9 +180,9 @@ function AdminCategoriesPageContent() {
    };
 
    useEffect(() => {
-     if (!editingCategory && isDialogOpen) { // Only watch when adding and dialog is open
+     if (!editingCategory && isDialogOpen) { 
        const subscription = form.watch((value, { name }) => {
-         if (name === 'name' && value.name && !form.formState.dirtyFields.slug) { // Don't overwrite if slug was manually touched
+         if (name === 'name' && value.name && !form.formState.dirtyFields.slug) { 
            form.setValue('slug', generateSlug(value.name), { shouldValidate: true });
          }
        });
@@ -189,7 +201,7 @@ function AdminCategoriesPageContent() {
     setError(null);
 
     try {
-       const categoryId = data.slug; // Use slug as document ID
+       const categoryId = data.slug; 
        const categoryDocRef = doc(db, 'categories', categoryId);
 
       if (editingCategory) {
@@ -203,15 +215,14 @@ function AdminCategoriesPageContent() {
              return;
          }
          await setDoc(categoryDocRef, {
-           ...data,
+           ...data, // isActive is included here
            imageUrl: data.imageUrl || null,
            description: data.description || null,
            updatedAt: serverTimestamp(),
-         }, { merge: true }); // Merge to avoid overwriting createdAt
+         }, { merge: true }); 
          setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, ...data, updatedAt: new Date() } : c).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)));
          toast({ title: "Category Updated", description: `${data.name} details saved.` });
       } else {
-        // Check if slug already exists for new category
         const existingDoc = await getDoc(categoryDocRef);
         if (existingDoc.exists()) {
             toast({
@@ -223,13 +234,13 @@ function AdminCategoriesPageContent() {
             return;
         }
         await setDoc(categoryDocRef, {
-          ...data,
+          ...data, // isActive is included here
            imageUrl: data.imageUrl || null,
            description: data.description || null,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        const newCategory: Category = { ...data, id: categoryId, createdAt: new Date(), updatedAt: new Date() };
+        const newCategory: Category = { ...data, id: categoryId, isActive: data.isActive, createdAt: new Date(), updatedAt: new Date() };
         setCategories(prev => [...prev, newCategory].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)));
         toast({ title: "Category Added", description: `${data.name} created successfully.` });
       }
@@ -261,9 +272,37 @@ function AdminCategoriesPageContent() {
      }
    };
 
+   const handleToggleActiveStatus = async (categoryToUpdate: Category) => {
+     if (!categoryToUpdate || !db) return;
+     setUpdatingStatusId(categoryToUpdate.id);
+     const categoryDocRef = doc(db, 'categories', categoryToUpdate.id);
+     const newStatus = !categoryToUpdate.isActive;
+
+     try {
+       await updateDoc(categoryDocRef, {
+         isActive: newStatus,
+         updatedAt: serverTimestamp(),
+       });
+       setCategories(prevCategories =>
+         prevCategories.map(c =>
+           c.id === categoryToUpdate.id ? { ...c, isActive: newStatus, updatedAt: new Date() } : c
+         )
+       );
+       toast({ title: `Category ${newStatus ? 'Activated' : 'Deactivated'}`, description: `${categoryToUpdate.name} status updated.` });
+     } catch (err) {
+       console.error(`Error updating category ${categoryToUpdate.id} status:`, err);
+       const errorMsg = err instanceof Error ? err.message : "Could not update category status.";
+       toast({ variant: "destructive", title: "Update Failed", description: errorMsg });
+     } finally {
+       setUpdatingStatusId(null);
+     }
+   };
+
+
   if (loading && categories.length === 0 && !error) {
     return <CategoriesTableSkeleton />;
   }
+
 
   return (
     <div className="space-y-6">
@@ -302,12 +341,13 @@ function AdminCategoriesPageContent() {
                     <TableHead>Name</TableHead>
                     <TableHead>Slug</TableHead>
                     <TableHead>Description</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {categories.map((category) => (
-                    <TableRow key={category.id}>
+                    <TableRow key={category.id} className={!category.isActive ? 'opacity-50 bg-muted/30' : ''}>
                       <TableCell className="w-16 text-center">{category.order}</TableCell>
                       <TableCell>
                         {category.imageUrl ? (
@@ -320,6 +360,15 @@ function AdminCategoriesPageContent() {
                       <TableCell className="font-mono text-xs">{category.slug}</TableCell>
                       <TableCell className="max-w-[300px] truncate text-sm text-muted-foreground">
                         {category.description || '-'}
+                      </TableCell>
+                      <TableCell>
+                         <Switch
+                           checked={category.isActive}
+                           onCheckedChange={() => handleToggleActiveStatus(category)}
+                           disabled={updatingStatusId === category.id}
+                           aria-label={category.isActive ? 'Deactivate category' : 'Activate category'}
+                         />
+                         {updatingStatusId === category.id && <Loader2 className="h-4 w-4 animate-spin ml-2 inline-block" />}
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2">
@@ -372,7 +421,7 @@ function AdminCategoriesPageContent() {
            </DialogHeader>
            <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4 py-4">
              <div className="grid grid-cols-4 items-center gap-4">
-               <label htmlFor="order" className="text-right">Display Order</label>
+               <Label htmlFor="order" className="text-right">Display Order</Label>
                <Input
                  id="order"
                  type="number"
@@ -384,24 +433,24 @@ function AdminCategoriesPageContent() {
                {form.formState.errors.order && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.order.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
-               <label htmlFor="name" className="text-right">Name*</label>
+               <Label htmlFor="name" className="text-right">Name*</Label>
                <Input id="name" {...form.register('name')} className="col-span-3" disabled={isSaving} />
                {form.formState.errors.name && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.name.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
-               <label htmlFor="slug" className="text-right">Slug*</label>
+               <Label htmlFor="slug" className="text-right">Slug*</Label>
                <Input
                  id="slug"
                  {...form.register('slug')}
                  className="col-span-3"
                  placeholder="auto-generated or custom"
-                 disabled={isSaving || !!editingCategory} // Disable slug editing for existing categories
+                 disabled={isSaving || !!editingCategory} 
                />
                 {editingCategory && <p className="col-span-4 text-xs text-muted-foreground text-right">Slug cannot be changed after creation.</p>}
                {form.formState.errors.slug && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.slug.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
-               <label htmlFor="imageUrl" className="text-right">Image URL</label>
+               <Label htmlFor="imageUrl" className="text-right">Image URL</Label>
                <Input id="imageUrl" {...form.register('imageUrl')} className="col-span-3" placeholder="https://... (Optional)" disabled={isSaving} />
                 {form.watch('imageUrl') && (
                     <div className="col-start-2 col-span-3 mt-1">
@@ -411,10 +460,23 @@ function AdminCategoriesPageContent() {
                {form.formState.errors.imageUrl && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.imageUrl.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
-               <label htmlFor="description" className="text-right">Description</label>
+               <Label htmlFor="description" className="text-right">Description</Label>
                <Textarea id="description" {...form.register('description')} className="col-span-3" rows={2} placeholder="Optional short description" disabled={isSaving} />
                {form.formState.errors.description && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.description.message}</p>}
              </div>
+             <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="isActive" className="text-right">Status</Label>
+                <div className="col-span-3 flex items-center space-x-2">
+                    <Checkbox
+                       id="isActive"
+                       checked={form.watch('isActive')}
+                       onCheckedChange={(checked) => form.setValue('isActive', !!checked)}
+                       disabled={isSaving}
+                     />
+                     <Label htmlFor="isActive" className="font-normal">Active (Category is visible)</Label>
+                </div>
+             </div>
+
 
              <DialogFooter>
                <DialogClose asChild>
@@ -432,7 +494,7 @@ function AdminCategoriesPageContent() {
        </Dialog>
     </div>
   );
-} // Closing brace for AdminCategoriesPageContent
+} 
 
 function CategoriesTableSkeleton() {
    return (
@@ -446,7 +508,7 @@ function CategoriesTableSkeleton() {
           <Table>
             <TableHeader>
               <TableRow>
-                {Array.from({ length: 6 }).map((_, index) => (
+                {Array.from({ length: 7 }).map((_, index) => ( // Increased length for new Status column
                   <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead>
                 ))}
               </TableRow>
@@ -454,7 +516,7 @@ function CategoriesTableSkeleton() {
             <TableBody>
               {Array.from({ length: 5 }).map((_, rowIndex) => (
                 <TableRow key={rowIndex}>
-                  {Array.from({ length: 6 }).map((_, colIndex) => (
+                  {Array.from({ length: 7 }).map((_, colIndex) => ( // Increased length
                     <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell>
                   ))}
                 </TableRow>
@@ -465,7 +527,7 @@ function CategoriesTableSkeleton() {
       </CardContent>
     </Card>
   );
-} // Closing brace for CategoriesTableSkeleton
+} 
 
 export default function AdminCategoriesPage() {
     return (
@@ -473,4 +535,4 @@ export default function AdminCategoriesPage() {
         <AdminCategoriesPageContent />
       </AdminGuard>
     );
-} // Closing brace for AdminCategoriesPage
+}
