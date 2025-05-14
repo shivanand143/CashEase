@@ -1,29 +1,31 @@
+
 "use client";
 
 import * as React from 'react';
-import { doc, getDoc, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebase/config';
-import type { Store, Coupon } from '@/lib/types';
+import { doc, getDoc, collection, query, where, orderBy, getDocs, Timestamp } from 'firebase/firestore';
+import { db, firebaseInitializationError } from '@/lib/firebase/config';
+import type { Store, Coupon, Product } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'; // Removed CardDescription
 import { Button } from '@/components/ui/button';
 import CouponCard from '@/components/coupon-card';
-import { AlertCircle, ArrowLeft, ExternalLink, Info, BadgePercent, ScrollText, Star, Users, Clock, CheckSquare, ExternalLinkIcon,ChevronRight } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ExternalLinkIcon, Info, BadgePercent, ScrollText, Star, Clock, CheckSquare, ChevronRight, ShoppingBag } from 'lucide-react'; // Added ShoppingBag
 import { useAuth } from '@/hooks/use-auth';
-import { trackClick } from '@/lib/actions/tracking'; 
-import { v4 as uuidv4 } from 'uuid'; 
-import { cn, formatCurrency } from '@/lib/utils'; // Added formatCurrency
+import { trackClick } from '@/lib/actions/tracking';
+import { v4 as uuidv4 } from 'uuid';
+import { cn, safeToDate, formatCurrency } from '@/lib/utils'; // Added formatCurrency
+import { useToast } from '@/hooks/use-toast';
 
 // Function to append click ID to a URL
 const appendClickId = (url: string, clickId: string): string => {
   try {
     const urlObj = new URL(url);
-    urlObj.searchParams.set('subid', clickId);
-    urlObj.searchParams.set('aff_sub', clickId);
+    urlObj.searchParams.set('subid', clickId); // Common parameter
+    urlObj.searchParams.set('aff_sub', clickId); // Another common one
     return urlObj.toString();
   } catch (e) {
     console.warn("Invalid URL for click tracking:", url);
@@ -35,7 +37,8 @@ export default function StoreDetailPage() {
   const params = useParams();
   const storeId = params.id as string;
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth(); 
+  const { user, loading: authLoading } = useAuth();
+  const { toast } = useToast();
 
   const [store, setStore] = React.useState<Store | null>(null);
   const [coupons, setCoupons] = React.useState<Coupon[]>([]);
@@ -53,8 +56,8 @@ export default function StoreDetailPage() {
       setLoading(true);
       setError(null);
 
-      if (!db) {
-        setError("Database connection not available.");
+      if (firebaseInitializationError || !db) {
+        setError(firebaseInitializationError || "Database connection not available.");
         setLoading(false);
         return;
       }
@@ -63,10 +66,15 @@ export default function StoreDetailPage() {
         const storeDocRef = doc(db, 'stores', storeId);
         const storeSnap = await getDoc(storeDocRef);
 
-        if (!storeSnap.exists()) {
-          throw new Error("Store not found.");
+        if (!storeSnap.exists() || !storeSnap.data()?.isActive) { // Check if store is active
+          throw new Error("Store not found or is not active.");
         }
-        const storeData = { id: storeSnap.id, ...storeSnap.data() } as Store;
+        const storeData = {
+             id: storeSnap.id,
+             ...storeSnap.data(),
+             createdAt: safeToDate(storeSnap.data().createdAt as Timestamp | undefined),
+             updatedAt: safeToDate(storeSnap.data().updatedAt as Timestamp | undefined),
+        } as Store;
         setStore(storeData);
 
         const couponsCollection = collection(db, 'coupons');
@@ -74,15 +82,18 @@ export default function StoreDetailPage() {
           couponsCollection,
           where('storeId', '==', storeId),
           where('isActive', '==', true),
-          orderBy('isFeatured', 'desc'), 
-          orderBy('createdAt', 'desc') 
+          orderBy('isFeatured', 'desc'),
+          orderBy('createdAt', 'desc')
         );
         const couponSnap = await getDocs(q);
         const couponsData = couponSnap.docs.map(docSnap => ({
             id: docSnap.id,
-            store: storeData,
-            ...docSnap.data()
-        } as Coupon)); 
+            store: storeData, // Embed full store data for CouponCard
+            ...docSnap.data(),
+            expiryDate: safeToDate(docSnap.data().expiryDate as Timestamp | undefined),
+            createdAt: safeToDate(docSnap.data().createdAt as Timestamp | undefined),
+            updatedAt: safeToDate(docSnap.data().updatedAt as Timestamp | undefined),
+        } as Coupon));
         setCoupons(couponsData);
 
       } catch (err) {
@@ -96,21 +107,26 @@ export default function StoreDetailPage() {
     fetchStoreAndCoupons();
   }, [storeId]);
 
-   const handleVisitStore = async () => {
+
+  React.useEffect(() => {
+    if(error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error,
+      });
+    }
+  }, [error, toast]);
+
+
+  // This function is now for direct affiliate linking if NO products page exists or as fallback
+  const handleDirectVisitStore = async () => {
      if (!store || !store.affiliateLink) return;
 
-     if (!user && !authLoading) {
-        // Save target URL and current path for redirect after login
-        sessionStorage.setItem('loginRedirectUrl', store.affiliateLink);
-        sessionStorage.setItem('loginRedirectSource', router.asPath); // Use router.asPath for current page
-        router.push('/login');
-        return;
-     }
-     if(authLoading){ // Wait for auth to finish
-        return;
-     }
+     // Simplified auth check: if auth is loading, just wait. If not logged in, proceed without tracking.
+     if (authLoading) return;
 
-     const clickId = uuidv4(); 
+     const clickId = uuidv4();
      const targetUrl = appendClickId(store.affiliateLink, clickId);
 
      if (user) {
@@ -119,17 +135,14 @@ export default function StoreDetailPage() {
            userId: user.uid,
            storeId: store.id,
            storeName: store.name,
-           couponId: null, 
+           couponId: null,
            clickId: clickId,
-           affiliateLink: targetUrl, 
+           affiliateLink: targetUrl,
            timestamp: new Date(),
          });
-         console.log(`Tracked visit for store ${store.id} by user ${user.uid}, clickId: ${clickId}`);
        } catch (trackError) {
          console.error("Error tracking store visit click:", trackError);
        }
-     } else {
-       console.log("User not logged in, skipping click tracking for store visit.");
      }
      window.open(targetUrl, '_blank', 'noopener,noreferrer');
    };
@@ -139,24 +152,38 @@ export default function StoreDetailPage() {
     return <StoreDetailSkeleton />;
   }
 
-  if (error) {
+  if (error && !store) { // Only show full page error if store itself couldn't be loaded
     return (
       <div className="container mx-auto max-w-4xl text-center py-12">
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
+          <AlertTitle>Error Loading Store</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
-        <Button variant="outline" className="mt-6" onClick={() => router.back()}>
-          <ArrowLeft className="mr-2 h-4 w-4" /> Go Back
+        <Button variant="outline" className="mt-6" onClick={() => router.push('/stores')}>
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to All Stores
         </Button>
       </div>
     );
   }
 
-  if (!store) {
-    return <div className="text-center py-16">Store not found.</div>;
+  if (!store && !loading) { // If loading is done and still no store (and no specific error was set for it)
+    return (
+        <div className="text-center py-16 text-muted-foreground">
+            Store not found or is no longer available.
+            <Button variant="link" onClick={() => router.push('/stores')} className="block mx-auto mt-2">
+                Browse All Stores
+            </Button>
+        </div>
+    );
   }
+
+  // If store is loaded but there was an error fetching coupons (show store, but with coupon error)
+  if (store && error && coupons.length === 0) {
+      // Display store details but show an error for the coupon section
+      // This part of UI will be rendered below. The error toast will also appear.
+  }
+
 
   return (
     <div className="space-y-8 max-w-4xl mx-auto">
@@ -165,64 +192,72 @@ export default function StoreDetailPage() {
        </Button>
 
       {/* Hero Section */}
-      <section className="relative rounded-lg overflow-hidden shadow-lg border">
-        <Image
-          src={store.heroImageUrl || 'https://picsum.photos/seed/storehero/1200/400'}
-          alt={`${store.name} Deals`}
-          width={1200}
-          height={400}
-          className="object-cover w-full h-48 md:h-64"
-          data-ai-hint={`${store.name} promotional banner`}
-          priority
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex flex-col justify-end p-6 md:p-8">
-          <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white drop-shadow-lg">
-            Go to {store.name} via CashEase
-          </h1>
-        </div>
-      </section>
+      {store && (
+          <section className="relative rounded-lg overflow-hidden shadow-lg border">
+            <Image
+              src={store.heroImageUrl || 'https://placehold.co/1200x400.png'}
+              alt={`${store.name} Deals`}
+              width={1200}
+              height={400}
+              className="object-cover w-full h-48 md:h-64"
+              data-ai-hint={`${store.name} promotional banner`}
+              priority
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex flex-col justify-end p-6 md:p-8">
+              <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white drop-shadow-lg">
+                {store.name} Cashback & Offers
+              </h1>
+            </div>
+          </section>
+      )}
 
-      {/* Store Info &amp; Rating */}
-      <section className="flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-6 p-4 bg-card rounded-lg shadow-md border">
-         {store.logoUrl ? (
-           <Image
-             src={store.logoUrl}
-             alt={`${store.name} Logo`}
-             width={100}
-             height={50}
-             className="object-contain rounded border p-1 bg-white self-center md:self-start"
-             data-ai-hint={store.dataAiHint || `${store.name} logo`}
-           />
-         ) : (
-            <div className="w-[100px] h-[50px] bg-muted rounded border flex items-center justify-center text-muted-foreground self-center md:self-start">
-                No Logo
+      {/* Store Info & Rating */}
+      {store && (
+          <section className="flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-6 p-4 bg-card rounded-lg shadow-md border">
+             {store.logoUrl ? (
+               <Image
+                 src={store.logoUrl}
+                 alt={`${store.name} Logo`}
+                 width={100}
+                 height={50}
+                 className="object-contain rounded border p-1 bg-white self-center md:self-start"
+                 data-ai-hint={store.dataAiHint || `${store.name} logo`}
+               />
+             ) : (
+                <div className="w-[100px] h-[50px] bg-muted rounded border flex items-center justify-center text-muted-foreground self-center md:self-start">
+                    No Logo
+                </div>
+             )}
+            <div className="flex-1 text-center md:text-left">
+              <h2 className="text-xl font-semibold mb-1">{store.name} Coupons & Cashback</h2>
+              <p className="text-sm text-muted-foreground mb-2 line-clamp-2">{store.description}</p>
+              {store.rating && store.ratingCount ? (
+                <div className="flex items-center justify-center md:justify-start text-sm text-amber-500">
+                  <Star className="w-4 h-4 fill-current mr-1" />
+                  <span>{store.rating.toFixed(1)} of 5 | {store.ratingCount} Ratings</span>
+                </div>
+              ): (
+                <p className="text-xs text-muted-foreground italic">No rating available</p>
+              )}
             </div>
-         )}
-        <div className="flex-1 text-center md:text-left">
-          <h2 className="text-xl font-semibold mb-1">{store.name} Coupon Codes</h2>
-          <p className="text-sm text-muted-foreground mb-2 line-clamp-2">{store.description}</p>
-          {store.rating && store.ratingCount && (
-            <div className="flex items-center justify-center md:justify-start text-sm text-amber-500">
-              <Star className="w-4 h-4 fill-current mr-1" />
-              <span>{store.rating.toFixed(1)} of 5 | {store.ratingCount} Ratings</span>
-            </div>
-          )}
-        </div>
-      </section>
+          </section>
+      )}
 
       {/* Cashback Rate Section */}
-      <section className="p-4 bg-green-50 border-2 border-green-200 rounded-lg shadow-sm">
-        <h3 className="text-xl md:text-2xl font-bold text-green-700 mb-1">Upto {store.cashbackRate} Cashback</h3>
-        <p className="text-sm text-green-600 mb-2">on Fashion, Lifestyle, Grocery and more</p>
-        {store.detailedCashbackRatesLink && (
-          <Link href={store.detailedCashbackRatesLink} target="_blank" rel="noopener noreferrer" className="text-sm text-green-700 hover:text-green-800 font-medium flex items-center">
-            View Cashback Rates <ChevronRight className="w-4 h-4 ml-1" />
-          </Link>
-        )}
-      </section>
+      {store && (
+          <section className="p-4 bg-green-50 border-2 border-green-200 rounded-lg shadow-sm">
+            <h3 className="text-xl md:text-2xl font-bold text-green-700 mb-1">{store.cashbackRate} Cashback</h3>
+            <p className="text-sm text-green-600 mb-2">Typically tracked within {store.cashbackTrackingTime || 'standard time'}.</p>
+            {store.detailedCashbackRatesLink && (
+              <Link href={store.detailedCashbackRatesLink} target="_blank" rel="noopener noreferrer" className="text-sm text-green-700 hover:text-green-800 font-medium flex items-center">
+                View Detailed Cashback Rates <ChevronRight className="w-4 h-4 ml-1" />
+              </Link>
+            )}
+          </section>
+      )}
 
       {/* Top Store Offers */}
-      {store.topOffersText && (
+      {store?.topOffersText && (
         <section className="p-4 bg-card rounded-lg shadow-md border">
           <h3 className="text-lg font-semibold mb-2">Top {store.name} Offers</h3>
           <p className="text-sm text-muted-foreground mb-2">{store.topOffersText}</p>
@@ -233,68 +268,81 @@ export default function StoreDetailPage() {
           )}
         </section>
       )}
-      
-      {/* Important Timelines &amp; App Orders */}
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {store.cashbackTrackingTime && (
-          <Card className="text-center">
-            <CardHeader className="pb-2 pt-4"><CardTitle className="text-sm font-medium text-muted-foreground">Cashback tracks in</CardTitle></CardHeader>
-            <CardContent className="pb-4">
-              <p className="text-2xl font-bold">{store.cashbackTrackingTime.split(' ')[0]}</p>
-              <p className="text-xs text-muted-foreground">{store.cashbackTrackingTime.split(' ').slice(1).join(' ')}</p>
-            </CardContent>
-          </Card>
-        )}
-        {store.cashbackConfirmationTime && (
-          <Card className="text-center">
-            <CardHeader className="pb-2 pt-4"><CardTitle className="text-sm font-medium text-muted-foreground">Cashback confirms in</CardTitle></CardHeader>
-            <CardContent className="pb-4">
-              <p className="text-2xl font-bold">{store.cashbackConfirmationTime.split(' ')[0]}</p>
-              <p className="text-xs text-muted-foreground">{store.cashbackConfirmationTime.split(' ').slice(1).join(' ')}</p>
-            </CardContent>
-          </Card>
-        )}
-        {store.cashbackOnAppOrders !== null && store.cashbackOnAppOrders !== undefined && (
-           <Card className="text-center">
-            <CardHeader className="pb-2 pt-4"><CardTitle className="text-sm font-medium text-muted-foreground">Cashback on {store.name} app orders?</CardTitle></CardHeader>
-            <CardContent className="pb-4">
-              <p className={`text-2xl font-bold ${store.cashbackOnAppOrders ? 'text-green-600' : 'text-red-600'}`}>
-                {store.cashbackOnAppOrders ? 'YES' : 'NO'}
-              </p>
-            </CardContent>
-          </Card>
-        )}
-      </section>
+
+      {/* Important Timelines & App Orders */}
+       {store && (
+          <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {store.cashbackTrackingTime && (
+              <Card className="text-center">
+                <CardHeader className="pb-2 pt-4"><CardTitle className="text-sm font-medium text-muted-foreground">Cashback Tracks In</CardTitle></CardHeader>
+                <CardContent className="pb-4">
+                  <p className="text-2xl font-bold flex items-center justify-center gap-1"><Clock className="w-5 h-5"/>{store.cashbackTrackingTime.split(' ')[0]}</p>
+                  <p className="text-xs text-muted-foreground">{store.cashbackTrackingTime.split(' ').slice(1).join(' ')}</p>
+                </CardContent>
+              </Card>
+            )}
+            {store.cashbackConfirmationTime && (
+              <Card className="text-center">
+                <CardHeader className="pb-2 pt-4"><CardTitle className="text-sm font-medium text-muted-foreground">Cashback Confirms In</CardTitle></CardHeader>
+                <CardContent className="pb-4">
+                  <p className="text-2xl font-bold flex items-center justify-center gap-1"><CheckSquare className="w-5 h-5"/>{store.cashbackConfirmationTime.split(' ')[0]}</p>
+                  <p className="text-xs text-muted-foreground">{store.cashbackConfirmationTime.split(' ').slice(1).join(' ')}</p>
+                </CardContent>
+              </Card>
+            )}
+            {store.cashbackOnAppOrders !== null && store.cashbackOnAppOrders !== undefined && (
+               <Card className="text-center">
+                <CardHeader className="pb-2 pt-4"><CardTitle className="text-sm font-medium text-muted-foreground">Cashback on App Orders?</CardTitle></CardHeader>
+                <CardContent className="pb-4">
+                  <p className={`text-2xl font-bold ${store.cashbackOnAppOrders ? 'text-green-600' : 'text-red-600'}`}>
+                    {store.cashbackOnAppOrders ? 'YES' : 'NO'}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </section>
+       )}
+
+      {/* View Products / Visit Store Button (Sticky Footer Like) */}
+      {store && (
+          <div className="sticky bottom-0 left-0 right-0 p-4 bg-background border-t shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1),0_-2px_4px_-2px_rgba(0,0,0,0.06)] z-10">
+            <Button size="lg" className="w-full text-lg font-semibold" asChild>
+                <Link href={`/stores/${store.id}/products`}>
+                    View Products & Get Cashback <ShoppingBag className="ml-2 h-5 w-5" />
+                </Link>
+            </Button>
+             <p className="text-xs text-muted-foreground text-center mt-1">You will be redirected to the product listing for {store.name}.</p>
+          </div>
+      )}
+
 
       {/* Available Coupons */}
       <section>
         <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-            <BadgePercent className="w-6 h-6 text-primary" /> Available Coupons &amp; Deals
+            <BadgePercent className="w-6 h-6 text-primary" /> Available Coupons & Deals for {store?.name || 'this store'}
         </h2>
-        {coupons.length > 0 ? (
+        {loading && coupons.length === 0 ? ( // Show skeleton if loading coupons specifically
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+                 {Array.from({length: 3}).map((_, i) => <Skeleton key={`coupon-skel-${i}`} className="h-40 rounded-lg" />)}
+             </div>
+        ) : coupons.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {coupons.map((coupon) => (
-              <CouponCard key={coupon.id} coupon={{...coupon, store: store}} />
+              <CouponCard key={coupon.id} coupon={coupon} />
             ))}
           </div>
         ) : (
           <div className="text-center py-12 text-muted-foreground bg-muted/30 rounded-lg border">
-            <p>No active coupons or deals found for {store.name} right now.</p>
-            <p className="mt-2 text-sm">You can still earn cashback by visiting the store!</p>
+            <Info className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+            <p>No active coupons or deals found for {store?.name || 'this store'} right now.</p>
+            <p className="mt-2 text-sm">You can still earn cashback by visiting the store and shopping for products!</p>
           </div>
         )}
       </section>
-      
-      {/* Visit Store Button (Sticky Footer Like) */}
-      <div className="sticky bottom-0 left-0 right-0 p-4 bg-background border-t shadow-top-lg z-10">
-        <Button size="lg" className="w-full text-lg font-semibold" onClick={handleVisitStore}>
-          Visit {store.name} <ExternalLinkIcon className="ml-2 h-5 w-5" />
-        </Button>
-      </div>
 
 
-      {/* Terms &amp; Conditions */}
-      {store.terms && (
+      {/* Terms & Conditions */}
+      {store?.terms && (
         <section>
           <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
              <ScrollText className="w-5 h-5 text-muted-foreground" /> Important Terms &amp; Conditions
@@ -306,8 +354,6 @@ export default function StoreDetailPage() {
           </Card>
         </section>
       )}
-
-       {/* General Info (Removed, redundant with new terms section) */}
     </div>
   );
 }
@@ -336,7 +382,7 @@ function StoreDetailSkeleton() {
 
       {/* Top Offers Skeleton */}
       <Skeleton className="h-24 w-full rounded-lg" />
-      
+
       {/* Timelines Skeleton */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Skeleton className="h-28 rounded-lg" />
@@ -344,18 +390,18 @@ function StoreDetailSkeleton() {
         <Skeleton className="h-28 rounded-lg" />
       </section>
 
+       {/* Visit Store Button Skeleton */}
+       <Skeleton className="h-12 w-full rounded-lg mt-4" />
+
       {/* Coupons Skeleton */}
       <section>
-        <Skeleton className="h-8 w-1/2 mb-6" /> 
+        <Skeleton className="h-8 w-1/2 mb-6" />
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
           {Array.from({ length: 3 }).map((_, index) => (
             <Skeleton key={index} className="h-40 rounded-lg" />
           ))}
         </div>
       </section>
-
-       {/* Visit Store Button Skeleton */}
-       <Skeleton className="h-12 w-full rounded-lg mt-4" />
 
       {/* Terms Skeleton */}
       <section>
@@ -371,3 +417,5 @@ function StoreDetailSkeleton() {
     </div>
   );
 }
+
+    

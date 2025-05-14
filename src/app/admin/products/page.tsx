@@ -26,7 +26,7 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Product, ProductFormValues, Store, Category } from '@/lib/types';
+import type { Product, ProductFormValues as ProductFormValuesType, Store, Category } from '@/lib/types'; // Renamed ProductFormValuesType
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -43,11 +43,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, CheckCircle, XCircle, Package, ExternalLink } from 'lucide-react';
+import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, CheckCircle, XCircle, ExternalLink } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"; // Removed AlertDialogTrigger as it's used with asChild
 import AdminGuard from '@/components/guards/admin-guard';
 import Image from 'next/image';
 import { Switch } from '@/components/ui/switch';
@@ -64,17 +64,15 @@ const productSchema = z.object({
   description: z.string().max(1000, "Description too long").optional().nullable(),
   imageUrl: z.string().url('Invalid Image URL').optional().nullable().or(z.literal('')),
   affiliateLink: z.string().url('Invalid Affiliate URL'),
-  price: z.number().min(0).optional().nullable(),
+  price: z.number().min(0, "Price must be non-negative").optional().nullable(),
   priceDisplay: z.string().max(50, "Price display too long").optional().nullable(),
-  category: z.string().optional().nullable(), // Assuming single category slug for now
+  category: z.string().optional().nullable(),
   brand: z.string().max(50, "Brand name too long").optional().nullable(),
   sku: z.string().max(50, "SKU too long").optional().nullable(),
   isActive: z.boolean().default(true),
   isFeatured: z.boolean().default(false),
   dataAiHint: z.string().max(50, "AI Hint too long").optional().nullable(),
 });
-
-type ProductFormValuesType = z.infer<typeof productSchema>;
 
 interface ProductWithStoreName extends Product {
   storeName?: string;
@@ -93,6 +91,8 @@ function AdminProductsPageContent() {
   const [searchTermInput, setSearchTermInput] = useState('');
   const debouncedSearchTerm = useDebounce(searchTermInput, 500);
   const [isSearching, setIsSearching] = useState(false);
+  const [filterStoreId, setFilterStoreId] = useState<string | 'all'>('all');
+
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductWithStoreName | null>(null);
@@ -101,86 +101,80 @@ function AdminProductsPageContent() {
   const [updatingProductId, setUpdatingProductId] = useState<string | null>(null);
 
   const [storeList, setStoreList] = useState<{ id: string; name: string }[]>([]);
-  const [categoryList, setCategoryList] = useState<{ id: string; name: string; slug: string }[]>([]);
+  const [categoryList, setCategoryList] = useState<{ slug: string; name: string }[]>([]);
+  const [loadingOptions, setLoadingOptions] = useState(true);
+
 
   const form = useForm<ProductFormValuesType>({
     resolver: zodResolver(productSchema),
-    defaultValues: {
-      storeId: '',
-      name: '',
-      description: '',
-      imageUrl: '',
-      affiliateLink: '',
-      price: null,
-      priceDisplay: '',
-      category: '',
-      brand: '',
-      sku: '',
-      isActive: true,
-      isFeatured: false,
-      dataAiHint: '',
-    },
+    defaultValues: { /* Default values will be set when opening dialog */ },
   });
 
-  // Fetch stores and categories for dropdowns
   useEffect(() => {
     const fetchSelectOptions = async () => {
+      setLoadingOptions(true);
       if (!db || firebaseInitializationError) {
         setPageError(firebaseInitializationError || "Database not available for fetching options.");
+        setLoadingOptions(false);
         return;
       }
       try {
         const storesSnap = await getDocs(query(collection(db, 'stores'), orderBy('name')));
         setStoreList(storesSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name })));
 
-        const categoriesSnap = await getDocs(query(collection(db, 'categories'), orderBy('name')));
-        setCategoryList(categoriesSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name, slug: doc.data().slug })));
+        const categoriesSnap = await getDocs(query(collection(db, 'categories'), where('isActive', '==', true), orderBy('name')));
+        setCategoryList(categoriesSnap.docs.map(doc => ({ slug: doc.data().slug, name: doc.data().name })));
       } catch (err) {
         console.error("Error fetching stores/categories for product form:", err);
         toast({ variant: "destructive", title: "Error", description: "Could not load store/category options." });
+      } finally {
+        setLoadingOptions(false);
       }
     };
     fetchSelectOptions();
   }, [toast]);
 
   const fetchProducts = useCallback(async (
-    isLoadMoreOperation: boolean,
-    currentSearchTerm: string,
-    docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
+    loadMore = false,
+    currentSearchTerm = debouncedSearchTerm, // Use current debounced term
+    currentFilterStoreId = filterStoreId, // Use current filter
+    docToStartAfter = loadMore ? lastVisible : null
   ) => {
     let isMounted = true;
     if (!db || firebaseInitializationError) {
       if (isMounted) {
         setPageError(firebaseInitializationError || "Database connection not available.");
-        setLoading(false);
-        setLoadingMore(false);
-        setHasMore(false);
+        setLoading(false); setLoadingMore(false); setHasMore(false);
       }
       return () => { isMounted = false; };
     }
 
-    if (!isLoadMoreOperation) {
-      setLoading(true);
-      setProducts([]);
-    } else {
-      setLoadingMore(true);
-    }
+    if (!loadMore) { setLoading(true); setProducts([]); setLastVisible(null); setHasMore(true); }
+    else { setLoadingMore(true); }
     setPageError(null);
-    setIsSearching(currentSearchTerm !== '');
+    setIsSearching(currentSearchTerm !== '' || currentFilterStoreId !== 'all');
 
     try {
       const productsCollection = collection(db, 'products');
       let constraints: QueryConstraint[] = [];
 
+      if (currentFilterStoreId !== 'all') {
+        constraints.push(where('storeId', '==', currentFilterStoreId));
+      }
+
       if (currentSearchTerm) {
+        // For simplicity, searching name field. For multi-field search, consider a search service.
         constraints.push(where('name', '>=', currentSearchTerm));
         constraints.push(where('name', '<=', currentSearchTerm + '\uf8ff'));
-        constraints.push(orderBy('name'));
-      } else {
+        constraints.push(orderBy('name')); // Firestore requires orderBy on the same field as inequality
+      } else if (currentFilterStoreId !== 'all') {
+        constraints.push(orderBy('name')); // If filtering by store, order by name
+      }
+      else {
         constraints.push(orderBy('createdAt', 'desc'));
       }
 
-      if (isLoadMoreOperation && docToStartAfter) {
+      if (docToStartAfter) {
         constraints.push(startAfter(docToStartAfter));
       }
       constraints.push(limit(PRODUCTS_PER_PAGE));
@@ -204,20 +198,13 @@ function AdminProductsPageContent() {
           isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
           createdAt: safeToDate(data.createdAt),
           updatedAt: safeToDate(data.updatedAt),
-          storeName: 'Loading...'
+          storeName: 'Loading...' // Placeholder, will be fetched
         };
 
-        try {
-          if (product.storeId && db) {
-            const storeDocRef = doc(db, 'stores', product.storeId);
-            const storeSnap = await getDoc(storeDocRef);
-            product.storeName = storeSnap.exists() ? storeSnap.data()?.name : 'Unknown Store';
-          } else if (!product.storeId) {
-            product.storeName = 'No Store ID';
-          }
-        } catch (storeFetchError) {
-          console.error(`Error fetching store name for product ${product.id}:`, storeFetchError);
-          product.storeName = 'Error Loading Store';
+        if (product.storeId && db) {
+          const storeDocRef = doc(db, 'stores', product.storeId);
+          const storeSnap = await getDoc(storeDocRef);
+          product.storeName = storeSnap.exists() ? storeSnap.data()?.name : 'Unknown Store';
         }
         return product;
       });
@@ -225,11 +212,7 @@ function AdminProductsPageContent() {
       const productsWithNames = await Promise.all(productsDataPromises);
 
       if (isMounted) {
-        if (isLoadMoreOperation) {
-          setProducts(prev => [...prev, ...productsWithNames]);
-        } else {
-          setProducts(productsWithNames);
-        }
+        setProducts(prev => loadMore ? [...prev, ...productsWithNames] : productsWithNames);
         const newLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
         setLastVisible(newLastVisible);
         setHasMore(querySnapshot.docs.length === PRODUCTS_PER_PAGE);
@@ -238,32 +221,30 @@ function AdminProductsPageContent() {
       console.error("Error fetching products:", err);
       if (isMounted) {
         const errorMsg = err instanceof Error ? err.message : "Failed to fetch products";
-        setPageError(errorMsg);
-        toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+        setPageError(errorMsg); toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
         setHasMore(false);
       }
     } finally {
-      if (isMounted) {
-        setLoading(false);
-        setLoadingMore(false);
-        setIsSearching(false);
-      }
+      if (isMounted) { setLoading(false); setLoadingMore(false); setIsSearching(false); }
     }
     return () => { isMounted = false; };
-  }, [toast]);
+  }, [toast, debouncedSearchTerm, filterStoreId, lastVisible]); // Include lastVisible for pagination re-fetch if it changes elsewhere
+
 
   useEffect(() => {
-    fetchProducts(false, debouncedSearchTerm, null);
-  }, [debouncedSearchTerm, fetchProducts]);
+    fetchProducts(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm, filterStoreId]); // fetchProducts is stable now
+
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchProducts(false, searchTermInput, null);
+    // fetchProducts is called by useEffect when debouncedSearchTerm or filterStoreId changes
   };
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      fetchProducts(true, debouncedSearchTerm, lastVisible);
+      fetchProducts(true);
     }
   };
 
@@ -277,7 +258,7 @@ function AdminProductsPageContent() {
       description: product.description || '',
       imageUrl: product.imageUrl || '',
       affiliateLink: product.affiliateLink,
-      price: product.price ?? null,
+      price: product.price ?? undefined,
       priceDisplay: product.priceDisplay || '',
       category: product.category || '',
       brand: product.brand || '',
@@ -290,29 +271,33 @@ function AdminProductsPageContent() {
   };
 
   const onSubmit = async (data: ProductFormValuesType) => {
-    if (!db) {
-      setPageError("Database not available.");
+    if (!db || !editingProduct) { // Should only be called for editing in this page
+      setPageError("Database not available or no product selected for editing.");
       setIsSaving(false);
       return;
     }
     setIsSaving(true);
     setPageError(null);
 
-    const submissionData: Partial<ProductFormValues> = Object.fromEntries(
-      Object.entries(data).map(([key, value]) => [key, value === '' ? null : value])
-    );
-    submissionData.isFeatured = !!data.isFeatured;
-    submissionData.isActive = !!data.isActive;
+     const submissionData: Omit<ProductFormValuesType, 'price'> & { price?: number | null } = {
+      ...data,
+      price: data.price === undefined || isNaN(data.price) ? null : Number(data.price),
+      imageUrl: data.imageUrl || null,
+      description: data.description || null,
+      priceDisplay: data.priceDisplay || null,
+      category: data.category || null,
+      brand: data.brand || null,
+      sku: data.sku || null,
+      dataAiHint: data.dataAiHint || null,
+    };
 
     try {
-      if (editingProduct) {
-        const productDocRef = doc(db, 'products', editingProduct.id);
-        await updateDoc(productDocRef, { ...submissionData, updatedAt: serverTimestamp() });
-        setProducts(prev => prev.map(p => p.id === editingProduct.id ? { ...p, ...submissionData, updatedAt: new Date(), storeName: storeList.find(s => s.id === submissionData.storeId)?.name || 'Unknown Store' } as ProductWithStoreName : p));
-        toast({ title: "Product Updated", description: `${data.name} details saved.` });
-      } else {
-        // This case is for adding directly on this page, ideally handled by /new page
-      }
+      const productDocRef = doc(db, 'products', editingProduct.id);
+      await updateDoc(productDocRef, { ...submissionData, updatedAt: serverTimestamp() });
+
+      const storeName = storeList.find(s => s.id === submissionData.storeId)?.name || 'Unknown Store';
+      setProducts(prev => prev.map(p => p.id === editingProduct.id ? { ...p, ...submissionData, storeName, updatedAt: new Date() } as ProductWithStoreName : p));
+      toast({ title: "Product Updated", description: `${data.name} details saved.` });
       setIsDialogOpen(false);
       form.reset();
     } catch (err) {
@@ -339,21 +324,22 @@ function AdminProductsPageContent() {
     }
   };
 
-  const handleToggleActiveStatus = async (product: ProductWithStoreName) => {
+  const handleToggleStatus = async (product: ProductWithStoreName, field: 'isActive' | 'isFeatured') => {
     if (!product.id || !db) return;
     setUpdatingProductId(product.id);
     try {
-      const newStatus = !product.isActive;
-      await updateDoc(doc(db, 'products', product.id), { isActive: newStatus, updatedAt: serverTimestamp() });
-      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, isActive: newStatus, updatedAt: new Date() } : p));
-      toast({ title: `Product ${newStatus ? 'Activated' : 'Deactivated'}` });
+      const newStatus = !product[field];
+      await updateDoc(doc(db, 'products', product.id), { [field]: newStatus, updatedAt: serverTimestamp() });
+      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, [field]: newStatus, updatedAt: new Date() } : p));
+      toast({ title: `Product ${field === 'isActive' ? (newStatus ? 'Activated' : 'Deactivated') : (newStatus ? 'Featured' : 'Unfeatured')}` });
     } catch (err) {
-      console.error("Error toggling product status:", err);
+      console.error(`Error toggling product ${field} status:`, err);
       toast({ variant: "destructive", title: "Status Update Failed", description: String(err) });
     } finally {
       setUpdatingProductId(null);
     }
   };
+
 
   if (loading && products.length === 0 && !pageError) {
     return <ProductsTableSkeleton />;
@@ -371,12 +357,21 @@ function AdminProductsPageContent() {
       )}
 
       <Card>
-        <CardHeader><CardTitle>Filter & Search</CardTitle><CardDescription>Search by product name.</CardDescription></CardHeader>
-        <CardContent>
-          <form onSubmit={handleSearchSubmit} className="flex gap-2">
+        <CardHeader><CardTitle>Filter & Search</CardTitle><CardDescription>Search by product name or filter by store.</CardDescription></CardHeader>
+        <CardContent className="flex flex-col sm:flex-row gap-4">
+          <form onSubmit={handleSearchSubmit} className="flex-1 flex gap-2">
             <Input type="search" placeholder="Search by Product Name..." value={searchTermInput} onChange={(e) => setSearchTermInput(e.target.value)} disabled={isSearching || loading} className="h-10 text-base"/>
-            <Button type="submit" disabled={isSearching || loading} className="h-10">{isSearching || (loading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}<span className="sr-only sm:not-sr-only sm:ml-2">Search</span></Button>
+            <Button type="submit" disabled={isSearching || loading || loadingOptions} className="h-10">{isSearching || (loading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}<span className="sr-only sm:not-sr-only sm:ml-2">Search</span></Button>
           </form>
+          <div className="flex-1">
+            <Select value={filterStoreId} onValueChange={(value) => setFilterStoreId(value)} disabled={isSearching || loading || loadingOptions}>
+                <SelectTrigger className="h-10"><SelectValue placeholder={loadingOptions ? "Loading stores..." : "Filter by Store..."} /></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Stores</SelectItem>
+                    {storeList.map(store => (<SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>))}
+                </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
 
@@ -384,7 +379,7 @@ function AdminProductsPageContent() {
         <CardHeader><CardTitle>Product List</CardTitle><CardDescription>View and manage products.</CardDescription></CardHeader>
         <CardContent>
           {loading && products.length === 0 && !pageError ? <ProductsTableSkeleton /> : !loading && products.length === 0 && !pageError ? (
-            <p className="text-center text-muted-foreground py-8">{debouncedSearchTerm ? `No products found matching "${debouncedSearchTerm}".` : "No products found."}</p>
+            <p className="text-center text-muted-foreground py-8">{debouncedSearchTerm || filterStoreId !== 'all' ? `No products found matching criteria.` : "No products found."}</p>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -396,7 +391,7 @@ function AdminProductsPageContent() {
                     <TableHead>Price</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Featured</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Active</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -410,11 +405,13 @@ function AdminProductsPageContent() {
                       </TableCell>
                       <TableCell className="font-medium max-w-[200px] truncate" title={product.name}>{product.name}</TableCell>
                       <TableCell className="text-xs truncate max-w-[100px]" title={product.storeName}>{product.storeName || product.storeId}</TableCell>
-                      <TableCell className="text-xs">{product.priceDisplay || (product.price ? formatCurrency(product.price) : '-')}</TableCell>
-                      <TableCell className="text-xs capitalize truncate max-w-[100px]" title={product.category}>{product.category || '-'}</TableCell>
-                      <TableCell>{product.isFeatured ? <CheckCircle className="h-5 w-5 text-green-600" /> : <XCircle className="h-5 w-5 text-muted-foreground"/>}</TableCell>
+                      <TableCell className="text-xs">{product.priceDisplay || (product.price !== null && product.price !== undefined ? formatCurrency(product.price) : '-')}</TableCell>
+                      <TableCell className="text-xs capitalize truncate max-w-[100px]" title={product.category}>{categoryList.find(c=>c.slug === product.category)?.name || product.category || '-'}</TableCell>
                       <TableCell>
-                        <Switch checked={product.isActive} onCheckedChange={() => handleToggleActiveStatus(product)} disabled={updatingProductId === product.id} aria-label={product.isActive ? 'Deactivate' : 'Activate'} />
+                          <Switch id={`featured-${product.id}`} checked={!!product.isFeatured} onCheckedChange={() => handleToggleStatus(product, 'isFeatured')} disabled={updatingProductId === product.id} aria-label="Toggle Featured"/>
+                      </TableCell>
+                      <TableCell>
+                        <Switch id={`active-${product.id}`} checked={product.isActive} onCheckedChange={() => handleToggleStatus(product, 'isActive')} disabled={updatingProductId === product.id} aria-label="Toggle Active" />
                         {updatingProductId === product.id && <Loader2 className="h-4 w-4 animate-spin ml-2 inline-block" />}
                       </TableCell>
                       <TableCell>
@@ -444,7 +441,7 @@ function AdminProductsPageContent() {
             </div>
           )}
           {hasMore && !loading && products.length > 0 && (
-            <div className="mt-6 text-center"><Button onClick={handleLoadMore} disabled={loadingMore}>{loadingMore && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Load More</Button></div>
+            <div className="mt-6 text-center"><Button onClick={handleLoadMore} disabled={loadingMore || loadingOptions}>{loadingMore && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Load More</Button></div>
           )}
           {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
         </CardContent>
@@ -456,78 +453,95 @@ function AdminProductsPageContent() {
           <form onSubmit={form.handleSubmit(onSubmit)} className="grid md:grid-cols-2 gap-4 py-4">
             {/* Store Selector */}
             <div className="space-y-1 md:col-span-1">
-              <Label htmlFor="storeId">Store*</Label>
+              <Label htmlFor="storeIdDialog">Store*</Label>
               <Controller name="storeId" control={form.control} render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange} disabled={isSaving}>
-                  <SelectTrigger><SelectValue placeholder="Select store..." /></SelectTrigger>
+                <Select value={field.value} onValueChange={field.onChange} disabled={isSaving || loadingOptions}>
+                  <SelectTrigger id="storeIdDialog"><SelectValue placeholder={loadingOptions ? "Loading..." : "Select store"} /></SelectTrigger>
                   <SelectContent>{storeList.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
                 </Select>
               )} />
-              {form.formState.errors.storeId && <p className="text-sm text-destructive">{form.formState.errors.storeId.message}</p>}
+              {form.formState.errors.storeId && <p className="text-sm text-destructive text-right">{form.formState.errors.storeId.message}</p>}
             </div>
              {/* Category Selector */}
             <div className="space-y-1 md:col-span-1">
-              <Label htmlFor="category">Category</Label>
+              <Label htmlFor="categoryDialog">Category</Label>
               <Controller name="category" control={form.control} render={({ field }) => (
-                <Select value={field.value || ''} onValueChange={field.onChange} disabled={isSaving}>
-                  <SelectTrigger><SelectValue placeholder="Select category..." /></SelectTrigger>
-                  <SelectContent>{categoryList.map(c => <SelectItem key={c.id} value={c.slug}>{c.name}</SelectItem>)}</SelectContent>
+                <Select value={field.value || ''} onValueChange={field.onChange} disabled={isSaving || loadingOptions}>
+                  <SelectTrigger id="categoryDialog"><SelectValue placeholder={loadingOptions ? "Loading..." : "Select category"} /></SelectTrigger>
+                  <SelectContent>{categoryList.map(c => <SelectItem key={c.slug} value={c.slug}>{c.name}</SelectItem>)}</SelectContent>
                 </Select>
               )} />
+               {form.formState.errors.category && <p className="text-sm text-destructive text-right">{form.formState.errors.category.message}</p>}
             </div>
             {/* Name */}
             <div className="space-y-1 md:col-span-2">
-              <Label htmlFor="name">Product Name*</Label>
-              <Input id="name" {...form.register('name')} disabled={isSaving} />
-              {form.formState.errors.name && <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>}
+              <Label htmlFor="nameDialog">Product Name*</Label>
+              <Input id="nameDialog" {...form.register('name')} disabled={isSaving} />
+              {form.formState.errors.name && <p className="text-sm text-destructive text-right">{form.formState.errors.name.message}</p>}
             </div>
             {/* Image URL */}
             <div className="space-y-1 md:col-span-2">
-              <Label htmlFor="imageUrl">Image URL</Label>
-              <Input id="imageUrl" {...form.register('imageUrl')} placeholder="https://..." disabled={isSaving} />
-              {form.watch('imageUrl') && <Image src={form.watch('imageUrl')!} alt="Preview" width={80} height={80} className="mt-1 object-contain border rounded-sm"/>}
-              {form.formState.errors.imageUrl && <p className="text-sm text-destructive">{form.formState.errors.imageUrl.message}</p>}
+              <Label htmlFor="imageUrlDialog">Image URL</Label>
+              <Input id="imageUrlDialog" {...form.register('imageUrl')} placeholder="https://example.com/image.jpg" disabled={isSaving} />
+              {form.watch('imageUrl') && form.formState.errors.imageUrl?.type !== 'invalid_string' && <Image src={form.watch('imageUrl')!} alt="Preview" width={80} height={80} className="mt-1 object-contain border rounded-sm" data-ai-hint="product image preview"/>}
+              {form.formState.errors.imageUrl && <p className="text-sm text-destructive text-right">{form.formState.errors.imageUrl.message}</p>}
+            </div>
+            {/* Data AI Hint */}
+            <div className="space-y-1 md:col-span-2">
+                <Label htmlFor="dataAiHintDialog">Image AI Hint</Label>
+                <Input id="dataAiHintDialog" {...form.register('dataAiHint')} placeholder="e.g., blue running shoe" disabled={isSaving} />
+                 {form.formState.errors.dataAiHint && <p className="text-sm text-destructive text-right">{form.formState.errors.dataAiHint.message}</p>}
             </div>
             {/* Affiliate Link */}
             <div className="space-y-1 md:col-span-2">
-              <Label htmlFor="affiliateLink">Affiliate Link*</Label>
-              <Input id="affiliateLink" {...form.register('affiliateLink')} placeholder="https://..." disabled={isSaving} />
-              {form.formState.errors.affiliateLink && <p className="text-sm text-destructive">{form.formState.errors.affiliateLink.message}</p>}
+              <Label htmlFor="affiliateLinkDialog">Affiliate Link*</Label>
+              <Input id="affiliateLinkDialog" {...form.register('affiliateLink')} placeholder="https://tracking.link/product" disabled={isSaving} />
+              {form.formState.errors.affiliateLink && <p className="text-sm text-destructive text-right">{form.formState.errors.affiliateLink.message}</p>}
             </div>
             {/* Price & Price Display */}
             <div className="grid grid-cols-2 gap-4 md:col-span-2">
                 <div className="space-y-1">
-                  <Label htmlFor="price">Price (Numeric, Optional)</Label>
-                  <Input id="price" type="number" step="0.01" {...form.register('price', { valueAsNumber: true, setValueAs: v => v === null || v === '' ? null : parseFloat(v)})} disabled={isSaving} />
+                  <Label htmlFor="priceDialog">Price (Numeric, Optional)</Label>
+                  <Input id="priceDialog" type="number" step="0.01" {...form.register('price', { setValueAs: (v) => (v === "" || v === null || isNaN(parseFloat(v)) ? null : parseFloat(v)) })} placeholder="e.g., 2499.00" disabled={isSaving} />
+                   {form.formState.errors.price && <p className="text-sm text-destructive text-right">{form.formState.errors.price.message}</p>}
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="priceDisplay">Price Display (e.g., ₹199)</Label>
-                  <Input id="priceDisplay" {...form.register('priceDisplay')} disabled={isSaving} />
+                  <Label htmlFor="priceDisplayDialog">Price Display Text (Optional)</Label>
+                  <Input id="priceDisplayDialog" {...form.register('priceDisplay')} placeholder="e.g., ₹2,499 or Sale Price" disabled={isSaving} />
+                   {form.formState.errors.priceDisplay && <p className="text-sm text-destructive text-right">{form.formState.errors.priceDisplay.message}</p>}
                 </div>
             </div>
             {/* Brand & SKU */}
             <div className="grid grid-cols-2 gap-4 md:col-span-2">
-              <div className="space-y-1"><Label htmlFor="brand">Brand</Label><Input id="brand" {...form.register('brand')} disabled={isSaving} /></div>
-              <div className="space-y-1"><Label htmlFor="sku">SKU</Label><Input id="sku" {...form.register('sku')} disabled={isSaving} /></div>
+              <div className="space-y-1">
+                <Label htmlFor="brandDialog">Brand (Optional)</Label><Input id="brandDialog" {...form.register('brand')} disabled={isSaving} />
+                {form.formState.errors.brand && <p className="text-sm text-destructive text-right">{form.formState.errors.brand.message}</p>}
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="skuDialog">SKU (Optional)</Label><Input id="skuDialog" {...form.register('sku')} disabled={isSaving} />
+                {form.formState.errors.sku && <p className="text-sm text-destructive text-right">{form.formState.errors.sku.message}</p>}
+              </div>
             </div>
             {/* Description */}
             <div className="space-y-1 md:col-span-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea id="description" {...form.register('description')} rows={3} disabled={isSaving} />
-            </div>
-            {/* Data AI Hint */}
-            <div className="space-y-1 md:col-span-2">
-                <Label htmlFor="dataAiHint">Image AI Hint</Label>
-                <Input id="dataAiHint" {...form.register('dataAiHint')} placeholder="Keywords for image (e.g., product name)" disabled={isSaving} />
+              <Label htmlFor="descriptionDialog">Description (Optional)</Label>
+              <Textarea id="descriptionDialog" {...form.register('description')} rows={3} placeholder="Detailed product description" disabled={isSaving} />
+              {form.formState.errors.description && <p className="text-sm text-destructive text-right">{form.formState.errors.description.message}</p>}
             </div>
             {/* Flags */}
             <div className="md:col-span-2 space-y-3 pt-2">
-              <div className="flex items-center space-x-2"><Controller name="isActive" control={form.control} render={({ field }) => (<Checkbox id="isActive" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />)} /><Label htmlFor="isActive" className="font-normal">Active</Label></div>
-              <div className="flex items-center space-x-2"><Controller name="isFeatured" control={form.control} render={({ field }) => (<Checkbox id="isFeatured" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />)} /><Label htmlFor="isFeatured" className="font-normal">Featured</Label></div>
+              <div className="flex items-center space-x-2">
+                <Controller name="isActive" control={form.control} render={({ field }) => (<Checkbox id="isActiveDialog" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />)} />
+                <Label htmlFor="isActiveDialog" className="font-normal">Active</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Controller name="isFeatured" control={form.control} render={({ field }) => (<Checkbox id="isFeaturedDialog" checked={!!field.value} onCheckedChange={field.onChange} disabled={isSaving} />)} />
+                <Label htmlFor="isFeaturedDialog" className="font-normal">Featured</Label>
+              </div>
             </div>
             <DialogFooter className="md:col-span-2">
               <DialogClose asChild><Button type="button" variant="outline" disabled={isSaving}>Cancel</Button></DialogClose>
-              <Button type="submit" disabled={isSaving}>{isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editingProduct ? 'Save Changes' : 'Add Product'}</Button>
+              <Button type="submit" disabled={isSaving || loadingOptions}>{isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editingProduct ? 'Save Changes' : 'Add Product'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -552,6 +566,8 @@ function ProductsTableSkeleton() {
   );
 }
 
-export default function AdminProductsPage() {
+export default function AdminProductsListPage() { // Renamed export
   return <AdminGuard><AdminProductsPageContent /></AdminGuard>;
 }
+
+    
