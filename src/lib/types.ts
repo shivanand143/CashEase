@@ -97,6 +97,7 @@ export interface Store {
   terms?: string | null; // Specific terms and conditions for offers
   isFeatured: boolean; // Highlighted store
   isActive: boolean; // Whether the store is active on the platform
+  isTodaysDeal?: boolean; // New flag for "Today's Deal" stores
   dataAiHint?: string | null; // Optional hint for AI image generation/search
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
@@ -113,7 +114,6 @@ export interface Coupon {
   expiryDate: Date | Timestamp | null; // When the coupon expires
   isFeatured: boolean; // Highlighted coupon
   isActive: boolean; // Whether the coupon is active
-  isTodaysDeal?: boolean; // New flag for "Today's Deals" section
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
@@ -195,16 +195,14 @@ export interface CouponWithStore extends Coupon {
 }
 
 // Form values for Store, used in admin panel
-export interface StoreFormValues extends Omit<Store, 'id' | 'createdAt' | 'updatedAt'> {}
-// Form values for Coupon, used in admin panel
-export interface CouponFormValues extends Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'store'> {
+export interface StoreFormValues extends Omit<Store, 'id' | 'createdAt' | 'updatedAt'> {
   isTodaysDeal?: boolean;
 }
+// Form values for Coupon, used in admin panel
+export interface CouponFormValues extends Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'store'> {}
 // Form values for Banner, used in admin panel
 export interface BannerFormValues extends Omit<Banner, 'id' | 'createdAt' | 'updatedAt'> {}
 // Form values for Category, used in admin panel
 export interface CategoryFormValues extends Omit<Category, 'id' | 'createdAt' | 'updatedAt'> {}
 // Form values for Product, used in admin panel
-export interface ProductFormValues extends Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'storeName'> {
-  isTodaysPick?: boolean;
-}
+export interface ProductFormValues extends Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'storeName'> {}

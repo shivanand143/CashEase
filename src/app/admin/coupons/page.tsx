@@ -68,7 +68,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"; // Removed AlertDialogTrigger
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { format, isValid } from 'date-fns';
 import { cn, safeToDate } from '@/lib/utils';
@@ -82,7 +83,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
 import { useDebounce } from '@/hooks/use-debounce';
-import { Switch } from '@/components/ui/switch'; // Import Switch
+import { Switch } from '@/components/ui/switch';
 
 const COUPONS_PER_PAGE = 20;
 
@@ -98,7 +99,6 @@ const couponSchema = z.object({
   expiryDate: z.date().optional().nullable(),
   isFeatured: z.boolean().default(false),
   isActive: z.boolean().default(true),
-  isTodaysDeal: z.boolean().default(false), // New field
 }).refine(data => data.code || data.link, {
   message: "Either a Coupon Code or a Link is required",
   path: ["code"],
@@ -130,26 +130,28 @@ function AdminCouponsPageContent() {
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingCouponId, setDeletingCouponId] = useState<string | null>(null);
-  const [updatingFieldId, setUpdatingFieldId] = useState<string | null>(null); // For toggles
+  const [updatingFieldId, setUpdatingFieldId] = useState<string | null>(null);
 
   const [storeList, setStoreList] = useState<{ id: string; name: string }[]>([]);
    useEffect(() => {
+     let isMounted = true;
      const fetchStores = async () => {
        if (!db || firebaseInitializationError) {
-         setError(firebaseInitializationError || "Database not available for fetching stores.");
+         if (isMounted) setError(firebaseInitializationError || "Database not available for fetching stores.");
          return;
        }
        try {
          const storesCollection = collection(db, 'stores');
          const q = query(storesCollection, orderBy('name'));
          const snapshot = await getDocs(q);
-         setStoreList(snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name || 'Unnamed Store' })));
+         if (isMounted) setStoreList(snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name || 'Unnamed Store' })));
        } catch (storeFetchError) {
          console.error("Error fetching store list:", storeFetchError);
-         toast({ variant: 'destructive', title: 'Store List Error', description: 'Could not load stores.' });
+         if (isMounted) toast({ variant: 'destructive', title: 'Store List Error', description: 'Could not load stores.' });
        }
      };
      fetchStores();
+     return () => { isMounted = false; };
    }, [toast]);
 
   const form = useForm<CouponFormValues>({
@@ -162,14 +164,17 @@ function AdminCouponsPageContent() {
       expiryDate: null,
       isFeatured: false,
       isActive: true,
-      isTodaysDeal: false,
     },
   });
 
   const fetchCoupons = useCallback(async (loadMore = false) => {
+    let isMounted = true;
     if (!db || firebaseInitializationError) {
-      setError(firebaseInitializationError || "Database connection not available.");
-      setLoading(false); setLoadingMore(false); setHasMore(false);
+      if(isMounted) {
+        setError(firebaseInitializationError || "Database connection not available.");
+        if(!loadMore) setLoading(false); else setLoadingMore(false);
+        setHasMore(false);
+      }
       return;
     }
 
@@ -214,7 +219,6 @@ function AdminCouponsPageContent() {
           expiryDate: safeToDate(data.expiryDate),
           isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
           isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
-          isTodaysDeal: typeof data.isTodaysDeal === 'boolean' ? data.isTodaysDeal : false, // Handle new field
           createdAt: safeToDate(data.createdAt),
           updatedAt: safeToDate(data.updatedAt),
           storeName: 'Loading...'
@@ -243,23 +247,30 @@ function AdminCouponsPageContent() {
               (c.storeName && c.storeName !== 'Loading...' && c.storeName.toLowerCase().includes(debouncedSearchTerm.toLowerCase()))
           );
       }
+      if(isMounted){
+        if (isInitialOrNewSearch) {
+          setCoupons(couponsWithNames);
+        } else {
+          setCoupons(prev => [...prev, ...couponsWithNames]);
+        }
 
-      if (isInitialOrNewSearch) {
-        setCoupons(couponsWithNames);
-      } else {
-        setCoupons(prev => [...prev, ...couponsWithNames]);
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+        setHasMore(querySnapshot.docs.length === COUPONS_PER_PAGE && couponsWithNames.length > 0);
       }
-
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-      setHasMore(querySnapshot.docs.length === COUPONS_PER_PAGE && couponsWithNames.length > 0);
     } catch (err) {
       console.error("Error fetching coupons:", err);
       const errorMsg = err instanceof Error ? err.message : "Failed to fetch coupons";
-      setError(errorMsg);
-      toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+      if(isMounted) {
+        setError(errorMsg);
+        toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+      }
     } finally {
-      setLoading(false); setLoadingMore(false); setIsSearching(false);
+      if(isMounted){
+        if(!loadMore) setLoading(false); else setLoadingMore(false);
+        setIsSearching(false);
+      }
     }
+    return () => {isMounted = false;}
   }, [debouncedSearchTerm, lastVisible, toast]);
 
   useEffect(() => {
@@ -280,7 +291,6 @@ function AdminCouponsPageContent() {
       expiryDate: coupon.expiryDate ? safeToDate(coupon.expiryDate) : null,
       isFeatured: coupon.isFeatured,
       isActive: coupon.isActive,
-      isTodaysDeal: coupon.isTodaysDeal || false,
     });
     setIsDialogOpen(true);
   };
@@ -293,7 +303,6 @@ function AdminCouponsPageContent() {
         code: data.code || null,
         link: data.link || null,
         expiryDate: data.expiryDate ? data.expiryDate : null,
-        isTodaysDeal: !!data.isTodaysDeal,
     };
 
     try {
@@ -306,8 +315,6 @@ function AdminCouponsPageContent() {
          };
          setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? updatedCoupon : c));
         toast({ title: "Coupon Updated" });
-      } else {
-        // Handled by /new page
       }
       setIsDialogOpen(false); form.reset();
     } catch (err) {
@@ -335,7 +342,7 @@ function AdminCouponsPageContent() {
      }
    };
 
-  const handleToggleField = async (couponId: string, field: 'isActive' | 'isFeatured' | 'isTodaysDeal') => {
+  const handleToggleField = async (couponId: string, field: 'isActive' | 'isFeatured') => {
     if (!db) return;
     setUpdatingFieldId(couponId);
     const couponToUpdate = coupons.find(c => c.id === couponId);
@@ -402,7 +409,6 @@ function AdminCouponsPageContent() {
                      <TableHead>Expires</TableHead>
                      <TableHead>Active</TableHead>
                      <TableHead>Featured</TableHead>
-                     <TableHead>Today's Deal</TableHead>
                      <TableHead>Actions</TableHead>
                    </TableRow>
                  </TableHeader>
@@ -430,12 +436,10 @@ function AdminCouponsPageContent() {
                             </TableCell>
                             <TableCell>
                                 <Switch checked={!!coupon.isFeatured} onCheckedChange={() => handleToggleField(coupon.id, 'isFeatured')} disabled={updatingFieldId === coupon.id} aria-label="Toggle Featured"/>
-                            </TableCell>
-                            <TableCell>
-                                <Switch checked={!!coupon.isTodaysDeal} onCheckedChange={() => handleToggleField(coupon.id, 'isTodaysDeal')} disabled={updatingFieldId === coupon.id} aria-label="Toggle Today's Deal"/>
                                 {updatingFieldId === coupon.id && <Loader2 className="h-4 w-4 animate-spin ml-2 inline-block" />}
                             </TableCell>
                            <TableCell>
+                            <AlertDialogTrigger asChild>
                              <DropdownMenu>
                                <DropdownMenuTrigger asChild> <Button variant="ghost" className="h-8 w-8 p-0"> <span className="sr-only">Open menu</span> <MoreHorizontal className="h-4 w-4" /> </Button> </DropdownMenuTrigger>
                                <DropdownMenuContent align="end">
@@ -443,19 +447,19 @@ function AdminCouponsPageContent() {
                                  <DropdownMenuItem onClick={() => openEditDialog(coupon)}> <Edit className="mr-2 h-4 w-4" /> Edit Coupon </DropdownMenuItem>
                                  <DropdownMenuSeparator />
                                   <AlertDialog>
-                                      <DropdownMenuItem asChild onSelect={(e) => e.preventDefault()}>
-                                        {/* Use a custom button for AlertDialogTrigger to fit DropdownMenuItem style */}
-                                        <button className="w-full justify-start px-2 py-1.5 text-sm font-normal text-destructive hover:bg-destructive/10 focus:text-destructive focus:bg-destructive/10 h-auto relative flex cursor-default select-none items-center rounded-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50">
+                                      <AlertDialogTrigger asChild>
+                                        <Button variant="ghost" className="w-full justify-start px-2 py-1.5 text-sm font-normal text-destructive hover:bg-destructive/10 focus:text-destructive focus:bg-destructive/10 h-auto relative flex cursor-default select-none items-center rounded-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50">
                                           <Trash2 className="mr-2 h-4 w-4"/> Delete Coupon
-                                        </button>
-                                      </DropdownMenuItem>
+                                        </Button>
+                                      </AlertDialogTrigger>
                                    <AlertDialogContent>
                                      <AlertDialogHeader> <AlertDialogTitle>Are you sure?</AlertDialogTitle> <AlertDialogDescription> This action cannot be undone. This will permanently delete the coupon/offer: "{coupon.description}". </AlertDialogDescription> </AlertDialogHeader>
-                                     <AlertDialogFooter> <AlertDialogCancel onClick={() => { /* No specific action, dialog closes */ }}>Cancel</AlertDialogCancel> <AlertDialogAction onClick={() => handleDeleteCoupon(coupon.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90"> Delete </AlertDialogAction> </AlertDialogFooter>
+                                     <AlertDialogFooter> <AlertDialogCancel onClick={() => { setDeletingCouponId(null); }}>Cancel</AlertDialogCancel> <AlertDialogAction onClick={() => handleDeleteCoupon(coupon.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90"> Delete </AlertDialogAction> </AlertDialogFooter>
                                    </AlertDialogContent>
                                  </AlertDialog>
                                </DropdownMenuContent>
                              </DropdownMenu>
+                             </AlertDialogTrigger>
                            </TableCell>
                          </TableRow>
                       )
@@ -476,44 +480,40 @@ function AdminCouponsPageContent() {
            <DialogHeader> <DialogTitle>{editingCoupon ? 'Edit Coupon/Offer' : 'Add New Coupon/Offer'}</DialogTitle> <DialogDescription> {editingCoupon ? `Update details for coupon/offer.` : 'Enter the details for the new coupon or offer.'} </DialogDescription> </DialogHeader>
            <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4 py-4">
              <div className="grid grid-cols-4 items-center gap-4">
-               <Label htmlFor="storeId" className="text-right">Store*</Label>
+               <Label htmlFor="storeIdEdit" className="text-right">Store*</Label>
                <div className="col-span-3">
-                   <Controller name="storeId" control={form.control} render={({ field }) => ( <Select value={field.value} onValueChange={field.onChange} disabled={isSaving}> <SelectTrigger id="storeId"> <SelectValue placeholder="Select a store..." /> </SelectTrigger> <SelectContent> {storeList.length === 0 && <SelectItem value="loading" disabled>Loading stores...</SelectItem>} {storeList.map(store => ( <SelectItem key={store.id} value={store.id}> {store.name} </SelectItem> ))} </SelectContent> </Select> )}/>
+                   <Controller name="storeId" control={form.control} render={({ field }) => ( <Select value={field.value} onValueChange={field.onChange} disabled={isSaving}> <SelectTrigger id="storeIdEdit"> <SelectValue placeholder="Select a store..." /> </SelectTrigger> <SelectContent> {storeList.length === 0 && <SelectItem value="loading" disabled>Loading stores...</SelectItem>} {storeList.map(store => ( <SelectItem key={store.id} value={store.id}> {store.name} </SelectItem> ))} </SelectContent> </Select> )}/>
                     {form.formState.errors.storeId && <p className="text-sm text-destructive mt-1">{form.formState.errors.storeId.message}</p>}
                </div>
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
-               <Label htmlFor="description" className="text-right">Description*</Label>
-               <Textarea id="description" {...form.register('description')} className="col-span-3" rows={2} disabled={isSaving} />
+               <Label htmlFor="descriptionEdit" className="text-right">Description*</Label>
+               <Textarea id="descriptionEdit" {...form.register('description')} className="col-span-3" rows={2} disabled={isSaving} />
                {form.formState.errors.description && <p className="col-span-4 text-sm text-destructive text-right">{form.formState.errors.description.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
-               <Label htmlFor="code" className="text-right">Coupon Code</Label>
-               <Input id="code" {...form.register('code')} className="col-span-3" placeholder="Optional code (e.g., SAVE10)" disabled={isSaving} />
+               <Label htmlFor="codeEdit" className="text-right">Coupon Code</Label>
+               <Input id="codeEdit" {...form.register('code')} className="col-span-3" placeholder="Optional code (e.g., SAVE10)" disabled={isSaving} />
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
-               <Label htmlFor="link" className="text-right">Link</Label>
-               <Input id="link" {...form.register('link')} className="col-span-3" placeholder="Optional direct offer link (https://...)" disabled={isSaving} />
+               <Label htmlFor="linkEdit" className="text-right">Link</Label>
+               <Input id="linkEdit" {...form.register('link')} className="col-span-3" placeholder="Optional direct offer link (https://...)" disabled={isSaving} />
                 {form.formState.errors.link && <p className="col-span-4 text-sm text-destructive text-right">{form.formState.errors.link.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="expiryDate" className="text-right">Expiry Date</Label>
+                <Label htmlFor="expiryDateEdit" className="text-right">Expiry Date</Label>
                 <Controller name="expiryDate" control={form.control} render={({ field }) => ( <Popover> <PopoverTrigger asChild> <Button variant={"outline"} className={cn( "col-span-3 justify-start text-left font-normal h-10", !field.value && "text-muted-foreground" )} disabled={isSaving} > <CalendarIcon className="mr-2 h-4 w-4" /> {field.value ? format(field.value, "PPP") : <span>Optional: Pick a date</span>} </Button> </PopoverTrigger> <PopoverContent className="w-auto p-0"> <Calendar mode="single" selected={field.value || undefined} onSelect={(date) => field.onChange(date || null)} initialFocus /> </PopoverContent> </Popover> )}/>
              </div>
              <div className="grid grid-cols-4 items-start gap-4">
                 <Label className="text-right pt-2">Flags</Label>
                 <div className="col-span-3 space-y-3">
                     <div className="flex items-center space-x-2">
-                         <Controller name="isActive" control={form.control} render={({ field }) => ( <Checkbox id="isActive" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
-                        <Label htmlFor="isActive" className="font-normal">Active</Label>
+                         <Controller name="isActive" control={form.control} render={({ field }) => ( <Checkbox id="isActiveEdit" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
+                        <Label htmlFor="isActiveEdit" className="font-normal">Active</Label>
                     </div>
                     <div className="flex items-center space-x-2">
-                         <Controller name="isFeatured" control={form.control} render={({ field }) => ( <Checkbox id="isFeatured" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
-                        <Label htmlFor="isFeatured" className="font-normal">Featured</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                         <Controller name="isTodaysDeal" control={form.control} render={({ field }) => ( <Checkbox id="isTodaysDeal" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
-                        <Label htmlFor="isTodaysDeal" className="font-normal">Today's Deal</Label>
+                         <Controller name="isFeatured" control={form.control} render={({ field }) => ( <Checkbox id="isFeaturedEdit" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
+                        <Label htmlFor="isFeaturedEdit" className="font-normal">Featured</Label>
                     </div>
                 </div>
              </div>
@@ -534,9 +534,9 @@ function CouponsTableSkeleton() {
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow> {Array.from({ length: 8 }).map((_, index) => ( <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead> ))} </TableRow>
+              <TableRow> {Array.from({ length: 7 }).map((_, index) => ( <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead> ))} </TableRow>
             </TableHeader>
-            <TableBody> {Array.from({ length: 10 }).map((_, rowIndex) => ( <TableRow key={rowIndex}> {Array.from({ length: 8 }).map((_, colIndex) => ( <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell> ))} </TableRow> ))} </TableBody>
+            <TableBody> {Array.from({ length: 10 }).map((_, rowIndex) => ( <TableRow key={rowIndex}> {Array.from({ length: 7 }).map((_, colIndex) => ( <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell> ))} </TableRow> ))} </TableBody>
           </Table>
         </div>
       </CardContent>

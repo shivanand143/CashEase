@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from 'react';
@@ -28,8 +29,9 @@ import { MultiSelect } from '@/components/ui/multi-select';
 // Zod schema for store form validation (same as in stores/page.tsx)
 const storeSchema = z.object({
   name: z.string().min(2, 'Store name must be at least 2 characters').max(100, 'Store name too long'),
-  logoUrl: z.string().url('Invalid URL format').optional().or(z.literal('')), 
-  heroImageUrl: z.string().url('Invalid URL format').optional().or(z.literal('')),
+  slug: z.string().min(2, 'Slug must be at least 2 characters').max(50, 'Slug too long').regex(/^[a-z0-9-]+$/, 'Slug can only contain lowercase letters, numbers, and hyphens').optional().nullable(),
+  logoUrl: z.string().url('Invalid URL format').optional().or(z.literal('')).nullable(),
+  heroImageUrl: z.string().url('Invalid URL format').optional().or(z.literal('')).nullable(),
   affiliateLink: z.string().url('Invalid URL format'),
   cashbackRate: z.string().min(1, 'Cashback rate display is required').max(50, 'Rate display too long'),
   cashbackRateValue: z.number().min(0, 'Cashback value must be non-negative'),
@@ -48,6 +50,7 @@ const storeSchema = z.object({
   terms: z.string().optional().nullable(),
   isFeatured: z.boolean().default(false),
   isActive: z.boolean().default(true),
+  isTodaysDeal: z.boolean().default(false), // Added for "Today's Deal"
   dataAiHint: z.string().max(50, 'AI Hint too long').optional().nullable(),
 });
 
@@ -65,6 +68,7 @@ function AddStorePageContent() {
     resolver: zodResolver(storeSchema),
     defaultValues: {
       name: '',
+      slug: '',
       logoUrl: '',
       heroImageUrl: '',
       affiliateLink: '',
@@ -78,13 +82,14 @@ function AddStorePageContent() {
       ratingCount: null,
       cashbackTrackingTime: null,
       cashbackConfirmationTime: null,
-      cashbackOnAppOrders: null,
+      cashbackOnAppOrders: false,
       detailedCashbackRatesLink: null,
       topOffersText: null,
       offerDetailsLink: null,
       terms: '',
       isFeatured: false,
       isActive: true,
+      isTodaysDeal: false, // Default for new stores
       dataAiHint: '',
     },
   });
@@ -98,8 +103,8 @@ function AddStorePageContent() {
         const q = query(categoriesCollection, orderBy('name', 'asc'));
         const querySnapshot = await getDocs(q);
         const fetchedCategories = querySnapshot.docs.map(doc => ({
-           value: doc.id, 
-           label: doc.data().name || doc.id, 
+           value: doc.id,
+           label: doc.data().name || doc.id,
         }));
         setCategoriesList(fetchedCategories);
       } catch (err) {
@@ -120,11 +125,14 @@ function AddStorePageContent() {
     const submissionData: Partial<StoreFormType> = Object.fromEntries(
       Object.entries(data).map(([key, value]) => [key, value === '' ? null : value])
     );
+    submissionData.slug = data.slug || data.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
 
     try {
       const storesCollection = collection(db, 'stores');
       await addDoc(storesCollection, {
         ...submissionData,
+        isTodaysDeal: !!data.isTodaysDeal, // Ensure boolean
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -133,7 +141,7 @@ function AddStorePageContent() {
         title: "Store Added",
         description: `Store "${data.name}" created successfully.`,
       });
-      router.push('/admin/stores'); 
+      router.push('/admin/stores');
 
     } catch (err) {
       console.error("Error adding store:", err);
@@ -171,13 +179,19 @@ function AddStorePageContent() {
             </Alert>
           )}
           <form onSubmit={form.handleSubmit(onSubmit)} className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-             
+
              {/* Column 1 */}
              <div className="space-y-4">
                 <div className="space-y-1">
                   <Label htmlFor="name">Name*</Label>
                   <Input id="name" {...form.register('name')} disabled={isSaving} />
                   {form.formState.errors.name && <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="slug">Slug (URL Identifier)</Label>
+                  <Input id="slug" {...form.register('slug')} placeholder="auto-generated from name if blank" disabled={isSaving} />
+                  {form.formState.errors.slug && <p className="text-sm text-destructive">{form.formState.errors.slug.message}</p>}
                 </div>
 
                 <div className="space-y-1">
@@ -201,7 +215,7 @@ function AddStorePageContent() {
                   )}
                   {form.formState.errors.heroImageUrl && <p className="text-sm text-destructive">{form.formState.errors.heroImageUrl.message}</p>}
                 </div>
-                
+
                 <div className="space-y-1">
                   <Label htmlFor="affiliateLink">Affiliate Link*</Label>
                   <Input id="affiliateLink" {...form.register('affiliateLink')} placeholder="https://..." disabled={isSaving} />
@@ -232,7 +246,7 @@ function AddStorePageContent() {
                     </div>
                 </div>
                  {form.formState.errors.cashbackType && <p className="text-sm text-destructive">{form.formState.errors.cashbackType.message}</p>}
-                
+
                 <div className="space-y-1">
                   <Label htmlFor="description">Short Description*</Label>
                   <Textarea id="description" {...form.register('description')} rows={3} disabled={isSaving} />
@@ -308,7 +322,7 @@ function AddStorePageContent() {
                   <Label htmlFor="offerDetailsLink">"See Offer Details" Link</Label>
                   <Input id="offerDetailsLink" type="url" {...form.register('offerDetailsLink')} placeholder="https://..." disabled={isSaving} />
                 </div>
-                
+
                 <div className="space-y-1">
                   <Label htmlFor="terms">Terms &amp; Conditions</Label>
                   <Textarea id="terms" {...form.register('terms')} rows={3} placeholder="Optional terms and conditions" disabled={isSaving} />
@@ -328,6 +342,16 @@ function AddStorePageContent() {
                         )}
                     />
                     <Label htmlFor="isFeatured" className="font-normal">Featured Store</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                    <Controller
+                        control={form.control}
+                        name="isTodaysDeal"
+                        render={({ field }) => (
+                           <Checkbox id="isTodaysDeal" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />
+                        )}
+                    />
+                    <Label htmlFor="isTodaysDeal" className="font-normal">Today's Deal Store (highlight)</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                     <Controller

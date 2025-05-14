@@ -44,7 +44,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, CheckCircle, XCircle, ExternalLink } from 'lucide-react';
+import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, CheckCircle, XCircle, ExternalLink, Star } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -89,6 +89,7 @@ const STORES_PER_PAGE = 15;
 // Zod schema for store form validation
 const storeSchema = z.object({
   name: z.string().min(2, 'Store name must be at least 2 characters').max(100, 'Store name too long'),
+  slug: z.string().min(2, 'Slug must be at least 2 characters').max(50, 'Slug too long').regex(/^[a-z0-9-]+$/, 'Slug can only contain lowercase letters, numbers, and hyphens').optional().nullable(),
   logoUrl: z.string().url('Invalid URL format').optional().or(z.literal('')).nullable(),
   heroImageUrl: z.string().url('Invalid URL format').optional().or(z.literal('')).nullable(),
   affiliateLink: z.string().url('Invalid URL format'),
@@ -109,17 +110,12 @@ const storeSchema = z.object({
   terms: z.string().optional().nullable(),
   isFeatured: z.boolean().default(false),
   isActive: z.boolean().default(true),
+  isTodaysDeal: z.boolean().default(false), // Added for "Today's Deal"
   dataAiHint: z.string().max(50, 'AI Hint too long').optional().nullable(),
 });
 
 
 type StoreFormValues = z.infer<typeof storeSchema>;
-
-
-// Helper function to map status to badge variant
-const getStatusVariant = (isActive: boolean): "default" | "secondary" => {
-  return isActive ? 'default' : 'secondary'; // Green for active, gray for inactive
-};
 
 function AdminStoresPageContent() {
   const [stores, setStores] = useState<Store[]>([]);
@@ -131,12 +127,10 @@ function AdminStoresPageContent() {
   const { toast } = useToast();
   const router = useRouter();
 
-  // Filtering and Searching State
   const [searchTermInput, setSearchTermInput] = useState('');
   const debouncedSearchTerm = useDebounce(searchTermInput, 500);
   const [isSearching, setIsSearching] = useState(false);
 
-  // State for Add/Edit Dialog
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -146,11 +140,11 @@ function AdminStoresPageContent() {
   const [loadingCategories, setLoadingCategories] = useState(true);
 
 
-  // React Hook Form setup
   const form = useForm<StoreFormValues>({
     resolver: zodResolver(storeSchema),
     defaultValues: {
       name: '',
+      slug: '',
       logoUrl: '',
       heroImageUrl: '',
       affiliateLink: '',
@@ -164,18 +158,18 @@ function AdminStoresPageContent() {
       ratingCount: null,
       cashbackTrackingTime: null,
       cashbackConfirmationTime: null,
-      cashbackOnAppOrders: false, // Explicitly default to false or a sensible default
+      cashbackOnAppOrders: false,
       detailedCashbackRatesLink: null,
       topOffersText: null,
       offerDetailsLink: null,
       terms: '',
       isFeatured: false,
       isActive: true,
+      isTodaysDeal: false,
       dataAiHint: '',
     },
   });
 
-   // Fetch categories for the multi-select dropdown
    useEffect(() => {
     let isMounted = true;
     const fetchCategories = async () => {
@@ -220,13 +214,10 @@ function AdminStoresPageContent() {
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
   ) => {
     let isMounted = true;
-
-
     if (!db || firebaseInitializationError) {
         if (isMounted) {
             setError(firebaseInitializationError || "Database connection not available.");
-            setLoading(false);
-            setLoadingMore(false);
+            if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
             setHasMore(false);
         }
       return;
@@ -234,31 +225,27 @@ function AdminStoresPageContent() {
 
     if (!isLoadMoreOperation) {
       setLoading(true);
-      setStores([]); // Clear stores for new search/initial load
+      setStores([]);
+      setLastVisible(null);
+      setHasMore(true);
     } else {
       setLoadingMore(true);
     }
     setError(null);
     setIsSearching(currentSearchTerm !== '');
 
-
     try {
       const storesCollection = collection(db, 'stores');
       let constraints: QueryConstraint[] = [];
 
       if (currentSearchTerm) {
-        // Firestore requires the first orderBy field to be the same as the where field for range/inequality filters
         constraints.push(where('name', '>=', currentSearchTerm));
         constraints.push(where('name', '<=', currentSearchTerm + '\uf8ff'));
         constraints.push(orderBy('name'));
-        // Add isActive filter for searches as well
-        // constraints.push(where('isActive', '==', true)); // Commented out: Show all if searching, can re-add if needed
       } else {
-        // constraints.push(where('isActive', '==', true)); // Default to active stores
         constraints.push(orderBy('isFeatured', 'desc'));
         constraints.push(orderBy('createdAt', 'desc'));
       }
-
 
       if (isLoadMoreOperation && docToStartAfter) {
         constraints.push(startAfter(docToStartAfter));
@@ -273,6 +260,7 @@ function AdminStoresPageContent() {
           return {
             id: docSnap.id,
             name: data.name || '',
+            slug: data.slug || null,
             logoUrl: data.logoUrl || null,
             heroImageUrl: data.heroImageUrl || null,
             affiliateLink: data.affiliateLink || '',
@@ -290,15 +278,15 @@ function AdminStoresPageContent() {
             detailedCashbackRatesLink: data.detailedCashbackRatesLink === undefined ? null : data.detailedCashbackRatesLink,
             topOffersText: data.topOffersText === undefined ? null : data.topOffersText,
             offerDetailsLink: data.offerDetailsLink === undefined ? null : data.offerDetailsLink,
-            terms: data.terms || null, // Ensure null if empty for optional fields
+            terms: data.terms || null,
             isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
             isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
+            isTodaysDeal: typeof data.isTodaysDeal === 'boolean' ? data.isTodaysDeal : false,
             dataAiHint: data.dataAiHint || null,
             createdAt: safeToDate(data.createdAt),
             updatedAt: safeToDate(data.updatedAt),
           } as Store;
       });
-
 
       if (isMounted) {
         if (isLoadMoreOperation) {
@@ -306,9 +294,8 @@ function AdminStoresPageContent() {
         } else {
             setStores(storesData);
         }
-
         const newLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
-        setLastVisible(newLastVisible); // Update the state for the next "load more"
+        setLastVisible(newLastVisible);
         setHasMore(querySnapshot.docs.length === STORES_PER_PAGE);
       }
 
@@ -318,29 +305,26 @@ function AdminStoresPageContent() {
        if (isMounted) {
             setError(errorMsg);
             toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
-            setHasMore(false); // Stop pagination on error
+            setHasMore(false);
        }
     } finally {
        if (isMounted) {
-            setLoading(false);
-            setLoadingMore(false);
+            if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
             setIsSearching(false);
        }
     }
      return () => { isMounted = false };
-  }, [toast]); // Only stable dependencies here
+  }, [toast]);
 
   useEffect(() => {
     let isMounted = true;
-    // Initial fetch, pass null for startAfterDoc
     fetchStores(false, debouncedSearchTerm, null).then(() => {
-      if (isMounted) setLoading(false); // Ensure loading is false after initial fetch
+      if (isMounted) setLoading(false);
     }).catch(() => {
-      if (isMounted) setLoading(false); // Ensure loading is false on error too
+      if (isMounted) setLoading(false);
     });
     return () => { isMounted = false };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearchTerm]);
+  }, [debouncedSearchTerm, fetchStores]);
 
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -354,7 +338,6 @@ function AdminStoresPageContent() {
     }
   };
 
-  // --- Dialog and Form Handlers ---
   const openAddDialog = () => {
     router.push('/admin/stores/new');
   };
@@ -363,6 +346,7 @@ function AdminStoresPageContent() {
     setEditingStore(store);
     form.reset({
       name: store.name,
+      slug: store.slug || '',
       logoUrl: store.logoUrl || '',
       heroImageUrl: store.heroImageUrl || '',
       affiliateLink: store.affiliateLink,
@@ -376,13 +360,14 @@ function AdminStoresPageContent() {
       ratingCount: store.ratingCount ?? null,
       cashbackTrackingTime: store.cashbackTrackingTime ?? null,
       cashbackConfirmationTime: store.cashbackConfirmationTime ?? null,
-      cashbackOnAppOrders: store.cashbackOnAppOrders ?? false, // Default to false if null/undefined
+      cashbackOnAppOrders: store.cashbackOnAppOrders ?? false,
       detailedCashbackRatesLink: store.detailedCashbackRatesLink ?? null,
       topOffersText: store.topOffersText ?? null,
       offerDetailsLink: store.offerDetailsLink ?? null,
       terms: store.terms || '',
       isFeatured: store.isFeatured,
       isActive: store.isActive,
+      isTodaysDeal: store.isTodaysDeal || false,
       dataAiHint: store.dataAiHint || '',
     });
     setIsDialogOpen(true);
@@ -400,16 +385,16 @@ function AdminStoresPageContent() {
 
     const submissionData: Partial<StoreFormType> = Object.fromEntries(
       Object.entries(data).map(([key, value]) => {
-        // Ensure optional fields that are empty strings become null
-        if (['logoUrl', 'heroImageUrl', 'detailedDescription', 'rating', 'ratingCount', 'cashbackTrackingTime', 'cashbackConfirmationTime', 'cashbackOnAppOrders', 'detailedCashbackRatesLink', 'topOffersText', 'offerDetailsLink', 'terms', 'dataAiHint'].includes(key)) {
+        if (['logoUrl', 'heroImageUrl', 'detailedDescription', 'rating', 'ratingCount', 'cashbackTrackingTime', 'cashbackConfirmationTime', 'cashbackOnAppOrders', 'detailedCashbackRatesLink', 'topOffersText', 'offerDetailsLink', 'terms', 'dataAiHint', 'slug'].includes(key)) {
           return [key, value === '' || value === undefined ? null : value];
         }
         return [key, value];
       })
     );
-    // Ensure boolean fields are not set to null
+    submissionData.slug = data.slug || data.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
     submissionData.isFeatured = !!data.isFeatured;
     submissionData.isActive = !!data.isActive;
+    submissionData.isTodaysDeal = !!data.isTodaysDeal;
     submissionData.cashbackOnAppOrders = data.cashbackOnAppOrders === null ? null : !!data.cashbackOnAppOrders;
 
 
@@ -425,18 +410,7 @@ function AdminStoresPageContent() {
             toast({ title: "Store Updated", description: `${data.name} details saved.` });
         }
       } else {
-        // This case is handled by /admin/stores/new, but kept as robust fallback
-        const storesCollection = collection(db, 'stores');
-        const newDocRef = await addDoc(storesCollection, {
-          ...submissionData,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        if (isMounted) {
-            const newStore: Store = { ...submissionData, id: newDocRef.id, createdAt: new Date(), updatedAt: new Date() } as Store;
-            setStores(prev => [newStore, ...prev].sort((a,b) => (b.isFeatured ? 1 : -1) - (a.isFeatured ? 1 : -1) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-            toast({ title: "Store Added", description: `${data.name} created successfully.` });
-        }
+        // New store creation is handled by /admin/stores/new
       }
       if (isMounted) {
         setIsDialogOpen(false);
@@ -455,11 +429,9 @@ function AdminStoresPageContent() {
      return () => { isMounted = false };
   };
 
-   // --- Delete Store ---
    const handleDeleteStore = async () => {
      if (!deletingStoreId || !db) return;
      let isMounted = true;
-     console.log(`Attempting to delete store: ${deletingStoreId}`);
      try {
        const storeDocRef = doc(db, 'stores', deletingStoreId);
        await deleteDoc(storeDocRef);
@@ -477,41 +449,35 @@ function AdminStoresPageContent() {
       return () => { isMounted = false };
    };
 
-    // --- Toggle Active Status ---
-    const handleToggleActiveStatus = async (storeToUpdate: Store) => {
+    const handleToggleField = async (storeToUpdate: Store, field: 'isActive' | 'isFeatured' | 'isTodaysDeal') => {
       if (!storeToUpdate || !db) return;
       let isMounted = true;
       setUpdatingStoreId(storeToUpdate.id);
 
       const storeDocRef = doc(db, 'stores', storeToUpdate.id);
-      const newStatus = !storeToUpdate.isActive;
+      const newValue = !storeToUpdate[field];
 
       try {
         await updateDoc(storeDocRef, {
-          isActive: newStatus,
+          [field]: newValue,
           updatedAt: serverTimestamp(),
         });
         if (isMounted) {
             setStores(prevStores =>
             prevStores.map(s =>
-                s.id === storeToUpdate.id ? { ...s, isActive: newStatus, updatedAt: new Date() } : s
+                s.id === storeToUpdate.id ? { ...s, [field]: newValue, updatedAt: new Date() } : s
             )
             );
-
             toast({
-            title: `Store ${newStatus ? 'Activated' : 'Deactivated'}`,
-            description: `${storeToUpdate.name} status updated.`,
+            title: `Store ${field} Updated`,
+            description: `${storeToUpdate.name} ${field} status set to ${newValue}.`,
             });
         }
       } catch (err) {
-        console.error(`Error updating store ${storeToUpdate.id} status:`, err);
-        const errorMsg = err instanceof Error ? err.message : "Could not update store status.";
+        console.error(`Error updating store ${storeToUpdate.id} ${field} status:`, err);
+        const errorMsg = err instanceof Error ? err.message : `Could not update ${field} status.`;
         if (isMounted) {
-            toast({
-                variant: "destructive",
-                title: "Update Failed",
-                description: errorMsg,
-            });
+            toast({ variant: "destructive", title: "Update Failed", description: errorMsg });
         }
       } finally {
         if (isMounted) setUpdatingStoreId(null);
@@ -570,9 +536,9 @@ function AdminStoresPageContent() {
           <CardDescription>View and manage partner stores.</CardDescription>
         </CardHeader>
         <CardContent>
-           {loading && stores.length === 0 && !error ? ( // Initial loading skeleton
+           {loading && stores.length === 0 && !error ? (
              <StoresTableSkeleton />
-           ) : !loading && stores.length === 0 && !error ? ( // No stores found (after loading, no error)
+           ) : !loading && stores.length === 0 && !error ? (
              <p className="text-center text-muted-foreground py-8">
                 {debouncedSearchTerm ? `No stores found matching "${debouncedSearchTerm}". Try a different term.` : "No stores found. Add one to get started!"}
              </p>
@@ -584,8 +550,8 @@ function AdminStoresPageContent() {
                      <TableHead>Logo</TableHead>
                      <TableHead>Name</TableHead>
                      <TableHead>Cashback Rate</TableHead>
-                     <TableHead>Categories</TableHead>
                      <TableHead>Featured</TableHead>
+                     <TableHead>Today's Deal</TableHead>
                      <TableHead>Status (Active)</TableHead>
                      <TableHead>Actions</TableHead>
                    </TableRow>
@@ -602,16 +568,16 @@ function AdminStoresPageContent() {
                        </TableCell>
                        <TableCell className="font-medium">{store.name}</TableCell>
                        <TableCell>{store.cashbackRate}</TableCell>
-                       <TableCell className="max-w-[200px] truncate text-xs">
-                         {store.categories.join(', ') || '-'}
-                       </TableCell>
                         <TableCell>
-                           {store.isFeatured ? <CheckCircle className="h-5 w-5 text-green-600" /> : <XCircle className="h-5 w-5 text-muted-foreground"/>}
+                            <Switch checked={!!store.isFeatured} onCheckedChange={() => handleToggleField(store, 'isFeatured')} disabled={updatingStoreId === store.id} aria-label="Toggle Featured"/>
+                        </TableCell>
+                        <TableCell>
+                            <Switch checked={!!store.isTodaysDeal} onCheckedChange={() => handleToggleField(store, 'isTodaysDeal')} disabled={updatingStoreId === store.id} aria-label="Toggle Today's Deal"/>
                         </TableCell>
                        <TableCell>
                          <Switch
                             checked={store.isActive}
-                            onCheckedChange={() => handleToggleActiveStatus(store)}
+                            onCheckedChange={() => handleToggleField(store, 'isActive')}
                             disabled={updatingStoreId === store.id}
                             aria-label={store.isActive ? 'Deactivate store' : 'Activate store'}
                          />
@@ -651,7 +617,7 @@ function AdminStoresPageContent() {
                                    <AlertDialogCancel onClick={() => setDeletingStoreId(null)}>Cancel</AlertDialogCancel>
                                    <AlertDialogAction
                                       onClick={() => {
-                                           setDeletingStoreId(store.id); // Ensure this is set before calling
+                                           setDeletingStoreId(store.id);
                                            handleDeleteStore();
                                       }}
                                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
@@ -681,7 +647,6 @@ function AdminStoresPageContent() {
         </CardContent>
       </Card>
 
-       {/* Add/Edit Store Dialog */}
        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
          <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
            <DialogHeader>
@@ -692,195 +657,145 @@ function AdminStoresPageContent() {
            </DialogHeader>
            <form onSubmit={form.handleSubmit(onSubmit)} className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 py-4">
 
-             {/* Column 1 */}
              <div className="space-y-4">
                 <div className="space-y-1">
-                  <Label htmlFor="name">Name*</Label>
-                  <Input id="name" {...form.register('name')} disabled={isSaving} />
+                  <Label htmlFor="nameDialog">Name*</Label>
+                  <Input id="nameDialog" {...form.register('name')} disabled={isSaving} />
                   {form.formState.errors.name && <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>}
                 </div>
-
+                 <div className="space-y-1">
+                  <Label htmlFor="slugDialog">Slug</Label>
+                  <Input id="slugDialog" {...form.register('slug')} placeholder="auto-generated or custom" disabled={isSaving || !!editingStore} />
+                   {editingStore && <p className="text-xs text-muted-foreground">Slug cannot be changed after creation.</p>}
+                  {form.formState.errors.slug && <p className="text-sm text-destructive">{form.formState.errors.slug.message}</p>}
+                </div>
                 <div className="space-y-1">
-                  <Label htmlFor="logoUrl">Logo URL</Label>
-                  <Input id="logoUrl" {...form.register('logoUrl')} placeholder="https://..." disabled={isSaving} />
-                  {form.watch('logoUrl') && (
-                      <div className="mt-1">
-                          <Image src={form.watch('logoUrl')!} alt="Logo Preview" width={80} height={40} className="object-contain border rounded-sm" />
-                      </div>
-                  )}
+                  <Label htmlFor="logoUrlDialog">Logo URL</Label>
+                  <Input id="logoUrlDialog" {...form.register('logoUrl')} placeholder="https://..." disabled={isSaving} />
+                  {form.watch('logoUrl') && <Image src={form.watch('logoUrl')!} alt="Logo Preview" width={80} height={40} className="object-contain border rounded-sm mt-1" />}
                   {form.formState.errors.logoUrl && <p className="text-sm text-destructive">{form.formState.errors.logoUrl.message}</p>}
                 </div>
-
                 <div className="space-y-1">
-                  <Label htmlFor="heroImageUrl">Hero Image URL (for store page)</Label>
-                  <Input id="heroImageUrl" {...form.register('heroImageUrl')} placeholder="https://..." disabled={isSaving} />
-                  {form.watch('heroImageUrl') && (
-                      <div className="mt-1">
-                          <Image src={form.watch('heroImageUrl')!} alt="Hero Preview" width={160} height={80} className="object-cover border rounded-sm aspect-[2/1]" />
-                      </div>
-                  )}
+                  <Label htmlFor="heroImageUrlDialog">Hero Image URL</Label>
+                  <Input id="heroImageUrlDialog" {...form.register('heroImageUrl')} placeholder="https://..." disabled={isSaving} />
+                  {form.watch('heroImageUrl') && <Image src={form.watch('heroImageUrl')!} alt="Hero Preview" width={160} height={80} className="object-cover border rounded-sm aspect-[2/1] mt-1" />}
                   {form.formState.errors.heroImageUrl && <p className="text-sm text-destructive">{form.formState.errors.heroImageUrl.message}</p>}
                 </div>
-
                 <div className="space-y-1">
-                  <Label htmlFor="affiliateLink">Affiliate Link*</Label>
-                  <Input id="affiliateLink" {...form.register('affiliateLink')} placeholder="https://..." disabled={isSaving} />
+                  <Label htmlFor="affiliateLinkDialog">Affiliate Link*</Label>
+                  <Input id="affiliateLinkDialog" {...form.register('affiliateLink')} placeholder="https://..." disabled={isSaving} />
                   {form.formState.errors.affiliateLink && <p className="text-sm text-destructive">{form.formState.errors.affiliateLink.message}</p>}
                 </div>
-
                 <div className="space-y-1">
-                  <Label htmlFor="cashbackRate">Rate Display*</Label>
-                  <Input id="cashbackRate" {...form.register('cashbackRate')} placeholder="e.g., Up to 5% or Flat ₹100" disabled={isSaving} />
+                  <Label htmlFor="cashbackRateDialog">Rate Display*</Label>
+                  <Input id="cashbackRateDialog" {...form.register('cashbackRate')} placeholder="e.g., Up to 5% or Flat ₹100" disabled={isSaving} />
                   {form.formState.errors.cashbackRate && <p className="text-sm text-destructive">{form.formState.errors.cashbackRate.message}</p>}
                 </div>
-
                 <div className="grid grid-cols-3 gap-2">
                     <div className="space-y-1 col-span-2">
-                      <Label htmlFor="cashbackRateValue">Rate Value*</Label>
-                      <Input id="cashbackRateValue" type="number" step="0.01" {...form.register('cashbackRateValue', { valueAsNumber: true })} disabled={isSaving}/>
+                      <Label htmlFor="cashbackRateValueDialog">Rate Value*</Label>
+                      <Input id="cashbackRateValueDialog" type="number" step="0.01" {...form.register('cashbackRateValue', { valueAsNumber: true })} disabled={isSaving}/>
                       {form.formState.errors.cashbackRateValue && <p className="text-sm text-destructive">{form.formState.errors.cashbackRateValue.message}</p>}
                     </div>
                     <div className="space-y-1">
-                        <Label htmlFor="cashbackType">Type*</Label>
-                        <Controller
-                            name="cashbackType"
-                            control={form.control}
-                            render={({ field }) => (
-                                <Select value={field.value} onValueChange={field.onChange} disabled={isSaving}>
-                                <SelectTrigger id="cashbackType"><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="percentage">%</SelectItem>
-                                    <SelectItem value="fixed">₹</SelectItem>
-                                </SelectContent>
-                                </Select>
-                            )}
-                        />
+                        <Label htmlFor="cashbackTypeDialog">Type*</Label>
+                        <Controller name="cashbackType" control={form.control} render={({ field }) => (
+                            <Select value={field.value} onValueChange={field.onChange} disabled={isSaving}>
+                            <SelectTrigger id="cashbackTypeDialog"><SelectValue /></SelectTrigger>
+                            <SelectContent><SelectItem value="percentage">%</SelectItem><SelectItem value="fixed">₹</SelectItem></SelectContent>
+                            </Select>
+                        )}/>
                     </div>
                 </div>
                  {form.formState.errors.cashbackType && <p className="text-sm text-destructive">{form.formState.errors.cashbackType.message}</p>}
-
                 <div className="space-y-1">
-                  <Label htmlFor="description">Short Description*</Label>
-                  <Textarea id="description" {...form.register('description')} rows={3} disabled={isSaving} />
+                  <Label htmlFor="descriptionDialog">Short Description*</Label>
+                  <Textarea id="descriptionDialog" {...form.register('description')} rows={3} disabled={isSaving} />
                   {form.formState.errors.description && <p className="text-sm text-destructive">{form.formState.errors.description.message}</p>}
                 </div>
-
                 <div className="space-y-1">
-                  <Label htmlFor="detailedDescription">Detailed Description (for store page)</Label>
-                  <Textarea id="detailedDescription" {...form.register('detailedDescription')} rows={5} disabled={isSaving} />
+                  <Label htmlFor="detailedDescriptionDialog">Detailed Description</Label>
+                  <Textarea id="detailedDescriptionDialog" {...form.register('detailedDescription')} rows={5} disabled={isSaving} />
                    {form.formState.errors.detailedDescription && <p className="text-sm text-destructive">{form.formState.errors.detailedDescription.message}</p>}
                 </div>
              </div>
-
-            {/* Column 2 */}
              <div className="space-y-4">
                 <div className="space-y-1">
-                  <Label htmlFor="categories">Categories*</Label>
-                  <Controller
-                      control={form.control}
-                      name="categories"
+                  <Label htmlFor="categoriesDialog">Categories*</Label>
+                  <Controller control={form.control} name="categories"
                       render={({ field }) => (
-                          <MultiSelect
-                          options={categoriesList}
-                          selected={field.value}
-                          onChange={field.onChange}
-                          isLoading={loadingCategories}
-                          disabled={isSaving}
-                          placeholder="Select categories..."
-                          />
+                          <MultiSelect options={categoriesList} selected={field.value} onChange={field.onChange} isLoading={loadingCategories} disabled={isSaving} placeholder="Select categories..." />
                       )}
                   />
                   {form.formState.errors.categories && <p className="text-sm text-destructive">{form.formState.errors.categories.message}</p>}
                 </div>
-
                 <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                        <Label htmlFor="rating">Rating (0-5)</Label>
-                        <Input id="rating" type="number" step="0.1" {...form.register('rating', { valueAsNumber: true, setValueAs: v => v === null || v === '' ? null : parseFloat(v) })} disabled={isSaving} />
+                        <Label htmlFor="ratingDialog">Rating (0-5)</Label>
+                        <Input id="ratingDialog" type="number" step="0.1" {...form.register('rating', { valueAsNumber: true, setValueAs: v => v === null || v === '' ? null : parseFloat(v) })} disabled={isSaving} />
                         {form.formState.errors.rating && <p className="text-sm text-destructive">{form.formState.errors.rating.message}</p>}
                     </div>
                     <div className="space-y-1">
-                        <Label htmlFor="ratingCount">Rating Count</Label>
-                        <Input id="ratingCount" type="number" {...form.register('ratingCount', { valueAsNumber: true, setValueAs: v => v === null || v === '' ? null : parseInt(v, 10) })} disabled={isSaving} />
+                        <Label htmlFor="ratingCountDialog">Rating Count</Label>
+                        <Input id="ratingCountDialog" type="number" {...form.register('ratingCount', { valueAsNumber: true, setValueAs: v => v === null || v === '' ? null : parseInt(v, 10) })} disabled={isSaving} />
                          {form.formState.errors.ratingCount && <p className="text-sm text-destructive">{form.formState.errors.ratingCount.message}</p>}
                     </div>
                 </div>
-
                 <div className="space-y-1">
-                    <Label htmlFor="cashbackTrackingTime">Cashback Tracking Time</Label>
-                    <Input id="cashbackTrackingTime" {...form.register('cashbackTrackingTime')} placeholder="e.g., 36 Hours" disabled={isSaving} />
+                    <Label htmlFor="cashbackTrackingTimeDialog">Tracking Time</Label>
+                    <Input id="cashbackTrackingTimeDialog" {...form.register('cashbackTrackingTime')} placeholder="e.g., 36 Hours" disabled={isSaving} />
                     {form.formState.errors.cashbackTrackingTime && <p className="text-sm text-destructive">{form.formState.errors.cashbackTrackingTime.message}</p>}
                 </div>
                 <div className="space-y-1">
-                    <Label htmlFor="cashbackConfirmationTime">Cashback Confirmation Time</Label>
-                    <Input id="cashbackConfirmationTime" {...form.register('cashbackConfirmationTime')} placeholder="e.g., 35 Days" disabled={isSaving} />
+                    <Label htmlFor="cashbackConfirmationTimeDialog">Confirmation Time</Label>
+                    <Input id="cashbackConfirmationTimeDialog" {...form.register('cashbackConfirmationTime')} placeholder="e.g., 35 Days" disabled={isSaving} />
                     {form.formState.errors.cashbackConfirmationTime && <p className="text-sm text-destructive">{form.formState.errors.cashbackConfirmationTime.message}</p>}
                 </div>
                 <div className="flex items-center space-x-2 pt-2">
-                    <Controller
-                        control={form.control}
-                        name="cashbackOnAppOrders"
-                        render={({ field }) => (
-                            <Checkbox id="cashbackOnAppOrders" checked={field.value ?? false} onCheckedChange={field.onChange} disabled={isSaving} />
-                        )}
-                    />
-                    <Label htmlFor="cashbackOnAppOrders" className="font-normal">Cashback on App Orders?</Label>
+                    <Controller control={form.control} name="cashbackOnAppOrders" render={({ field }) => ( <Checkbox id="cashbackOnAppOrdersDialog" checked={field.value ?? false} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
+                    <Label htmlFor="cashbackOnAppOrdersDialog" className="font-normal">Cashback on App Orders?</Label>
                 </div>
-
                 <div className="space-y-1">
-                  <Label htmlFor="detailedCashbackRatesLink">Detailed Cashback Rates Link</Label>
-                  <Input id="detailedCashbackRatesLink" type="url" {...form.register('detailedCashbackRatesLink')} placeholder="https://..." disabled={isSaving} />
+                  <Label htmlFor="detailedCashbackRatesLinkDialog">Detailed Rates Link</Label>
+                  <Input id="detailedCashbackRatesLinkDialog" type="url" {...form.register('detailedCashbackRatesLink')} placeholder="https://..." disabled={isSaving} />
                   {form.formState.errors.detailedCashbackRatesLink && <p className="text-sm text-destructive">{form.formState.errors.detailedCashbackRatesLink.message}</p>}
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="topOffersText">Top Offers Text (for store page)</Label>
-                  <Textarea id="topOffersText" {...form.register('topOffersText')} rows={3} disabled={isSaving} />
+                  <Label htmlFor="topOffersTextDialog">Top Offers Text</Label>
+                  <Textarea id="topOffersTextDialog" {...form.register('topOffersText')} rows={3} disabled={isSaving} />
                    {form.formState.errors.topOffersText && <p className="text-sm text-destructive">{form.formState.errors.topOffersText.message}</p>}
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="offerDetailsLink">"See Offer Details" Link</Label>
-                  <Input id="offerDetailsLink" type="url" {...form.register('offerDetailsLink')} placeholder="https://..." disabled={isSaving} />
+                  <Label htmlFor="offerDetailsLinkDialog">Offer Details Link</Label>
+                  <Input id="offerDetailsLinkDialog" type="url" {...form.register('offerDetailsLink')} placeholder="https://..." disabled={isSaving} />
                   {form.formState.errors.offerDetailsLink && <p className="text-sm text-destructive">{form.formState.errors.offerDetailsLink.message}</p>}
                 </div>
-
                 <div className="space-y-1">
-                  <Label htmlFor="terms">Terms &amp; Conditions</Label>
-                  <Textarea id="terms" {...form.register('terms')} rows={3} placeholder="Optional terms and conditions" disabled={isSaving} />
+                  <Label htmlFor="termsDialog">Terms &amp; Conditions</Label>
+                  <Textarea id="termsDialog" {...form.register('terms')} rows={3} placeholder="Optional terms" disabled={isSaving} />
                 </div>
-
                  <div className="space-y-1">
-                    <Label htmlFor="dataAiHint">Logo AI Hint</Label>
-                    <Input id="dataAiHint" {...form.register('dataAiHint')} placeholder="Keywords for logo (e.g., company name logo)" disabled={isSaving} />
+                    <Label htmlFor="dataAiHintDialog">Logo AI Hint</Label>
+                    <Input id="dataAiHintDialog" {...form.register('dataAiHint')} placeholder="Keywords for logo" disabled={isSaving} />
                     {form.formState.errors.dataAiHint && <p className="text-sm text-destructive">{form.formState.errors.dataAiHint.message}</p>}
                  </div>
-
                 <div className="flex items-center space-x-2 pt-2">
-                    <Controller
-                        control={form.control}
-                        name="isFeatured"
-                        render={({ field }) => (
-                            <Checkbox id="isFeatured" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />
-                        )}
-                    />
-                    <Label htmlFor="isFeatured" className="font-normal">Featured Store</Label>
+                    <Controller control={form.control} name="isFeatured" render={({ field }) => ( <Checkbox id="isFeaturedDialog" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
+                    <Label htmlFor="isFeaturedDialog" className="font-normal">Featured Store</Label>
+                </div>
+                 <div className="flex items-center space-x-2">
+                    <Controller control={form.control} name="isTodaysDeal" render={({ field }) => ( <Checkbox id="isTodaysDealDialog" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
+                    <Label htmlFor="isTodaysDealDialog" className="font-normal">Today's Deal Store</Label>
                 </div>
                 <div className="flex items-center space-x-2">
-                    <Controller
-                        control={form.control}
-                        name="isActive"
-                        render={({ field }) => (
-                           <Checkbox id="isActive" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />
-                        )}
-                    />
-                    <Label htmlFor="isActive" className="font-normal">Active (visible to users)</Label>
+                    <Controller control={form.control} name="isActive" render={({ field }) => ( <Checkbox id="isActiveDialog" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
+                    <Label htmlFor="isActiveDialog" className="font-normal">Active</Label>
                 </div>
             </div>
 
              <DialogFooter className="md:col-span-2">
                <DialogClose asChild>
-                 <Button type="button" variant="outline" disabled={isSaving}>
-                   Cancel
-                 </Button>
+                 <Button type="button" variant="outline" disabled={isSaving}>Cancel</Button>
                </DialogClose>
                <Button type="submit" disabled={isSaving || loadingCategories}>
                  {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -890,12 +805,10 @@ function AdminStoresPageContent() {
            </form>
          </DialogContent>
        </Dialog>
-
     </div>
   );
 }
 
-// Skeleton Loader for the Table
 function StoresTableSkeleton() {
    return (
     <Card>
@@ -936,6 +849,3 @@ export default function AdminStoresPage() {
       </AdminGuard>
     );
 }
-
-
-

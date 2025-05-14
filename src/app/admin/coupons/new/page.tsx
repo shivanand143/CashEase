@@ -43,7 +43,6 @@ const couponSchema = z.object({
   expiryDate: z.date().optional().nullable(),
   isFeatured: z.boolean().default(false),
   isActive: z.boolean().default(true),
-  isTodaysDeal: z.boolean().default(false), // New field
 }).refine(data => data.code || data.link, {
   message: "Either a Coupon Code or a Link is required",
   path: ["code"],
@@ -69,7 +68,6 @@ function AddCouponPageContent() {
       expiryDate: null,
       isFeatured: false,
       isActive: true,
-      isTodaysDeal: false, // Default value
     },
   });
 
@@ -110,7 +108,6 @@ function AddCouponPageContent() {
       code: data.code || null,
       link: data.link || null,
       expiryDate: data.expiryDate ? data.expiryDate : null,
-      isTodaysDeal: !!data.isTodaysDeal,
     };
 
     try {
@@ -272,21 +269,6 @@ function AddCouponPageContent() {
                          )}
                       />
                      <Label htmlFor="isActive" className="font-normal">Active (visible to users)</Label>
-                 </div>
-                 <div className="flex items-center space-x-2">
-                      <Controller
-                         control={form.control}
-                         name="isTodaysDeal"
-                         render={({ field }) => (
-                             <Checkbox
-                                id="isTodaysDeal"
-                                checked={field.value}
-                               onCheckedChange={field.onChange}
-                                disabled={isSaving}
-                             />
-                         )}
-                      />
-                     <Label htmlFor="isTodaysDeal" className="font-normal">Today's Deal (show on homepage)</Label>
                  </div>
              </div>
 

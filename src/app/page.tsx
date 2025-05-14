@@ -6,11 +6,11 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input'; // Ensure Input is imported
+import { Input } from '@/components/ui/input';
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import Image from 'next/image';
-import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info, AlertCircle, Loader2 } from 'lucide-react';
+import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info, AlertCircle, Loader2, Star } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { collection, getDocs, query, where, limit, orderBy, QueryConstraint, DocumentData, getDoc, doc, Timestamp } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
@@ -41,7 +41,7 @@ async function fetchData<T>(collectionName: string, constraints: QueryConstraint
         if (fetchLimit) {
             qConstraints.push(limit(fetchLimit));
         }
-        
+
         const q = query(dataRef, ...qConstraints);
         const querySnapshot = await getDocs(q);
         data = querySnapshot.docs.map(docSnap => {
@@ -119,15 +119,15 @@ export default function HomePage() {
   const [banners, setBanners] = React.useState<Banner[]>([]);
   const [featuredStores, setFeaturedStores] = React.useState<Store[]>([]);
   const [topCoupons, setTopCoupons] = React.useState<CouponWithStore[]>([]);
-  const [todaysDealsCoupons, setTodaysDealsCoupons] = React.useState<CouponWithStore[]>([]);
+  const [todaysDealStores, setTodaysDealStores] = React.useState<Store[]>([]);
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [amazonTodaysPicks, setAmazonTodaysPicks] = React.useState<Product[]>([]);
   const [amazonStoreData, setAmazonStoreData] = React.useState<Store | null>(null);
 
   const [loadingBanners, setLoadingBanners] = React.useState(true);
-  const [loadingStores, setLoadingStores] = React.useState(true);
+  const [loadingFeaturedStores, setLoadingFeaturedStores] = React.useState(true);
   const [loadingTopCoupons, setLoadingTopCoupons] = React.useState(true);
-  const [loadingTodaysDeals, setLoadingTodaysDeals] = React.useState(true);
+  const [loadingTodaysDealStores, setLoadingTodaysDealStores] = React.useState(true);
   const [loadingCategories, setLoadingCategories] = React.useState(true);
   const [loadingTodaysPicks, setLoadingTodaysPicks] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null);
@@ -139,54 +139,54 @@ export default function HomePage() {
       if (firebaseInitializationError) {
         if (isMounted) {
             setPageError(`Failed to connect to the database: ${firebaseInitializationError}`);
-            setLoadingBanners(false); setLoadingStores(false); setLoadingTopCoupons(false); setLoadingTodaysDeals(false); setLoadingCategories(false); setLoadingTodaysPicks(false);
+            setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingTodaysDealStores(false); setLoadingCategories(false); setLoadingTodaysPicks(false);
         }
         return;
       }
       if (!db) {
         if(isMounted) {
             setPageError("Database not available. Please try again later.");
-            setLoadingBanners(false); setLoadingStores(false); setLoadingTopCoupons(false); setLoadingTodaysDeals(false); setLoadingCategories(false); setLoadingTodaysPicks(false);
+            setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingTodaysDealStores(false); setLoadingCategories(false); setLoadingTodaysPicks(false);
         }
         return;
       }
 
-      setLoadingBanners(true); setLoadingStores(true); setLoadingTopCoupons(true); setLoadingTodaysDeals(true); setLoadingCategories(true); setLoadingTodaysPicks(true);
+      setLoadingBanners(true); setLoadingFeaturedStores(true); setLoadingTopCoupons(true); setLoadingTodaysDealStores(true); setLoadingCategories(true); setLoadingTodaysPicks(true);
       setPageError(null);
       let combinedErrorMessages: string[] = [];
 
-      const amazonStoreIdentifier = "amazon"; 
+      const amazonStoreIdentifier = "amazon";
 
       try {
         const bannerFetchPromise = fetchData<Banner>(
           'banners', [where('isActive', '==', true)], [{field: 'order', direction: 'asc'}], 5
         ).catch(err => { console.error("Banner fetch failed:", err); combinedErrorMessages.push("banners"); return []; });
 
-        const storeFetchPromise = fetchData<Store>(
+        const featuredStoreFetchPromise = fetchData<Store>(
           'stores', [where('isActive', '==', true), where('isFeatured', '==', true)], [{field: 'name', direction: 'asc'}], 12
-        ).catch(err => { console.error("Store fetch failed:", err); combinedErrorMessages.push("stores"); return []; });
+        ).catch(err => { console.error("Featured Store fetch failed:", err); combinedErrorMessages.push("featured stores"); return []; });
+
+        const todaysDealStoresFetchPromise = fetchData<Store>(
+          'stores', [where('isActive', '==', true), where('isTodaysDeal', '==', true)], [{field: 'name', direction: 'asc'}], 6
+        ).catch(err => { console.error("Today's Deal Stores fetch failed:", err); combinedErrorMessages.push("today's deal stores"); return []; });
 
         const topCouponFetchPromise = fetchCouponsWithStoreData(
           [where('isActive', '==', true), where('isFeatured', '==', true)], [{field: 'createdAt', direction: 'desc'}], 6
         ).catch(err => { console.error("Top Coupon fetch failed:", err); combinedErrorMessages.push("top coupons"); return []; });
 
-        const todaysDealsFetchPromise = fetchCouponsWithStoreData(
-          [where('isActive', '==', true), where('isTodaysDeal', '==', true)], [{field: 'createdAt', direction: 'desc'}], 6
-        ).catch(err => { console.error("Today's Deals fetch failed:", err); combinedErrorMessages.push("today's deals"); return []; });
-        
         const categoryFetchPromise = fetchData<Category>(
-             'categories', [where('isActive', '==', true)], 
+             'categories', [where('isActive', '==', true)],
              [{field: 'order', direction: 'asc'}, {field: 'name', direction: 'asc'}], 12
          ).catch(err => { console.error("Category fetch failed:", err); combinedErrorMessages.push("categories"); return []; });
-        
+
         const amazonStoreFetchPromise = getDoc(doc(db, 'stores', amazonStoreIdentifier))
             .then(docSnap => {
                 if (docSnap.exists()) {
                     const storeData = docSnap.data();
-                    return { 
-                        id: docSnap.id, 
+                    return {
+                        id: docSnap.id,
                         ...storeData,
-                        name: storeData.name || "Amazon", // Ensure name is set, fallback if needed
+                        name: storeData.name || "Amazon",
                         createdAt: safeToDate(storeData.createdAt as Timestamp | undefined),
                         updatedAt: safeToDate(storeData.updatedAt as Timestamp | undefined),
                      } as Store;
@@ -196,23 +196,23 @@ export default function HomePage() {
             })
             .catch(err => { console.error("Amazon store data fetch failed:", err); combinedErrorMessages.push("amazon store details"); return null; });
 
-        const [bannerData, storeData, topCouponData, todaysDealsData, categoryData, fetchedAmazonStoreData] = await Promise.all([
-            bannerFetchPromise, storeFetchPromise, topCouponFetchPromise, todaysDealsFetchPromise, categoryFetchPromise, amazonStoreFetchPromise
+        const [bannerData, featuredStoreData, todaysDealStoresData, topCouponData, categoryData, fetchedAmazonStoreData] = await Promise.all([
+            bannerFetchPromise, featuredStoreFetchPromise, todaysDealStoresFetchPromise, topCouponFetchPromise, categoryFetchPromise, amazonStoreFetchPromise
         ]);
 
         if (isMounted) {
           setBanners(bannerData);
-          setFeaturedStores(storeData);
+          setFeaturedStores(featuredStoreData);
+          setTodaysDealStores(todaysDealStoresData);
           setTopCoupons(topCouponData);
-          setTodaysDealsCoupons(todaysDealsData);
           setCategories(categoryData);
           setAmazonStoreData(fetchedAmazonStoreData);
 
-          if (fetchedAmazonStoreData && fetchedAmazonStoreData.id) { // Check if ID exists
+          if (fetchedAmazonStoreData && fetchedAmazonStoreData.id) {
             fetchData<Product>(
               'products',
               [
-                where('storeId', '==', fetchedAmazonStoreData.id), // Use fetched ID
+                where('storeId', '==', fetchedAmazonStoreData.id),
                 where('isTodaysPick', '==', true),
                 where('isActive', '==', true)
               ],
@@ -245,7 +245,7 @@ export default function HomePage() {
         }
       } finally {
         if (isMounted) {
-          setLoadingBanners(false); setLoadingStores(false); setLoadingTopCoupons(false); setLoadingTodaysDeals(false); setLoadingCategories(false);
+          setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingTodaysDealStores(false); setLoadingCategories(false);
           // setLoadingTodaysPicks is handled in its own fetch
         }
       }
@@ -284,7 +284,7 @@ export default function HomePage() {
     Autoplay({ delay: 4000, stopOnInteraction: true })
   );
 
-  const isPageLoading = loadingBanners || loadingStores || loadingTopCoupons || loadingTodaysDeals || loadingCategories || loadingTodaysPicks;
+  const isPageLoading = loadingBanners || loadingFeaturedStores || loadingTopCoupons || loadingTodaysDealStores || loadingCategories || loadingTodaysPicks;
 
   return (
     <div className="container mx-auto px-4 py-8 space-y-12 md:space-y-16 lg:space-y-20">
@@ -302,7 +302,7 @@ export default function HomePage() {
                        <Search className="ml-2 h-5 w-5 text-muted-foreground hidden sm:block" />
                        <Input
                          type="search"
-                         name="search" 
+                         name="search"
                          placeholder="Search for stores, brands or products..."
                          className="flex-grow h-12 text-base border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none pl-2 sm:pl-0"
                          aria-label="Search stores and offers"
@@ -340,7 +340,7 @@ export default function HomePage() {
 
        <section>
          <h2 className="text-3xl font-bold text-center mb-6 md:mb-8 flex items-center justify-center gap-2">
-           <TrendingUp className="text-primary w-7 h-7"/> Today's Top Deals
+           <TrendingUp className="text-primary w-7 h-7"/> Today's Top Offers
          </h2>
          {loadingBanners ? (
            <Skeleton className="h-48 md:h-64 lg:h-80 w-full rounded-lg" />
@@ -386,9 +386,9 @@ export default function HomePage() {
                </>
              )}
            </Carousel>
-         ) : !pageError ? ( 
+         ) : !pageError ? (
              <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border">
-                No special deals featured right now. Check back soon!
+                No special top offers featured right now. Check back soon!
              </div>
           ) : null }
        </section>
@@ -429,10 +429,10 @@ export default function HomePage() {
             <h2 className="text-3xl font-bold flex items-center gap-2">
                 {amazonStoreData?.name ? (
                     <span className="font-semibold text-primary">{amazonStoreData.name}</span>
-                ) : loadingTodaysPicks || loadingStores ? ( // Show skeleton if either amazon store or its picks are loading
+                ) : loadingTodaysPicks || loadingFeaturedStores ? (
                     <Skeleton className="h-8 w-32" />
                 ) : (
-                    <span className="font-semibold text-primary">Amazon</span> // Fallback text if data isn't there but not loading
+                    <span className="font-semibold text-primary">Amazon</span>
                 )}
                  Today's Picks
             </h2>
@@ -448,7 +448,7 @@ export default function HomePage() {
                         Shop on {amazonStoreData.name || 'Store'} <ExternalLink className="w-4 h-4" />
                     </a>
                 </Button>
-            ) : loadingTodaysPicks || loadingStores ? (
+            ) : loadingTodaysPicks || loadingFeaturedStores ? (
                  <Skeleton className="h-9 w-36" />
             ) : null }
          </div>
@@ -464,7 +464,7 @@ export default function HomePage() {
                       <ProductCard key={product.id} product={product} storeContext={amazonStoreData || undefined} />
                   ))}
               </div>
-          ) : !pageError ? ( // Only show "no picks" if there wasn't a broader page error
+          ) : !pageError ? (
               <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No Today's Picks available from {amazonStoreData?.name || 'this store'} right now.</p>
           ) : null}
        </section>
@@ -472,21 +472,21 @@ export default function HomePage() {
        <section>
            <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
                <h2 className="text-3xl font-bold flex items-center gap-2">
-                 <Zap className="text-primary w-7 h-7" /> Today's Deals
+                 <Zap className="text-primary w-7 h-7" /> Today's Deal Stores
                </h2>
                {/* Optional: Link to a dedicated "Today's Deals" page if you create one */}
                {/* <Button variant="outline" size="sm" asChild><Link href="/deals/today">View All Today's Deals <ArrowRight className="w-4 h-4" /></Link></Button> */}
            </div>
-           {loadingTodaysDeals ? (
-               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-                 {Array.from({ length: 3 }).map((_, index) => ( <Skeleton key={`todays-deal-skel-${index}`} className="h-40 rounded-lg" /> ))}
+           {loadingTodaysDealStores ? (
+               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
+                 {Array.from({ length: 6 }).map((_, index) => ( <Skeleton key={`todays-deal-store-skel-${index}`} className="h-48 rounded-lg" /> ))}
                </div>
-           ) : todaysDealsCoupons.length > 0 ? (
-               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-                 {todaysDealsCoupons.map((coupon) => ( <CouponCard key={coupon.id} coupon={coupon} /> ))}
+           ) : todaysDealStores.length > 0 ? (
+               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
+                 {todaysDealStores.map((store) => ( <StoreCard key={store.id} store={store} /> ))}
                </div>
            ) : !pageError ? (
-               <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No special "Today's Deals" featured right now. Check back soon!</p>
+               <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No special "Today's Deal" stores featured right now. Check back soon!</p>
            ) : null}
        </section>
 
@@ -548,7 +548,7 @@ export default function HomePage() {
             </Link>
           </Button>
         </div>
-        {loadingStores ? (
+        {loadingFeaturedStores ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
             {Array.from({ length: 12 }).map((_, index) => ( <Skeleton key={`store-skel-${index}`} className="h-48 rounded-lg" /> ))}
           </div>
