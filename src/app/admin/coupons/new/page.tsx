@@ -15,10 +15,10 @@ import {
   getDocs,
   query,
   orderBy,
-  where // If needed for store validation/lookup
+  where
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase/config';
-import type { Coupon, Store, CouponFormValues as CouponFormType } from '@/lib/types'; // Use CouponFormValues type if defined, else create
+import { db, firebaseInitializationError } from '@/lib/firebase/config';
+import type { Coupon, Store, CouponFormValues as CouponFormType } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -31,11 +31,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { AlertCircle, Loader2, ArrowLeft, PlusCircle, CalendarIcon } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import AdminGuard from '@/components/guards/admin-guard';
-import { format, isValid } from 'date-fns';
+import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-// Zod schema for coupon form validation (same as coupons/page.tsx)
 const couponSchema = z.object({
   storeId: z.string().min(1, 'Store is required'),
   code: z.string().optional().nullable(),
@@ -44,9 +43,10 @@ const couponSchema = z.object({
   expiryDate: z.date().optional().nullable(),
   isFeatured: z.boolean().default(false),
   isActive: z.boolean().default(true),
+  isTodaysDeal: z.boolean().default(false), // New field
 }).refine(data => data.code || data.link, {
   message: "Either a Coupon Code or a Link is required",
-  path: ["code"], // Attach error to 'code' field for simplicity
+  path: ["code"],
 });
 
 type CouponFormValues = z.infer<typeof couponSchema>;
@@ -69,16 +69,20 @@ function AddCouponPageContent() {
       expiryDate: null,
       isFeatured: false,
       isActive: true,
+      isTodaysDeal: false, // Default value
     },
   });
 
-  // Fetch stores for the dropdown
   useEffect(() => {
     const fetchStores = async () => {
       setLoadingStores(true);
+      if (firebaseInitializationError || !db) {
+          setError(firebaseInitializationError || "Database not available.");
+          setLoadingStores(false);
+          return;
+      }
       try {
         const storesCollection = collection(db, 'stores');
-        // Fetch only active stores for selection
         const q = query(storesCollection, where('isActive', '==', true), orderBy('name', 'asc'));
         const snapshot = await getDocs(q);
         setStoreList(snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name || 'Unnamed Store' })));
@@ -96,11 +100,17 @@ function AddCouponPageContent() {
   const onSubmit = async (data: CouponFormValues) => {
     setIsSaving(true);
     setError(null);
+    if (!db) {
+        setError("Database not available.");
+        setIsSaving(false);
+        return;
+    }
     const submissionData = {
       ...data,
       code: data.code || null,
       link: data.link || null,
-      expiryDate: data.expiryDate ? data.expiryDate : null, // Keep as Date or null
+      expiryDate: data.expiryDate ? data.expiryDate : null,
+      isTodaysDeal: !!data.isTodaysDeal,
     };
 
     try {
@@ -115,7 +125,7 @@ function AddCouponPageContent() {
         title: "Coupon Added",
         description: `New coupon/offer created successfully.`,
       });
-      router.push('/admin/coupons'); // Redirect back to the coupons list
+      router.push('/admin/coupons');
 
     } catch (err) {
       console.error("Error adding coupon:", err);
@@ -154,7 +164,6 @@ function AddCouponPageContent() {
           )}
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
 
-             {/* Store Selector */}
              <div className="space-y-2">
                <Label htmlFor="storeId">Store*</Label>
                <Controller
@@ -183,27 +192,23 @@ function AddCouponPageContent() {
                {form.formState.errors.storeId && <p className="text-sm text-destructive">{form.formState.errors.storeId.message}</p>}
              </div>
 
-             {/* Description */}
              <div className="space-y-2">
                <Label htmlFor="description">Description*</Label>
                <Textarea id="description" {...form.register('description')} rows={3} disabled={isSaving} />
                {form.formState.errors.description && <p className="text-sm text-destructive">{form.formState.errors.description.message}</p>}
              </div>
 
-             {/* Coupon Code */}
              <div className="space-y-2">
                <Label htmlFor="code">Coupon Code</Label>
                <Input id="code" {...form.register('code')} placeholder="Optional code (e.g., SAVE10)" disabled={isSaving} />
              </div>
 
-             {/* Link */}
              <div className="space-y-2">
                <Label htmlFor="link">Link</Label>
                <Input id="link" {...form.register('link')} placeholder="Optional direct offer link (https://...)" disabled={isSaving} />
                {form.formState.errors.link && <p className="text-sm text-destructive">{form.formState.errors.link.message}</p>}
              </div>
 
-             {/* Expiry Date */}
              <div className="space-y-2">
                <Label htmlFor="expiryDate">Expiry Date</Label>
                 <Controller
@@ -237,7 +242,6 @@ function AddCouponPageContent() {
                 />
              </div>
 
-             {/* Flags: Featured & Active */}
              <div className="space-y-4">
                  <div className="flex items-center space-x-2">
                      <Controller
@@ -269,9 +273,23 @@ function AddCouponPageContent() {
                       />
                      <Label htmlFor="isActive" className="font-normal">Active (visible to users)</Label>
                  </div>
+                 <div className="flex items-center space-x-2">
+                      <Controller
+                         control={form.control}
+                         name="isTodaysDeal"
+                         render={({ field }) => (
+                             <Checkbox
+                                id="isTodaysDeal"
+                                checked={field.value}
+                               onCheckedChange={field.onChange}
+                                disabled={isSaving}
+                             />
+                         )}
+                      />
+                     <Label htmlFor="isTodaysDeal" className="font-normal">Today's Deal (show on homepage)</Label>
+                 </div>
              </div>
 
-             {/* General form error (e.g., code OR link required) */}
              {form.formState.errors.code && form.formState.errors.code.type === 'refine' && (
                <Alert variant="destructive">
                  <AlertCircle className="h-4 w-4" />

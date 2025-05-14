@@ -113,7 +113,7 @@ export interface Coupon {
   expiryDate: Date | Timestamp | null; // When the coupon expires
   isFeatured: boolean; // Highlighted coupon
   isActive: boolean; // Whether the coupon is active
-  isTopOffer?: boolean; // Flag if this is a top offer for the store page
+  isTodaysDeal?: boolean; // New flag for "Today's Deals" section
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
@@ -126,7 +126,8 @@ export interface Category {
     description?: string | null;
     imageUrl?: string | null; // Optional image for the category
     order: number; // For custom sorting of categories
-    isActive: boolean; // Added for homepage/general visibility control
+    isActive: boolean;
+    dataAiHint?: string | null;
     createdAt: Date | Timestamp;
     updatedAt: Date | Timestamp;
 }
@@ -166,8 +167,8 @@ export interface Product {
   specifications?: Record<string, string>; // Key-value pairs for detailed specifications
   isActive: boolean; // Is the product currently active and visible?
   isFeatured?: boolean; // Should this product be highlighted?
-  isTodaysPick?: boolean; // New field for "Today's Picks"
-  dataAiHint?: string | null; // For placeholder image generation
+  isTodaysPick?: boolean;
+  dataAiHint?: string | null;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
@@ -196,7 +197,9 @@ export interface CouponWithStore extends Coupon {
 // Form values for Store, used in admin panel
 export interface StoreFormValues extends Omit<Store, 'id' | 'createdAt' | 'updatedAt'> {}
 // Form values for Coupon, used in admin panel
-export interface CouponFormValues extends Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'store'> {}
+export interface CouponFormValues extends Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'store'> {
+  isTodaysDeal?: boolean;
+}
 // Form values for Banner, used in admin panel
 export interface BannerFormValues extends Omit<Banner, 'id' | 'createdAt' | 'updatedAt'> {}
 // Form values for Category, used in admin panel
