@@ -6,7 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link'; // For linking to product details on your site (optional)
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ExternalLink, ShoppingCart } from 'lucide-react'; // Using ShoppingCart for "Shop Now"
+import { ExternalLink, ShoppingCart, Loader2 } from 'lucide-react'; // Using ShoppingCart for "Shop Now", added Loader2
 import { formatCurrency } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
 import { trackClick } from '@/lib/actions/tracking';
@@ -24,6 +24,7 @@ const isValidHttpUrl = (string: string | undefined | null): boolean => {
   if (!string) return false;
   let url;
   try {
+    // More robust check against potentially very long or malformed strings
     if (string.startsWith("Error:") || string.startsWith("Unhandled") || string.length > 2048) {
         return false;
     }
@@ -52,13 +53,15 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
   const router = useRouter();
   const { toast } = useToast();
 
+  const placeholderText = product && product.name ? product.name.substring(0, 15) : "Product";
   const imageUrl = isValidHttpUrl(product.imageUrl)
     ? product.imageUrl
-    : `https://placehold.co/300x300.png?text=${encodeURIComponent(product.name.substring(0,15))}`;
+    : `https://placehold.co/300x300.png?text=${encodeURIComponent(placeholderText)}`;
 
   const productTitle = product.name || 'Product Title';
   const affiliateLink = product.affiliateLink || '#';
-  const category = product.category || 'Uncategorized';
+  // category is not directly used in the card display but might be useful for future features
+  // const category = product.category || 'Uncategorized';
   const priceDisplay = product.priceDisplay || (product.price !== null && product.price !== undefined ? formatCurrency(product.price) : 'Price not available');
 
   const handleShopNow = async () => {
@@ -102,7 +105,7 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
 
   return (
     <Card className="overflow-hidden h-full flex flex-col group border shadow-sm hover:shadow-lg transition-shadow duration-300">
-      {/* Product Image - Potentially make it a link to a product detail page on *your* site if you have one */}
+      {/* Product Image */}
       <div className="block aspect-square relative overflow-hidden bg-muted">
         <Image
           src={imageUrl}
@@ -112,16 +115,13 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
           className="object-contain group-hover:scale-105 transition-transform duration-300 p-2"
           data-ai-hint={product.dataAiHint || "product image"}
           onError={(e) => {
-            (e.target as HTMLImageElement).src = `https://placehold.co/300x300.png?text=${encodeURIComponent(product.name.substring(0,15))}`;
+            (e.target as HTMLImageElement).src = `https://placehold.co/300x300.png?text=${encodeURIComponent(placeholderText)}`;
           }}
         />
       </div>
       <CardContent className="p-3 flex flex-col flex-grow justify-between">
         <div>
-          {/* Category (optional) */}
-          {/* <p className="text-xs text-muted-foreground mb-1">{category}</p> */}
           <h3 className="text-sm font-medium leading-snug mb-2 h-10 line-clamp-2" title={productTitle}>
-            {/* If you have product detail pages on your site: <Link href={`/product/${product.id}`} className="hover:text-primary transition-colors">{productTitle}</Link> */}
             {productTitle}
           </h3>
         </div>
@@ -135,7 +135,7 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
             onClick={handleShopNow}
             disabled={authLoading}
           >
-            {authLoading ? <Loader2 className="h-4 w-4 animate-spin"/> : <ShoppingCart className="mr-1 h-3 w-3" />}
+            {authLoading ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <ShoppingCart className="mr-1 h-3 w-3" />}
             Shop Now
           </Button>
         </div>
@@ -143,5 +143,3 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
     </Card>
   );
 }
-
-    
