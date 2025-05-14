@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from 'react';
@@ -19,7 +20,7 @@ import { db } from '@/lib/firebase/config';
 import type { Coupon, Store, CouponWithStore } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import CouponCard from '@/components/ui/coupon-card';
+import CouponCard from '@/components/coupon-card'; // Corrected import path
 import { Button } from '@/components/ui/button';
 import { AlertCircle, Loader2, Tag, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -300,3 +301,5 @@ export default function CouponsPage() {
     </div>
   );
 }
+
+    
