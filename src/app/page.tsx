@@ -6,7 +6,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { Input } from '@/components/ui/input'; // Added import for Input
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import Image from 'next/image';
@@ -18,7 +18,7 @@ import type { Store, Coupon, Banner, Category, Product } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import StoreCard from '@/components/store-card';
 import CouponCard from '@/components/coupon-card';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation'; // Import useRouter
 import { safeToDate } from '@/lib/utils';
 import { ProductCard } from '@/components/product-card';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
@@ -94,8 +94,8 @@ async function fetchCouponsWithStoreData(constraints: QueryConstraint[], orderFi
                          const storeData = {
                              id: storeSnap.id,
                              ...storeDataRaw,
-                             createdAt: safeToDate(storeDataRaw.createdAt),
-                             updatedAt: safeToDate(storeDataRaw.updatedAt),
+                             createdAt: safeToDate(storeDataRaw.createdAt as Timestamp | undefined),
+                             updatedAt: safeToDate(storeDataRaw.updatedAt as Timestamp | undefined),
                          } as Store;
                         storeCache.set(coupon.storeId, storeData);
                         return { ...coupon, store: storeData };
@@ -181,7 +181,13 @@ export default function HomePage() {
         const amazonStoreFetchPromise = getDoc(doc(db, 'stores', amazonStoreIdentifier))
             .then(docSnap => {
                 if (docSnap.exists()) {
-                    return { id: docSnap.id, ...docSnap.data() } as Store;
+                    const storeData = docSnap.data();
+                    return { 
+                        id: docSnap.id, 
+                        ...storeData,
+                        createdAt: safeToDate(storeData.createdAt as Timestamp | undefined),
+                        updatedAt: safeToDate(storeData.updatedAt as Timestamp | undefined),
+                     } as Store;
                 }
                 console.warn(`Amazon store with ID/slug '${amazonStoreIdentifier}' not found.`);
                 return null;
@@ -292,8 +298,8 @@ export default function HomePage() {
                        <Search className="ml-2 h-5 w-5 text-muted-foreground hidden sm:block" />
                        <Input
                          type="search"
-                         name="search"
-                         placeholder="Search stores, brands, products..."
+                         name="search" // Add name attribute
+                         placeholder="Search for stores, brands or products..."
                          className="flex-grow h-12 text-base border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none pl-2 sm:pl-0"
                          aria-label="Search stores and offers"
                          value={searchTerm}
@@ -522,10 +528,14 @@ export default function HomePage() {
        <section>
          <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
             <h2 className="text-3xl font-bold flex items-center gap-2">
-                <Image src="https://placehold.co/100x30.png?text=Amazon" alt="Amazon Logo" width={100} height={30} data-ai-hint="amazon brand logo" />
+                {amazonStoreData?.logoUrl ? (
+                    <Image src={amazonStoreData.logoUrl} alt={`${amazonStoreData.name} Logo`} width={100} height={30} className="object-contain h-[30px] w-auto" data-ai-hint={`${amazonStoreData.name} logo`}/>
+                ) : (
+                    <Image src="https://placehold.co/100x30.png?text=Amazon" alt="Amazon Logo" width={100} height={30} data-ai-hint="amazon brand logo" />
+                )}
                 Today's Picks
             </h2>
-            {amazonStoreData && amazonStoreData.id ? (
+            {amazonStoreData?.id ? (
                 <Button variant="outline" size="sm" asChild>
                     <Link href={`/stores/${amazonStoreData.id}/products`} className="flex items-center gap-1">
                         View All Amazon Offers <ArrowRight className="w-4 h-4" />
