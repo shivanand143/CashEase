@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from 'react';
+import { useState, useEffect, useCallback } from 'react'; // Added useState here
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
@@ -178,10 +179,13 @@ function AdminStoresPageContent() {
    useEffect(() => {
     const fetchCategories = async () => {
       if (!db || firebaseInitializationError) {
-        setError(firebaseInitializationError || "Database not available for fetching categories.");
-        setLoadingCategories(false);
+        if (isMounted) {
+          setError(firebaseInitializationError || "Database not available for fetching categories.");
+          setLoadingCategories(false);
+        }
         return;
       }
+      let isMounted = true;
       setLoadingCategories(true);
       try {
         const categoriesCollection = collection(db, 'categories');
@@ -191,13 +195,20 @@ function AdminStoresPageContent() {
            value: doc.id,
            label: doc.data().name || doc.id,
         }));
-        setCategoriesList(fetchedCategories);
+        if (isMounted) {
+            setCategoriesList(fetchedCategories);
+        }
       } catch (err) {
         console.error("Error fetching categories:", err);
-        toast({ variant: "destructive", title: "Error", description: "Could not load categories." });
+        if (isMounted) {
+            toast({ variant: "destructive", title: "Error", description: "Could not load categories." });
+        }
       } finally {
-        setLoadingCategories(false);
+        if (isMounted) {
+            setLoadingCategories(false);
+        }
       }
+       return () => { isMounted = false };
     };
     fetchCategories();
   }, [toast]);
@@ -208,17 +219,21 @@ function AdminStoresPageContent() {
     currentSearchTerm: string,
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
   ) => {
+    let isMounted = true;
+    if (!isMounted) return;
+
     if (!db || firebaseInitializationError) {
-      setError(firebaseInitializationError || "Database connection not available.");
-      setLoading(false);
-      setLoadingMore(false);
-      setHasMore(false);
+        if (isMounted) {
+            setError(firebaseInitializationError || "Database connection not available.");
+            setLoading(false);
+            setLoadingMore(false);
+            setHasMore(false);
+        }
       return;
     }
 
     if (!isLoadMoreOperation) {
       setLoading(true);
-      // setLastVisible(null); // This is handled by passing null for docToStartAfter
       setStores([]); // Clear stores for new search/initial load
     } else {
       setLoadingMore(true);
@@ -237,9 +252,9 @@ function AdminStoresPageContent() {
         constraints.push(where('name', '<=', currentSearchTerm + '\uf8ff'));
         constraints.push(orderBy('name'));
         // Add isActive filter for searches as well
-        constraints.push(where('isActive', '==', true));
+        // constraints.push(where('isActive', '==', true)); // Commented out: Show all if searching, can re-add if needed
       } else {
-        constraints.push(where('isActive', '==', true)); // Default to active stores
+        // constraints.push(where('isActive', '==', true)); // Default to active stores
         constraints.push(orderBy('isFeatured', 'desc'));
         constraints.push(orderBy('createdAt', 'desc'));
       }
@@ -285,32 +300,46 @@ function AdminStoresPageContent() {
       });
 
 
-      if (isLoadMoreOperation) {
-        setStores(prev => [...prev, ...storesData]);
-      } else {
-        setStores(storesData);
-      }
+      if (isMounted) {
+        if (isLoadMoreOperation) {
+            setStores(prev => [...prev, ...storesData]);
+        } else {
+            setStores(storesData);
+        }
 
-      const newLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
-      setLastVisible(newLastVisible); // Update the state for the next "load more"
-      setHasMore(querySnapshot.docs.length === STORES_PER_PAGE);
+        const newLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
+        setLastVisible(newLastVisible); // Update the state for the next "load more"
+        setHasMore(querySnapshot.docs.length === STORES_PER_PAGE);
+      }
 
     } catch (err) {
       console.error("Error fetching stores:", err);
       const errorMsg = err instanceof Error ? err.message : "Failed to fetch stores";
-      setError(errorMsg);
-      toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
-      setHasMore(false); // Stop pagination on error
+       if (isMounted) {
+            setError(errorMsg);
+            toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+            setHasMore(false); // Stop pagination on error
+       }
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      setIsSearching(false);
+       if (isMounted) {
+            setLoading(false);
+            setLoadingMore(false);
+            setIsSearching(false);
+       }
     }
+     return () => { isMounted = false };
   }, [toast]); // Only stable dependencies here
 
   useEffect(() => {
-    fetchStores(false, debouncedSearchTerm, null); // Initial fetch, pass null for startAfterDoc
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let isMounted = true;
+    // Initial fetch, pass null for startAfterDoc
+    fetchStores(false, debouncedSearchTerm, null).then(() => {
+      if (isMounted) setLoading(false); // Ensure loading is false after initial fetch
+    }).catch(() => {
+      if (isMounted) setLoading(false); // Ensure loading is false on error too
+    });
+    return () => { isMounted = false };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearchTerm, fetchStores]); // fetchStores is now stable regarding lastVisible changes
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -318,8 +347,6 @@ function AdminStoresPageContent() {
     // fetchStores is already called by useEffect when debouncedSearchTerm changes
     // This function can be kept if you want an explicit search button action in the future,
     // but the primary trigger is the debounced search term.
-    // For now, it forces a re-fetch with the current non-debounced term if needed,
-    // or simply relies on the debounced fetch.
     // To ensure it fetches with the latest input if user clicks search before debounce:
     fetchStores(false, searchTermInput, null);
   };
@@ -365,11 +392,12 @@ function AdminStoresPageContent() {
   };
 
   const onSubmit = async (data: StoreFormValues) => {
-    if (!db) {
-        setError("Database not available. Please try again later.");
+    if (!db || firebaseInitializationError) {
+        if(isMounted) setError(firebaseInitializationError || "Database not available. Please try again later.");
         setIsSaving(false);
         return;
     }
+    let isMounted = true;
     setIsSaving(true);
     setError(null);
 
@@ -395,8 +423,10 @@ function AdminStoresPageContent() {
           ...submissionData,
           updatedAt: serverTimestamp(),
         });
-        setStores(prev => prev.map(s => s.id === editingStore.id ? { ...s, ...submissionData, updatedAt: new Date() } as Store : s));
-        toast({ title: "Store Updated", description: `${data.name} details saved.` });
+        if (isMounted) {
+            setStores(prev => prev.map(s => s.id === editingStore.id ? { ...s, ...submissionData, updatedAt: new Date() } as Store : s));
+            toast({ title: "Store Updated", description: `${data.name} details saved.` });
+        }
       } else {
         // This case is handled by /admin/stores/new, but kept as robust fallback
         const storesCollection = collection(db, 'stores');
@@ -405,43 +435,55 @@ function AdminStoresPageContent() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-         const newStore: Store = { ...submissionData, id: newDocRef.id, createdAt: new Date(), updatedAt: new Date() } as Store;
-         setStores(prev => [newStore, ...prev].sort((a,b) => (b.isFeatured ? 1 : -1) - (a.isFeatured ? 1 : -1) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-        toast({ title: "Store Added", description: `${data.name} created successfully.` });
+        if (isMounted) {
+            const newStore: Store = { ...submissionData, id: newDocRef.id, createdAt: new Date(), updatedAt: new Date() } as Store;
+            setStores(prev => [newStore, ...prev].sort((a,b) => (b.isFeatured ? 1 : -1) - (a.isFeatured ? 1 : -1) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+            toast({ title: "Store Added", description: `${data.name} created successfully.` });
+        }
       }
-      setIsDialogOpen(false);
-      form.reset();
+      if (isMounted) {
+        setIsDialogOpen(false);
+        form.reset();
+      }
     } catch (err) {
       console.error("Error saving store:", err);
       const errorMsg = err instanceof Error ? err.message : "Could not save store details.";
-      setError(errorMsg);
-      toast({ variant: "destructive", title: "Save Failed", description: errorMsg });
+      if (isMounted) {
+        setError(errorMsg);
+        toast({ variant: "destructive", title: "Save Failed", description: errorMsg });
+      }
     } finally {
-      setIsSaving(false);
+      if (isMounted) setIsSaving(false);
     }
+     return () => { isMounted = false };
   };
 
    // --- Delete Store ---
    const handleDeleteStore = async () => {
      if (!deletingStoreId || !db) return;
+     let isMounted = true;
      console.log(`Attempting to delete store: ${deletingStoreId}`);
      try {
        const storeDocRef = doc(db, 'stores', deletingStoreId);
        await deleteDoc(storeDocRef);
-       setStores(prev => prev.filter(s => s.id !== deletingStoreId));
-       toast({ title: "Store Deleted", description: "The store has been removed." });
+       if(isMounted) {
+        setStores(prev => prev.filter(s => s.id !== deletingStoreId));
+        toast({ title: "Store Deleted", description: "The store has been removed." });
+       }
      } catch (err) {
        console.error("Error deleting store:", err);
        const errorMsg = err instanceof Error ? err.message : "Could not delete the store.";
-       toast({ variant: "destructive", title: "Deletion Failed", description: errorMsg });
+       if (isMounted) toast({ variant: "destructive", title: "Deletion Failed", description: errorMsg });
      } finally {
-       setDeletingStoreId(null);
+       if (isMounted) setDeletingStoreId(null);
      }
+      return () => { isMounted = false };
    };
 
     // --- Toggle Active Status ---
     const handleToggleActiveStatus = async (storeToUpdate: Store) => {
       if (!storeToUpdate || !db) return;
+      let isMounted = true;
       setUpdatingStoreId(storeToUpdate.id);
 
       const storeDocRef = doc(db, 'stores', storeToUpdate.id);
@@ -452,32 +494,36 @@ function AdminStoresPageContent() {
           isActive: newStatus,
           updatedAt: serverTimestamp(),
         });
+        if (isMounted) {
+            setStores(prevStores =>
+            prevStores.map(s =>
+                s.id === storeToUpdate.id ? { ...s, isActive: newStatus, updatedAt: new Date() } : s
+            )
+            );
 
-        setStores(prevStores =>
-          prevStores.map(s =>
-            s.id === storeToUpdate.id ? { ...s, isActive: newStatus, updatedAt: new Date() } : s
-          )
-        );
-
-        toast({
-          title: `Store ${newStatus ? 'Activated' : 'Deactivated'}`,
-          description: `${storeToUpdate.name} status updated.`,
-        });
+            toast({
+            title: `Store ${newStatus ? 'Activated' : 'Deactivated'}`,
+            description: `${storeToUpdate.name} status updated.`,
+            });
+        }
       } catch (err) {
         console.error(`Error updating store ${storeToUpdate.id} status:`, err);
         const errorMsg = err instanceof Error ? err.message : "Could not update store status.";
-        toast({
-          variant: "destructive",
-          title: "Update Failed",
-          description: errorMsg,
-        });
+        if (isMounted) {
+            toast({
+                variant: "destructive",
+                title: "Update Failed",
+                description: errorMsg,
+            });
+        }
       } finally {
-        setUpdatingStoreId(null);
+        if (isMounted) setUpdatingStoreId(null);
       }
+       return () => { isMounted = false };
     };
 
 
-  if (loading && stores.length === 0 && !error) {
+  if (loading && stores.length === 0 && !error && !isMounted) { // Added isMounted check
     return <StoresTableSkeleton />;
   }
 
@@ -893,4 +939,5 @@ export default function AdminStoresPage() {
       </AdminGuard>
     );
 }
+
 
