@@ -5,8 +5,8 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input'; // Added import for Input
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'; // Removed CardDescription from Card imports as it's not used directly for search
+import { Input } from '@/components/ui/input';
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import Image from 'next/image';
@@ -18,8 +18,8 @@ import type { Store, Coupon, Banner, Category, Product } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import StoreCard from '@/components/store-card';
 import CouponCard from '@/components/coupon-card';
-import { useRouter } from 'next/navigation'; // Import useRouter
-import { safeToDate } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
+import { safeToDate, formatCurrency } from '@/lib/utils';
 import { ProductCard } from '@/components/product-card';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
@@ -157,8 +157,7 @@ export default function HomePage() {
       setPageError(null);
       let combinedErrorMessages: string[] = [];
 
-      // Define Amazon Store ID/Slug (ensure this matches your Firestore data for Amazon store)
-      const amazonStoreIdentifier = "amazon"; // Example: using 'amazon' as the document ID or a specific slug
+      const amazonStoreIdentifier = "amazon"; 
 
       try {
         const bannerFetchPromise = fetchData<Banner>(
@@ -205,7 +204,7 @@ export default function HomePage() {
           setCategories(categoryData);
           setAmazonStoreData(fetchedAmazonStoreData);
 
-          if (fetchedAmazonStoreData) { // Only fetch picks if Amazon store was found
+          if (fetchedAmazonStoreData) {
             fetchData<Product>(
               'products',
               [
@@ -226,7 +225,7 @@ export default function HomePage() {
           } else {
              if(isMounted) {
                 setAmazonTodaysPicks([]);
-                setLoadingTodaysPicks(false); // No store, so no picks to load
+                setLoadingTodaysPicks(false);
              }
           }
 
@@ -242,7 +241,6 @@ export default function HomePage() {
       } finally {
         if (isMounted) {
           setLoadingBanners(false); setLoadingStores(false); setLoadingCoupons(false); setLoadingCategories(false);
-          // setLoadingTodaysPicks is handled within its own fetch block
         }
       }
     };
@@ -298,7 +296,7 @@ export default function HomePage() {
                        <Search className="ml-2 h-5 w-5 text-muted-foreground hidden sm:block" />
                        <Input
                          type="search"
-                         name="search" // Add name attribute
+                         name="search" 
                          placeholder="Search for stores, brands or products..."
                          className="flex-grow h-12 text-base border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none pl-2 sm:pl-0"
                          aria-label="Search stores and offers"
@@ -528,23 +526,23 @@ export default function HomePage() {
        <section>
          <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
             <h2 className="text-3xl font-bold flex items-center gap-2">
-                {amazonStoreData?.logoUrl ? (
-                    <Image src={amazonStoreData.logoUrl} alt={`${amazonStoreData.name} Logo`} width={100} height={30} className="object-contain h-[30px] w-auto" data-ai-hint={`${amazonStoreData.name} logo`}/>
+                {amazonStoreData?.name ? (
+                    <span className="font-semibold text-primary">{amazonStoreData.name}</span>
                 ) : (
-                    <Image src="https://placehold.co/100x30.png?text=Amazon" alt="Amazon Logo" width={100} height={30} data-ai-hint="amazon brand logo" />
+                    <Skeleton className="h-8 w-32" /> // Placeholder if store name is loading
                 )}
-                Today's Picks
+                 Today's Picks
             </h2>
             {amazonStoreData?.id ? (
                 <Button variant="outline" size="sm" asChild>
                     <Link href={`/stores/${amazonStoreData.id}/products`} className="flex items-center gap-1">
-                        View All Amazon Offers <ArrowRight className="w-4 h-4" />
+                        View All Products <ArrowRight className="w-4 h-4" />
                     </Link>
                 </Button>
-            ) : amazonStoreData?.affiliateLink ? (
+            ) : amazonStoreData?.affiliateLink ? ( // Fallback to general affiliate link if product page is not the target
                 <Button variant="outline" size="sm" asChild>
                     <a href={amazonStoreData.affiliateLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1">
-                        Shop on Amazon <ExternalLink className="w-4 h-4" />
+                        Shop on {amazonStoreData.name || 'Store'} <ExternalLink className="w-4 h-4" />
                     </a>
                 </Button>
             ) : null }
@@ -562,7 +560,7 @@ export default function HomePage() {
                   ))}
               </div>
           ) : !pageError ? (
-              <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No Today's Picks available from Amazon right now.</p>
+              <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No Today's Picks available from {amazonStoreData?.name || 'this store'} right now.</p>
           ) : null}
        </section>
 
@@ -570,7 +568,7 @@ export default function HomePage() {
            <Card className="shadow-sm bg-gradient-to-tr from-amber-50 to-yellow-100 border-amber-300">
                <CardHeader>
                    <CardTitle className="flex items-center gap-2 text-amber-800"><Zap className="text-amber-600 w-6 h-6" />Maximize Your Savings</CardTitle>
-                   <CardDescription className="text-amber-700">Discover exclusive deals and special promotions beyond cashback.</CardDescription>
+                   {/* Removed CardDescription to match earlier fix for Card component */}
                </CardHeader>
                <CardContent>
                    <p className="text-amber-800/90 mb-4 text-sm">
@@ -584,7 +582,7 @@ export default function HomePage() {
             <Card className="shadow-sm bg-gradient-to-tr from-green-50 to-emerald-100 border-green-300">
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-green-800"><Gift className="text-green-600 w-6 h-6" /> Refer & Earn More!</CardTitle>
-                    <CardDescription className="text-green-700">Invite friends and you both earn bonus cashback.</CardDescription>
+                    {/* Removed CardDescription to match earlier fix for Card component */}
                 </CardHeader>
                 <CardContent>
                      <p className="text-green-800/90 mb-4 text-sm">
@@ -599,3 +597,4 @@ export default function HomePage() {
     </div>
   );
 }
+
