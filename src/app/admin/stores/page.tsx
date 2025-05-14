@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from 'react';
-import { useState, useEffect, useCallback } from 'react'; // Added useState here
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
@@ -177,6 +177,7 @@ function AdminStoresPageContent() {
 
    // Fetch categories for the multi-select dropdown
    useEffect(() => {
+    let isMounted = true;
     const fetchCategories = async () => {
       if (!db || firebaseInitializationError) {
         if (isMounted) {
@@ -185,7 +186,6 @@ function AdminStoresPageContent() {
         }
         return;
       }
-      let isMounted = true;
       setLoadingCategories(true);
       try {
         const categoriesCollection = collection(db, 'categories');
@@ -208,9 +208,9 @@ function AdminStoresPageContent() {
             setLoadingCategories(false);
         }
       }
-       return () => { isMounted = false };
     };
     fetchCategories();
+    return () => { isMounted = false };
   }, [toast]);
 
 
@@ -220,7 +220,7 @@ function AdminStoresPageContent() {
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
   ) => {
     let isMounted = true;
-    if (!isMounted) return;
+
 
     if (!db || firebaseInitializationError) {
         if (isMounted) {
@@ -340,20 +340,17 @@ function AdminStoresPageContent() {
     });
     return () => { isMounted = false };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearchTerm, fetchStores]); // fetchStores is now stable regarding lastVisible changes
+  }, [debouncedSearchTerm]);
+
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // fetchStores is already called by useEffect when debouncedSearchTerm changes
-    // This function can be kept if you want an explicit search button action in the future,
-    // but the primary trigger is the debounced search term.
-    // To ensure it fetches with the latest input if user clicks search before debounce:
     fetchStores(false, searchTermInput, null);
   };
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      fetchStores(true, debouncedSearchTerm, lastVisible); // Pass current lastVisible state
+      fetchStores(true, debouncedSearchTerm, lastVisible);
     }
   };
 
@@ -392,12 +389,12 @@ function AdminStoresPageContent() {
   };
 
   const onSubmit = async (data: StoreFormValues) => {
+    let isMounted = true;
     if (!db || firebaseInitializationError) {
         if(isMounted) setError(firebaseInitializationError || "Database not available. Please try again later.");
         setIsSaving(false);
         return;
     }
-    let isMounted = true;
     setIsSaving(true);
     setError(null);
 
@@ -523,7 +520,7 @@ function AdminStoresPageContent() {
     };
 
 
-  if (loading && stores.length === 0 && !error && !isMounted) { // Added isMounted check
+  if (loading && stores.length === 0 && !error) {
     return <StoresTableSkeleton />;
   }
 
@@ -939,5 +936,6 @@ export default function AdminStoresPage() {
       </AdminGuard>
     );
 }
+
 
 
