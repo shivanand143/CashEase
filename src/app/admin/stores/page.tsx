@@ -2,7 +2,6 @@
 "use client";
 
 import * as React from 'react';
-import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
@@ -89,8 +88,8 @@ const STORES_PER_PAGE = 15;
 // Zod schema for store form validation
 const storeSchema = z.object({
   name: z.string().min(2, 'Store name must be at least 2 characters').max(100, 'Store name too long'),
-  logoUrl: z.string().url('Invalid URL format').optional().or(z.literal('')),
-  heroImageUrl: z.string().url('Invalid URL format').optional().or(z.literal('')),
+  logoUrl: z.string().url('Invalid URL format').optional().or(z.literal('')).nullable(),
+  heroImageUrl: z.string().url('Invalid URL format').optional().or(z.literal('')).nullable(),
   affiliateLink: z.string().url('Invalid URL format'),
   cashbackRate: z.string().min(1, 'Cashback rate display is required').max(50, 'Rate display too long'),
   cashbackRateValue: z.number().min(0, 'Cashback value must be non-negative'),
@@ -132,8 +131,8 @@ function AdminStoresPageContent() {
   const router = useRouter();
 
   // Filtering and Searching State
-  const [searchTerm, setSearchTerm] = useState('');
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  const [searchTermInput, setSearchTermInput] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTermInput, 500);
   const [isSearching, setIsSearching] = useState(false);
 
   // State for Add/Edit Dialog
@@ -164,7 +163,7 @@ function AdminStoresPageContent() {
       ratingCount: null,
       cashbackTrackingTime: null,
       cashbackConfirmationTime: null,
-      cashbackOnAppOrders: null,
+      cashbackOnAppOrders: false, // Explicitly default to false or a sensible default
       detailedCashbackRatesLink: null,
       topOffersText: null,
       offerDetailsLink: null,
@@ -189,7 +188,7 @@ function AdminStoresPageContent() {
         const q = query(categoriesCollection, orderBy('name', 'asc'));
         const querySnapshot = await getDocs(q);
         const fetchedCategories = querySnapshot.docs.map(doc => ({
-           value: doc.id, 
+           value: doc.id,
            label: doc.data().name || doc.id,
         }));
         setCategoriesList(fetchedCategories);
@@ -204,7 +203,11 @@ function AdminStoresPageContent() {
   }, [toast]);
 
 
-  const fetchStores = useCallback(async (loadMore = false, search = false) => {
+  const fetchStores = useCallback(async (
+    isLoadMoreOperation: boolean,
+    currentSearchTerm: string,
+    docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
+  ) => {
     if (!db || firebaseInitializationError) {
       setError(firebaseInitializationError || "Database connection not available.");
       setLoading(false);
@@ -213,33 +216,37 @@ function AdminStoresPageContent() {
       return;
     }
 
-    if (!loadMore) {
+    if (!isLoadMoreOperation) {
       setLoading(true);
-      setLastVisible(null);
-      setStores([]);
+      // setLastVisible(null); // This is handled by passing null for docToStartAfter
+      setStores([]); // Clear stores for new search/initial load
     } else {
       setLoadingMore(true);
     }
     setError(null);
-    setIsSearching(search);
+    setIsSearching(currentSearchTerm !== '');
+
 
     try {
       const storesCollection = collection(db, 'stores');
       let constraints: QueryConstraint[] = [];
 
-      if (search && debouncedSearchTerm) {
-        constraints.push(where('isActive', '==', true)); // Always filter by active
-        constraints.push(where('name', '>=', debouncedSearchTerm));
-        constraints.push(where('name', '<=', debouncedSearchTerm + '\uf8ff'));
+      if (currentSearchTerm) {
+        // Firestore requires the first orderBy field to be the same as the where field for range/inequality filters
+        constraints.push(where('name', '>=', currentSearchTerm));
+        constraints.push(where('name', '<=', currentSearchTerm + '\uf8ff'));
         constraints.push(orderBy('name'));
-      } else {
+        // Add isActive filter for searches as well
         constraints.push(where('isActive', '==', true));
+      } else {
+        constraints.push(where('isActive', '==', true)); // Default to active stores
         constraints.push(orderBy('isFeatured', 'desc'));
         constraints.push(orderBy('createdAt', 'desc'));
       }
 
-      if (loadMore && lastVisible) {
-        constraints.push(startAfter(lastVisible));
+
+      if (isLoadMoreOperation && docToStartAfter) {
+        constraints.push(startAfter(docToStartAfter));
       }
       constraints.push(limit(STORES_PER_PAGE));
 
@@ -260,15 +267,15 @@ function AdminStoresPageContent() {
             description: data.description || '',
             detailedDescription: data.detailedDescription || null,
             categories: Array.isArray(data.categories) ? data.categories : [],
-            rating: data.rating || null,
-            ratingCount: data.ratingCount || null,
-            cashbackTrackingTime: data.cashbackTrackingTime || null,
-            cashbackConfirmationTime: data.cashbackConfirmationTime || null,
+            rating: data.rating === undefined ? null : data.rating,
+            ratingCount: data.ratingCount === undefined ? null : data.ratingCount,
+            cashbackTrackingTime: data.cashbackTrackingTime === undefined ? null : data.cashbackTrackingTime,
+            cashbackConfirmationTime: data.cashbackConfirmationTime === undefined ? null : data.cashbackConfirmationTime,
             cashbackOnAppOrders: data.cashbackOnAppOrders === undefined ? null : data.cashbackOnAppOrders,
-            detailedCashbackRatesLink: data.detailedCashbackRatesLink || null,
-            topOffersText: data.topOffersText || null,
-            offerDetailsLink: data.offerDetailsLink || null,
-            terms: data.terms || '',
+            detailedCashbackRatesLink: data.detailedCashbackRatesLink === undefined ? null : data.detailedCashbackRatesLink,
+            topOffersText: data.topOffersText === undefined ? null : data.topOffersText,
+            offerDetailsLink: data.offerDetailsLink === undefined ? null : data.offerDetailsLink,
+            terms: data.terms || null, // Ensure null if empty for optional fields
             isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
             isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
             dataAiHint: data.dataAiHint || null,
@@ -278,13 +285,14 @@ function AdminStoresPageContent() {
       });
 
 
-      if (loadMore) {
+      if (isLoadMoreOperation) {
         setStores(prev => [...prev, ...storesData]);
       } else {
         setStores(storesData);
       }
 
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+      const newLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
+      setLastVisible(newLastVisible); // Update the state for the next "load more"
       setHasMore(querySnapshot.docs.length === STORES_PER_PAGE);
 
     } catch (err) {
@@ -292,26 +300,33 @@ function AdminStoresPageContent() {
       const errorMsg = err instanceof Error ? err.message : "Failed to fetch stores";
       setError(errorMsg);
       toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+      setHasMore(false); // Stop pagination on error
     } finally {
       setLoading(false);
       setLoadingMore(false);
       setIsSearching(false);
     }
-  }, [debouncedSearchTerm, lastVisible, toast]);
+  }, [toast]); // Only stable dependencies here
 
   useEffect(() => {
-    fetchStores(false, debouncedSearchTerm !== '');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearchTerm, fetchStores]);
+    fetchStores(false, debouncedSearchTerm, null); // Initial fetch, pass null for startAfterDoc
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm, fetchStores]); // fetchStores is now stable regarding lastVisible changes
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // fetchStores is already called by useEffect when debouncedSearchTerm changes
+    // This function can be kept if you want an explicit search button action in the future,
+    // but the primary trigger is the debounced search term.
+    // For now, it forces a re-fetch with the current non-debounced term if needed,
+    // or simply relies on the debounced fetch.
+    // To ensure it fetches with the latest input if user clicks search before debounce:
+    fetchStores(false, searchTermInput, null);
   };
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      fetchStores(true, debouncedSearchTerm !== '');
+      fetchStores(true, debouncedSearchTerm, lastVisible); // Pass current lastVisible state
     }
   };
 
@@ -333,14 +348,14 @@ function AdminStoresPageContent() {
       description: store.description,
       detailedDescription: store.detailedDescription || '',
       categories: store.categories || [],
-      rating: store.rating || null,
-      ratingCount: store.ratingCount || null,
-      cashbackTrackingTime: store.cashbackTrackingTime || null,
-      cashbackConfirmationTime: store.cashbackConfirmationTime || null,
-      cashbackOnAppOrders: store.cashbackOnAppOrders === undefined ? null : data.cashbackOnAppOrders,
-      detailedCashbackRatesLink: store.detailedCashbackRatesLink || null,
-      topOffersText: store.topOffersText || null,
-      offerDetailsLink: store.offerDetailsLink || null,
+      rating: store.rating ?? null,
+      ratingCount: store.ratingCount ?? null,
+      cashbackTrackingTime: store.cashbackTrackingTime ?? null,
+      cashbackConfirmationTime: store.cashbackConfirmationTime ?? null,
+      cashbackOnAppOrders: store.cashbackOnAppOrders ?? false, // Default to false if null/undefined
+      detailedCashbackRatesLink: store.detailedCashbackRatesLink ?? null,
+      topOffersText: store.topOffersText ?? null,
+      offerDetailsLink: store.offerDetailsLink ?? null,
       terms: store.terms || '',
       isFeatured: store.isFeatured,
       isActive: store.isActive,
@@ -359,8 +374,19 @@ function AdminStoresPageContent() {
     setError(null);
 
     const submissionData: Partial<StoreFormType> = Object.fromEntries(
-      Object.entries(data).map(([key, value]) => [key, value === '' || value === undefined ? null : value])
+      Object.entries(data).map(([key, value]) => {
+        // Ensure optional fields that are empty strings become null
+        if (['logoUrl', 'heroImageUrl', 'detailedDescription', 'rating', 'ratingCount', 'cashbackTrackingTime', 'cashbackConfirmationTime', 'cashbackOnAppOrders', 'detailedCashbackRatesLink', 'topOffersText', 'offerDetailsLink', 'terms', 'dataAiHint'].includes(key)) {
+          return [key, value === '' || value === undefined ? null : value];
+        }
+        return [key, value];
+      })
     );
+    // Ensure boolean fields are not set to null
+    submissionData.isFeatured = !!data.isFeatured;
+    submissionData.isActive = !!data.isActive;
+    submissionData.cashbackOnAppOrders = data.cashbackOnAppOrders === null ? null : !!data.cashbackOnAppOrders;
+
 
     try {
       if (editingStore) {
@@ -372,8 +398,7 @@ function AdminStoresPageContent() {
         setStores(prev => prev.map(s => s.id === editingStore.id ? { ...s, ...submissionData, updatedAt: new Date() } as Store : s));
         toast({ title: "Store Updated", description: `${data.name} details saved.` });
       } else {
-        // This case should ideally be handled by the /admin/stores/new page
-        // but kept here as a fallback if dialog was used for adding.
+        // This case is handled by /admin/stores/new, but kept as robust fallback
         const storesCollection = collection(db, 'stores');
         const newDocRef = await addDoc(storesCollection, {
           ...submissionData,
@@ -381,7 +406,7 @@ function AdminStoresPageContent() {
           updatedAt: serverTimestamp(),
         });
          const newStore: Store = { ...submissionData, id: newDocRef.id, createdAt: new Date(), updatedAt: new Date() } as Store;
-         setStores(prev => [newStore, ...prev]);
+         setStores(prev => [newStore, ...prev].sort((a,b) => (b.isFeatured ? 1 : -1) - (a.isFeatured ? 1 : -1) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
         toast({ title: "Store Added", description: `${data.name} created successfully.` });
       }
       setIsDialogOpen(false);
@@ -476,16 +501,16 @@ function AdminStoresPageContent() {
       <Card>
         <CardHeader>
           <CardTitle>Filter &amp; Search Stores</CardTitle>
-          <CardDescription>Search by store name.</CardDescription>
+          <CardDescription>Search by store name. Active stores are shown by default.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col sm:flex-row gap-4">
-          <form onSubmit={handleSearch} className="flex-1 flex gap-2">
+          <form onSubmit={handleSearchSubmit} className="flex-1 flex gap-2">
             <Input
               type="search"
               placeholder="Search by Store Name..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              disabled={isSearching}
+              value={searchTermInput}
+              onChange={(e) => setSearchTermInput(e.target.value)}
+              disabled={isSearching || loading}
               className="h-10 text-base"
             />
             <Button type="submit" disabled={isSearching || loading} className="h-10">
@@ -506,7 +531,7 @@ function AdminStoresPageContent() {
              <StoresTableSkeleton />
            ) : !loading && stores.length === 0 && !error ? ( // No stores found (after loading, no error)
              <p className="text-center text-muted-foreground py-8">
-                {debouncedSearchTerm ? `No stores found matching "${debouncedSearchTerm}".` : "No stores found."}
+                {debouncedSearchTerm ? `No stores found matching "${debouncedSearchTerm}". Try a different term.` : "No stores found. Add one to get started!"}
              </p>
            ) : (
              <div className="overflow-x-auto">
@@ -518,7 +543,7 @@ function AdminStoresPageContent() {
                      <TableHead>Cashback Rate</TableHead>
                      <TableHead>Categories</TableHead>
                      <TableHead>Featured</TableHead>
-                     <TableHead>Status</TableHead>
+                     <TableHead>Status (Active)</TableHead>
                      <TableHead>Actions</TableHead>
                    </TableRow>
                  </TableHeader>
@@ -527,15 +552,15 @@ function AdminStoresPageContent() {
                      <TableRow key={store.id} className={!store.isActive ? 'opacity-50 bg-muted/30' : ''}>
                        <TableCell>
                          {store.logoUrl ? (
-                           <Image src={store.logoUrl} alt={`${store.name} logo`} width={60} height={30} className="object-contain rounded-sm" data-ai-hint={`${store.name} logo`}/>
+                           <Image src={store.logoUrl} alt={`${store.name} logo`} width={60} height={30} className="object-contain rounded-sm" data-ai-hint={store.dataAiHint || `${store.name} company logo`}/>
                          ) : (
                            <div className="w-[60px] h-[30px] bg-muted flex items-center justify-center text-xs text-muted-foreground rounded-sm">No Logo</div>
                          )}
                        </TableCell>
                        <TableCell className="font-medium">{store.name}</TableCell>
                        <TableCell>{store.cashbackRate}</TableCell>
-                       <TableCell className="max-w-[200px] truncate">
-                         {store.categories.join(', ')}
+                       <TableCell className="max-w-[200px] truncate text-xs">
+                         {store.categories.join(', ') || '-'}
                        </TableCell>
                         <TableCell>
                            {store.isFeatured ? <CheckCircle className="h-5 w-5 text-green-600" /> : <XCircle className="h-5 w-5 text-muted-foreground"/>}
@@ -583,7 +608,7 @@ function AdminStoresPageContent() {
                                    <AlertDialogCancel onClick={() => setDeletingStoreId(null)}>Cancel</AlertDialogCancel>
                                    <AlertDialogAction
                                       onClick={() => {
-                                           setDeletingStoreId(store.id);
+                                           setDeletingStoreId(store.id); // Ensure this is set before calling
                                            handleDeleteStore();
                                       }}
                                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
@@ -700,6 +725,7 @@ function AdminStoresPageContent() {
                 <div className="space-y-1">
                   <Label htmlFor="detailedDescription">Detailed Description (for store page)</Label>
                   <Textarea id="detailedDescription" {...form.register('detailedDescription')} rows={5} disabled={isSaving} />
+                   {form.formState.errors.detailedDescription && <p className="text-sm text-destructive">{form.formState.errors.detailedDescription.message}</p>}
                 </div>
              </div>
 
@@ -728,20 +754,24 @@ function AdminStoresPageContent() {
                     <div className="space-y-1">
                         <Label htmlFor="rating">Rating (0-5)</Label>
                         <Input id="rating" type="number" step="0.1" {...form.register('rating', { valueAsNumber: true, setValueAs: v => v === null || v === '' ? null : parseFloat(v) })} disabled={isSaving} />
+                        {form.formState.errors.rating && <p className="text-sm text-destructive">{form.formState.errors.rating.message}</p>}
                     </div>
                     <div className="space-y-1">
                         <Label htmlFor="ratingCount">Rating Count</Label>
-                        <Input id="ratingCount" type="number" {...form.register('ratingCount', { valueAsNumber: true, setValueAs: v => v === null || v === '' ? null : parseInt(v) })} disabled={isSaving} />
+                        <Input id="ratingCount" type="number" {...form.register('ratingCount', { valueAsNumber: true, setValueAs: v => v === null || v === '' ? null : parseInt(v, 10) })} disabled={isSaving} />
+                         {form.formState.errors.ratingCount && <p className="text-sm text-destructive">{form.formState.errors.ratingCount.message}</p>}
                     </div>
                 </div>
 
                 <div className="space-y-1">
                     <Label htmlFor="cashbackTrackingTime">Cashback Tracking Time</Label>
                     <Input id="cashbackTrackingTime" {...form.register('cashbackTrackingTime')} placeholder="e.g., 36 Hours" disabled={isSaving} />
+                    {form.formState.errors.cashbackTrackingTime && <p className="text-sm text-destructive">{form.formState.errors.cashbackTrackingTime.message}</p>}
                 </div>
                 <div className="space-y-1">
                     <Label htmlFor="cashbackConfirmationTime">Cashback Confirmation Time</Label>
                     <Input id="cashbackConfirmationTime" {...form.register('cashbackConfirmationTime')} placeholder="e.g., 35 Days" disabled={isSaving} />
+                    {form.formState.errors.cashbackConfirmationTime && <p className="text-sm text-destructive">{form.formState.errors.cashbackConfirmationTime.message}</p>}
                 </div>
                 <div className="flex items-center space-x-2 pt-2">
                     <Controller
@@ -757,14 +787,17 @@ function AdminStoresPageContent() {
                 <div className="space-y-1">
                   <Label htmlFor="detailedCashbackRatesLink">Detailed Cashback Rates Link</Label>
                   <Input id="detailedCashbackRatesLink" type="url" {...form.register('detailedCashbackRatesLink')} placeholder="https://..." disabled={isSaving} />
+                  {form.formState.errors.detailedCashbackRatesLink && <p className="text-sm text-destructive">{form.formState.errors.detailedCashbackRatesLink.message}</p>}
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="topOffersText">Top Offers Text (for store page)</Label>
                   <Textarea id="topOffersText" {...form.register('topOffersText')} rows={3} disabled={isSaving} />
+                   {form.formState.errors.topOffersText && <p className="text-sm text-destructive">{form.formState.errors.topOffersText.message}</p>}
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="offerDetailsLink">"See Offer Details" Link</Label>
                   <Input id="offerDetailsLink" type="url" {...form.register('offerDetailsLink')} placeholder="https://..." disabled={isSaving} />
+                  {form.formState.errors.offerDetailsLink && <p className="text-sm text-destructive">{form.formState.errors.offerDetailsLink.message}</p>}
                 </div>
 
                 <div className="space-y-1">
@@ -775,6 +808,7 @@ function AdminStoresPageContent() {
                  <div className="space-y-1">
                     <Label htmlFor="dataAiHint">Logo AI Hint</Label>
                     <Input id="dataAiHint" {...form.register('dataAiHint')} placeholder="Keywords for logo (e.g., company name logo)" disabled={isSaving} />
+                    {form.formState.errors.dataAiHint && <p className="text-sm text-destructive">{form.formState.errors.dataAiHint.message}</p>}
                  </div>
 
                 <div className="flex items-center space-x-2 pt-2">
@@ -859,3 +893,4 @@ export default function AdminStoresPage() {
       </AdminGuard>
     );
 }
+
