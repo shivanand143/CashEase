@@ -9,7 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import Image from 'next/image';
-import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info, AlertCircle, Loader2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info, AlertCircle, Loader2, Package } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { collection, getDocs, query, where, limit, orderBy, QueryConstraint, DocumentData, getDoc, doc, Timestamp } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
@@ -21,10 +22,12 @@ import { useRouter } from 'next/navigation';
 import { safeToDate, formatCurrency } from '@/lib/utils';
 import { ProductCard } from '@/components/product-card';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { Input } from '@/components/ui/input';
-
 
 interface CouponWithStore extends Coupon {
+  store?: Store;
+}
+
+interface ProductWithStore extends Product {
   store?: Store;
 }
 
@@ -112,6 +115,57 @@ async function fetchCouponsWithStoreData(constraints: QueryConstraint[], orderFi
     return enrichedCoupons;
 }
 
+async function fetchProductsWithStoreData(constraints: QueryConstraint[], orderFields: { field: string, direction: 'asc' | 'desc' }[] = [], fetchLimit?: number): Promise<ProductWithStore[]> {
+    let products: Product[] = [];
+    let enrichedProducts: ProductWithStore[] = [];
+     if (!db || firebaseInitializationError) {
+        console.warn(`Firestore DB not initialized or error during init in fetchProductsWithStoreData. Error: ${firebaseInitializationError}`);
+        return [];
+    }
+    try {
+        products = await fetchData<Product>('products', constraints, orderFields, fetchLimit);
+        if (products.length > 0) {
+            const storeCache = new Map<string, Store>();
+            const productPromises = products.map(async (product) => {
+                if (!product.storeId) return product;
+                if (storeCache.has(product.storeId)) {
+                    return { ...product, store: storeCache.get(product.storeId)! };
+                }
+                 if (!db) {
+                  console.warn("DB not available for store fetch in fetchProductsWithStoreData");
+                  return product;
+                }
+                try {
+                    const storeDocRef = doc(db, 'stores', product.storeId);
+                    const storeSnap = await getDoc(storeDocRef);
+                    if (storeSnap.exists()) {
+                        const storeDataRaw = storeSnap.data();
+                        const storeData = {
+                             id: storeSnap.id,
+                             ...storeDataRaw,
+                             createdAt: safeToDate(storeDataRaw.createdAt as Timestamp | undefined),
+                             updatedAt: safeToDate(storeDataRaw.updatedAt as Timestamp | undefined),
+                         } as Store;
+                        storeCache.set(product.storeId, storeData);
+                        return { ...product, store: storeData };
+                    }
+                    // If store doesn't exist, still return product but store will be undefined
+                    console.warn(`Store with ID ${product.storeId} not found for product ${product.id}`);
+                    return product;
+                } catch (storeError) {
+                    console.error(`Error fetching store ${product.storeId} for product ${product.id}:`, storeError);
+                    return product;
+                }
+            });
+            enrichedProducts = await Promise.all(productPromises);
+        }
+    } catch (err) {
+        console.error("Error in fetchProductsWithStoreData:", err);
+        throw new Error("Failed to fetch products with store data");
+    }
+    return enrichedProducts;
+}
+
 
 export default function HomePage() {
   const { toast } = useToast();
@@ -119,21 +173,18 @@ export default function HomePage() {
   const [banners, setBanners] = React.useState<Banner[]>([]);
   const [featuredStores, setFeaturedStores] = React.useState<Store[]>([]);
   const [topCoupons, setTopCoupons] = React.useState<CouponWithStore[]>([]);
-  const [todaysDealStores, setTodaysDealStores] = React.useState<Store[]>([]);
   const [categories, setCategories] = React.useState<Category[]>([]);
-  const [amazonTodaysPicks, setAmazonTodaysPicks] = React.useState<Product[]>([]);
-  const [amazonStoreData, setAmazonStoreData] = React.useState<Store | null>(null);
+  const [todaysPicksProducts, setTodaysPicksProducts] = React.useState<ProductWithStore[]>([]);
+
 
   const [loadingBanners, setLoadingBanners] = React.useState(true);
   const [loadingFeaturedStores, setLoadingFeaturedStores] = React.useState(true);
   const [loadingTopCoupons, setLoadingTopCoupons] = React.useState(true);
-  const [loadingTodaysDealStores, setLoadingTodaysDealStores] = React.useState(true);
   const [loadingCategories, setLoadingCategories] = React.useState(true);
-  const [loadingTodaysPicks, setLoadingTodaysPicks] = React.useState(true);
+  const [loadingTodaysPicksProducts, setLoadingTodaysPicksProducts] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
 
-  const amazonStoreIdentifier = "amazon"; // Used to fetch Amazon's store details
 
   React.useEffect(() => {
     let isMounted = true;
@@ -141,19 +192,19 @@ export default function HomePage() {
       if (firebaseInitializationError) {
         if (isMounted) {
             setPageError(`Failed to connect to the database: ${firebaseInitializationError}`);
-            setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingTodaysDealStores(false); setLoadingCategories(false); setLoadingTodaysPicks(false);
+            setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingCategories(false); setLoadingTodaysPicksProducts(false);
         }
         return;
       }
       if (!db) {
         if(isMounted) {
             setPageError("Database not available. Please try again later.");
-            setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingTodaysDealStores(false); setLoadingCategories(false); setLoadingTodaysPicks(false);
+            setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingCategories(false); setLoadingTodaysPicksProducts(false);
         }
         return;
       }
 
-      setLoadingBanners(true); setLoadingFeaturedStores(true); setLoadingTopCoupons(true); setLoadingTodaysDealStores(true); setLoadingCategories(true); setLoadingTodaysPicks(true);
+      setLoadingBanners(true); setLoadingFeaturedStores(true); setLoadingTopCoupons(true); setLoadingCategories(true); setLoadingTodaysPicksProducts(true);
       setPageError(null);
       let combinedErrorMessages: string[] = [];
 
@@ -167,10 +218,6 @@ export default function HomePage() {
           'stores', [where('isActive', '==', true), where('isFeatured', '==', true)], [{field: 'name', direction: 'asc'}], 12
         ).catch(err => { console.error("Featured Store fetch failed:", err); combinedErrorMessages.push("featured stores"); return []; });
 
-        const todaysDealStoresFetchPromise = fetchData<Store>(
-          'stores', [where('isActive', '==', true), where('isTodaysDeal', '==', true)], [{field: 'name', direction: 'asc'}], 6
-        ).catch(err => { console.error("Today's Deal Stores fetch failed:", err); combinedErrorMessages.push("today's deal stores"); return []; });
-
         const topCouponFetchPromise = fetchCouponsWithStoreData(
           [where('isActive', '==', true), where('isFeatured', '==', true)], [{field: 'createdAt', direction: 'desc'}], 6
         ).catch(err => { console.error("Top Coupon fetch failed:", err); combinedErrorMessages.push("top coupons"); return []; });
@@ -180,60 +227,23 @@ export default function HomePage() {
              [{field: 'order', direction: 'asc'}, {field: 'name', direction: 'asc'}], 12
          ).catch(err => { console.error("Category fetch failed:", err); combinedErrorMessages.push("categories"); return []; });
 
-        const amazonStoreFetchPromise = getDoc(doc(db, 'stores', amazonStoreIdentifier))
-            .then(docSnap => {
-                if (docSnap.exists()) {
-                    const storeData = docSnap.data();
-                    return {
-                        id: docSnap.id,
-                        ...storeData,
-                        name: storeData.name || "Amazon", // Default name if not set
-                        createdAt: safeToDate(storeData.createdAt as Timestamp | undefined),
-                        updatedAt: safeToDate(storeData.updatedAt as Timestamp | undefined),
-                     } as Store;
-                }
-                console.warn(`Amazon store with ID/slug '${amazonStoreIdentifier}' not found.`);
-                return null;
-            })
-            .catch(err => { console.error("Amazon store data fetch failed:", err); combinedErrorMessages.push("amazon store details"); return null; });
+        const todaysPicksProductsFetchPromise = fetchProductsWithStoreData(
+            [where('isActive', '==', true), where('isTodaysPick', '==', true)],
+            [{ field: 'updatedAt', direction: 'desc' }], // Order by most recently updated today's pick
+            6
+        ).catch(err => { console.error("Today's Picks Products fetch failed:", err); combinedErrorMessages.push("today's picks products"); return []; });
 
-        const [bannerData, featuredStoreData, todaysDealStoresData, topCouponData, categoryData, fetchedAmazonStoreData] = await Promise.all([
-            bannerFetchPromise, featuredStoreFetchPromise, todaysDealStoresFetchPromise, topCouponFetchPromise, categoryFetchPromise, amazonStoreFetchPromise
+
+        const [bannerData, featuredStoreData, topCouponData, categoryData, todaysPicksData] = await Promise.all([
+            bannerFetchPromise, featuredStoreFetchPromise, topCouponFetchPromise, categoryFetchPromise, todaysPicksProductsFetchPromise
         ]);
 
         if (isMounted) {
           setBanners(bannerData);
           setFeaturedStores(featuredStoreData);
-          setTodaysDealStores(todaysDealStoresData);
           setTopCoupons(topCouponData);
           setCategories(categoryData);
-          setAmazonStoreData(fetchedAmazonStoreData);
-
-          if (fetchedAmazonStoreData && fetchedAmazonStoreData.id) {
-            fetchData<Product>(
-              'products',
-              [
-                where('storeId', '==', fetchedAmazonStoreData.id),
-                where('isTodaysPick', '==', true),
-                where('isActive', '==', true)
-              ],
-              [{ field: 'createdAt', direction: 'desc' }], // Example sort, adjust as needed
-              6
-            ).then(picksData => {
-              if(isMounted) setAmazonTodaysPicks(picksData);
-            }).catch(err => {
-              console.error("Today's Picks fetch failed:", err);
-              combinedErrorMessages.push("amazon today's picks");
-            }).finally(() => {
-              if(isMounted) setLoadingTodaysPicks(false);
-            });
-          } else {
-             if(isMounted) {
-                setAmazonTodaysPicks([]);
-                setLoadingTodaysPicks(false);
-                if (!fetchedAmazonStoreData && amazonStoreIdentifier) combinedErrorMessages.push("amazon store data for picks (store not found)");
-             }
-          }
+          setTodaysPicksProducts(todaysPicksData);
 
           if (combinedErrorMessages.length > 0) {
              setPageError(`Failed to load some data sections: ${combinedErrorMessages.join(', ')}.`);
@@ -246,8 +256,7 @@ export default function HomePage() {
         }
       } finally {
         if (isMounted) {
-          setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingTodaysDealStores(false); setLoadingCategories(false);
-          // setLoadingTodaysPicks is handled in its own fetch block
+          setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingCategories(false); setLoadingTodaysPicksProducts(false);
         }
       }
     };
@@ -285,7 +294,7 @@ export default function HomePage() {
     Autoplay({ delay: 4000, stopOnInteraction: true })
   );
 
-  const isPageLoading = loadingBanners || loadingFeaturedStores || loadingTopCoupons || loadingTodaysDealStores || loadingCategories || loadingTodaysPicks;
+  const isPageLoading = loadingBanners || loadingFeaturedStores || loadingTopCoupons || loadingCategories || loadingTodaysPicksProducts;
 
   return (
     <div className="container mx-auto px-4 py-8 space-y-12 md:space-y-16 lg:space-y-20">
@@ -303,7 +312,7 @@ export default function HomePage() {
                        <Search className="ml-2 h-5 w-5 text-muted-foreground hidden sm:block" />
                        <Input
                          type="search"
-                         name="search" // Add name attribute
+                         name="search"
                          placeholder="Search for stores, brands or products..."
                          className="flex-grow h-12 text-base border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none pl-2 sm:pl-0"
                          aria-label="Search stores and offers"
@@ -425,74 +434,34 @@ export default function HomePage() {
          </Button>
       </section>
 
-      <section>
+       <section>
          <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
             <h2 className="text-3xl font-bold flex items-center gap-2">
-                {amazonStoreData?.name ? (
-                    <span className="font-semibold text-primary">{amazonStoreData.name}</span>
-                ) : loadingTodaysPicks || loadingFeaturedStores ? (
-                    <Skeleton className="h-8 w-32" />
-                ) : (
-                    <span className="font-semibold text-primary">Amazon</span>
-                )}
-                 Today's Picks
+                <Package className="text-primary w-7 h-7"/> Today's Picks
             </h2>
-            {amazonStoreData?.id ? (
-                <Button variant="outline" size="sm" asChild>
-                    <Link href={`/stores/${amazonStoreData.id}/products`} className="flex items-center gap-1">
-                        View All Products <ArrowRight className="w-4 h-4" />
-                    </Link>
-                </Button>
-            ) : amazonStoreData?.affiliateLink && !(loadingTodaysPicks || loadingFeaturedStores) ? (
-                <Button variant="outline" size="sm" asChild>
-                    <a href={amazonStoreData.affiliateLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1">
-                        Shop on {amazonStoreData.name || 'Store'} <ExternalLink className="w-4 h-4" />
-                    </a>
-                </Button>
-            ) : (loadingTodaysPicks || loadingFeaturedStores) ? (
-                 <Skeleton className="h-9 w-36" />
-            ) : null }
+            {/* Optional: Add a "View All Products" or "View All Deals" link here if you have such a page */}
+            {/* <Button variant="outline" size="sm" asChild>
+                <Link href="/deals" className="flex items-center gap-1">
+                    View All Deals <ArrowRight className="w-4 h-4" />
+                </Link>
+            </Button> */}
          </div>
-          {loadingTodaysPicks ? (
+          {loadingTodaysPicksProducts ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
                   {Array.from({ length: 6 }).map((_, index) => (
                       <Skeleton key={`todayspick-skel-page-${index}`} className="h-64 rounded-lg" />
                   ))}
               </div>
-          ) : amazonTodaysPicks.length > 0 ? (
+          ) : todaysPicksProducts.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-                  {amazonTodaysPicks.map((product) => (
-                      <ProductCard key={product.id} product={product} storeContext={amazonStoreData || undefined} />
+                  {todaysPicksProducts.map((product) => (
+                      <ProductCard key={product.id} product={product} storeContext={product.store} />
                   ))}
               </div>
           ) : !pageError ? (
-              <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No Today's Picks available from {amazonStoreData?.name || 'this store'} right now.</p>
+              <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No products marked as "Today's Picks" right now. Check back soon!</p>
           ) : null}
        </section>
-
-      {/* Only render "Today's Deal Stores" if not loading and there are stores */}
-      {!loadingTodaysDealStores && todaysDealStores.length > 0 && (
-         <section>
-             <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-                 <h2 className="text-3xl font-bold flex items-center gap-2">
-                   <Zap className="text-primary w-7 h-7" /> Today's Deal Stores
-                 </h2>
-             </div>
-             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-               {todaysDealStores.map((store) => ( <StoreCard key={store.id} store={store} /> ))}
-             </div>
-         </section>
-      )}
-      {loadingTodaysDealStores && (
-        <section>
-          <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-            <Skeleton className="h-9 w-1/2" />
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-            {Array.from({ length: 6 }).map((_, index) => ( <Skeleton key={`deal-store-skel-${index}`} className="h-48 rounded-lg" /> ))}
-          </div>
-        </section>
-      )}
 
 
         <section>
@@ -600,7 +569,7 @@ export default function HomePage() {
                        Check out our curated list of hot deals, bank offers, and limited-time promotions updated daily.
                    </p>
                    <Button asChild size="sm" className="bg-amber-600 hover:bg-amber-700 text-white">
-                       <Link href="/deals">Explore Hot Deals</Link>
+                       <Link href="/coupons">Explore All Deals</Link>
                    </Button>
                </CardContent>
            </Card>
@@ -621,4 +590,3 @@ export default function HomePage() {
     </div>
   );
 }
-
