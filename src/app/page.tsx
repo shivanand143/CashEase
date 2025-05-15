@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import Image from 'next/image';
-import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info, AlertCircle, Loader2 } from 'lucide-react'; // Removed Star as it's not directly used here
+import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info, AlertCircle, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { collection, getDocs, query, where, limit, orderBy, QueryConstraint, DocumentData, getDoc, doc, Timestamp } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
@@ -21,6 +21,7 @@ import { useRouter } from 'next/navigation';
 import { safeToDate, formatCurrency } from '@/lib/utils';
 import { ProductCard } from '@/components/product-card';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
 
 
 interface CouponWithStore extends Coupon {
@@ -429,10 +430,9 @@ export default function HomePage() {
             <h2 className="text-3xl font-bold flex items-center gap-2">
                 {amazonStoreData?.name ? (
                     <span className="font-semibold text-primary">{amazonStoreData.name}</span>
-                ) : loadingTodaysPicks || loadingFeaturedStores ? ( // Check both as amazonStoreData depends on featuredStores in this logic
+                ) : loadingTodaysPicks || loadingFeaturedStores ? (
                     <Skeleton className="h-8 w-32" />
                 ) : (
-                     // Fallback if store data not loaded but picks might be, though unlikely without store data
                     <span className="font-semibold text-primary">Amazon</span>
                 )}
                  Today's Picks
@@ -443,7 +443,7 @@ export default function HomePage() {
                         View All Products <ArrowRight className="w-4 h-4" />
                     </Link>
                 </Button>
-            ) : amazonStoreData?.affiliateLink && !(loadingTodaysPicks || loadingFeaturedStores) ? ( // Only show if not loading
+            ) : amazonStoreData?.affiliateLink && !(loadingTodaysPicks || loadingFeaturedStores) ? (
                 <Button variant="outline" size="sm" asChild>
                     <a href={amazonStoreData.affiliateLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1">
                         Shop on {amazonStoreData.name || 'Store'} <ExternalLink className="w-4 h-4" />
@@ -465,7 +465,7 @@ export default function HomePage() {
                       <ProductCard key={product.id} product={product} storeContext={amazonStoreData || undefined} />
                   ))}
               </div>
-          ) : !pageError ? ( // Only show "no picks" if there wasn't a broader page error
+          ) : !pageError ? (
               <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No Today's Picks available from {amazonStoreData?.name || 'this store'} right now.</p>
           ) : null}
        </section>
@@ -483,7 +483,6 @@ export default function HomePage() {
              </div>
          </section>
       )}
-      {/* If loading, you can show a skeleton for the "Today's Deal Stores" section, or omit it until loaded */}
       {loadingTodaysDealStores && (
         <section>
           <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
