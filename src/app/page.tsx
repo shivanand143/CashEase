@@ -6,11 +6,10 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import Image from 'next/image';
-import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info, AlertCircle, Loader2, Star } from 'lucide-react';
+import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info, AlertCircle, Loader2 } from 'lucide-react'; // Removed Star as it's not directly used here
 import { useToast } from '@/hooks/use-toast';
 import { collection, getDocs, query, where, limit, orderBy, QueryConstraint, DocumentData, getDoc, doc, Timestamp } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
@@ -48,9 +47,9 @@ async function fetchData<T>(collectionName: string, constraints: QueryConstraint
             const docData = docSnap.data();
             const convertedData = Object.keys(docData).reduce((acc, key) => {
                 if (docData[key] instanceof Timestamp) {
-                    acc[key] = safeToDate(docData[key]);
+                    (acc as any)[key] = safeToDate(docData[key]);
                 } else {
-                    acc[key] = docData[key];
+                    (acc as any)[key] = docData[key];
                 }
                 return acc;
             }, {} as any);
@@ -133,6 +132,8 @@ export default function HomePage() {
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
 
+  const amazonStoreIdentifier = "amazon"; // Used to fetch Amazon's store details
+
   React.useEffect(() => {
     let isMounted = true;
     const loadAllData = async () => {
@@ -155,7 +156,6 @@ export default function HomePage() {
       setPageError(null);
       let combinedErrorMessages: string[] = [];
 
-      const amazonStoreIdentifier = "amazon";
 
       try {
         const bannerFetchPromise = fetchData<Banner>(
@@ -186,7 +186,7 @@ export default function HomePage() {
                     return {
                         id: docSnap.id,
                         ...storeData,
-                        name: storeData.name || "Amazon",
+                        name: storeData.name || "Amazon", // Default name if not set
                         createdAt: safeToDate(storeData.createdAt as Timestamp | undefined),
                         updatedAt: safeToDate(storeData.updatedAt as Timestamp | undefined),
                      } as Store;
@@ -216,7 +216,7 @@ export default function HomePage() {
                 where('isTodaysPick', '==', true),
                 where('isActive', '==', true)
               ],
-              [{ field: 'createdAt', direction: 'desc' }],
+              [{ field: 'createdAt', direction: 'desc' }], // Example sort, adjust as needed
               6
             ).then(picksData => {
               if(isMounted) setAmazonTodaysPicks(picksData);
@@ -230,7 +230,7 @@ export default function HomePage() {
              if(isMounted) {
                 setAmazonTodaysPicks([]);
                 setLoadingTodaysPicks(false);
-                if (!fetchedAmazonStoreData) combinedErrorMessages.push("amazon store data for picks");
+                if (!fetchedAmazonStoreData && amazonStoreIdentifier) combinedErrorMessages.push("amazon store data for picks (store not found)");
              }
           }
 
@@ -246,7 +246,7 @@ export default function HomePage() {
       } finally {
         if (isMounted) {
           setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingTodaysDealStores(false); setLoadingCategories(false);
-          // setLoadingTodaysPicks is handled in its own fetch
+          // setLoadingTodaysPicks is handled in its own fetch block
         }
       }
     };
@@ -302,7 +302,7 @@ export default function HomePage() {
                        <Search className="ml-2 h-5 w-5 text-muted-foreground hidden sm:block" />
                        <Input
                          type="search"
-                         name="search"
+                         name="search" // Add name attribute
                          placeholder="Search for stores, brands or products..."
                          className="flex-grow h-12 text-base border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none pl-2 sm:pl-0"
                          aria-label="Search stores and offers"
@@ -429,9 +429,10 @@ export default function HomePage() {
             <h2 className="text-3xl font-bold flex items-center gap-2">
                 {amazonStoreData?.name ? (
                     <span className="font-semibold text-primary">{amazonStoreData.name}</span>
-                ) : loadingTodaysPicks || loadingFeaturedStores ? (
+                ) : loadingTodaysPicks || loadingFeaturedStores ? ( // Check both as amazonStoreData depends on featuredStores in this logic
                     <Skeleton className="h-8 w-32" />
                 ) : (
+                     // Fallback if store data not loaded but picks might be, though unlikely without store data
                     <span className="font-semibold text-primary">Amazon</span>
                 )}
                  Today's Picks
@@ -442,13 +443,13 @@ export default function HomePage() {
                         View All Products <ArrowRight className="w-4 h-4" />
                     </Link>
                 </Button>
-            ) : amazonStoreData?.affiliateLink ? (
+            ) : amazonStoreData?.affiliateLink && !(loadingTodaysPicks || loadingFeaturedStores) ? ( // Only show if not loading
                 <Button variant="outline" size="sm" asChild>
                     <a href={amazonStoreData.affiliateLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1">
                         Shop on {amazonStoreData.name || 'Store'} <ExternalLink className="w-4 h-4" />
                     </a>
                 </Button>
-            ) : loadingTodaysPicks || loadingFeaturedStores ? (
+            ) : (loadingTodaysPicks || loadingFeaturedStores) ? (
                  <Skeleton className="h-9 w-36" />
             ) : null }
          </div>
@@ -464,31 +465,36 @@ export default function HomePage() {
                       <ProductCard key={product.id} product={product} storeContext={amazonStoreData || undefined} />
                   ))}
               </div>
-          ) : !pageError ? (
+          ) : !pageError ? ( // Only show "no picks" if there wasn't a broader page error
               <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No Today's Picks available from {amazonStoreData?.name || 'this store'} right now.</p>
           ) : null}
        </section>
 
-       <section>
-           <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-               <h2 className="text-3xl font-bold flex items-center gap-2">
-                 <Zap className="text-primary w-7 h-7" /> Today's Deal Stores
-               </h2>
-               {/* Optional: Link to a dedicated "Today's Deals" page if you create one */}
-               {/* <Button variant="outline" size="sm" asChild><Link href="/deals/today">View All Today's Deals <ArrowRight className="w-4 h-4" /></Link></Button> */}
-           </div>
-           {loadingTodaysDealStores ? (
-               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-                 {Array.from({ length: 6 }).map((_, index) => ( <Skeleton key={`todays-deal-store-skel-${index}`} className="h-48 rounded-lg" /> ))}
-               </div>
-           ) : todaysDealStores.length > 0 ? (
-               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-                 {todaysDealStores.map((store) => ( <StoreCard key={store.id} store={store} /> ))}
-               </div>
-           ) : !pageError ? (
-               <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No special "Today's Deal" stores featured right now. Check back soon!</p>
-           ) : null}
-       </section>
+      {/* Only render "Today's Deal Stores" if not loading and there are stores */}
+      {!loadingTodaysDealStores && todaysDealStores.length > 0 && (
+         <section>
+             <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+                 <h2 className="text-3xl font-bold flex items-center gap-2">
+                   <Zap className="text-primary w-7 h-7" /> Today's Deal Stores
+                 </h2>
+             </div>
+             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
+               {todaysDealStores.map((store) => ( <StoreCard key={store.id} store={store} /> ))}
+             </div>
+         </section>
+      )}
+      {/* If loading, you can show a skeleton for the "Today's Deal Stores" section, or omit it until loaded */}
+      {loadingTodaysDealStores && (
+        <section>
+          <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+            <Skeleton className="h-9 w-1/2" />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
+            {Array.from({ length: 6 }).map((_, index) => ( <Skeleton key={`deal-store-skel-${index}`} className="h-48 rounded-lg" /> ))}
+          </div>
+        </section>
+      )}
+
 
         <section>
            <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
@@ -616,3 +622,4 @@ export default function HomePage() {
     </div>
   );
 }
+
