@@ -54,16 +54,18 @@ function AdminClicksPageContent() {
   const [searchTermInput, setSearchTermInput] = useState('');
   const debouncedSearchTerm = useDebounce(searchTermInput, 500);
   const [isSearching, setIsSearching] = useState(false);
-  const [filterType, setFilterType] = useState<'all' | 'storeId' | 'productId' | 'couponId' | 'userId'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'storeId' | 'productId' | 'couponId' | 'userId' | 'clickId'>('all');
 
 
   const fetchClicks = useCallback(async (
     isLoadMoreOperation = false,
-    currentSearchTerm = debouncedSearchTerm,
-    currentFilterType = filterType,
+    currentSearchTermVal = debouncedSearchTerm,
+    currentFilterTypeVal = filterType,
     docToStartAfter = lastVisible
   ) => {
     let isMounted = true;
+    console.log("Admin/Clicks: fetchClicks called. LoadMore:", isLoadMoreOperation, "SearchTerm:", currentSearchTermVal, "FilterType:", currentFilterTypeVal);
+
     if (!db || firebaseInitializationError) {
         if(isMounted) {
             setPageError(firebaseInitializationError || "Database connection not available.");
@@ -74,39 +76,51 @@ function AdminClicksPageContent() {
     }
 
     if (!isLoadMoreOperation) {
+      console.log("Admin/Clicks: Initial fetch, resetting states.");
       setLoading(true);
       setClicks([]);
       setLastVisible(null);
       setHasMore(true);
     } else {
-      if (!docToStartAfter) {
+      if (!docToStartAfter && isLoadMoreOperation) { // Check docToStartAfter specifically for loadMore
+        console.log("Admin/Clicks: Load more called but no cursor, aborting.");
         if(isMounted) setLoadingMore(false);
         return () => { isMounted = false; };
       }
+      console.log("Admin/Clicks: Loading more clicks.");
       setLoadingMore(true);
     }
     if(!isLoadMoreOperation) setPageError(null);
-    setIsSearching(currentSearchTerm !== '' || currentFilterType !== 'all');
+    setIsSearching(currentSearchTermVal !== '' || currentFilterTypeVal !== 'all');
 
     try {
       const clicksCollection = collection(db, 'clicks');
       const constraints: QueryConstraint[] = [];
 
-      if (currentSearchTerm) {
-        if (currentFilterType === 'userId' || currentFilterType === 'all') { // Default search to userId if 'all'
-            constraints.push(where('userId', '==', currentSearchTerm));
-        } else if (currentFilterType === 'storeId') {
-            constraints.push(where('storeId', '==', currentSearchTerm));
-        } else if (currentFilterType === 'productId') {
-            constraints.push(where('productId', '==', currentSearchTerm));
-        } else if (currentFilterType === 'couponId') {
-            constraints.push(where('couponId', '==', currentSearchTerm));
+      // Apply filters based on filterType and searchTerm
+      if (currentSearchTermVal) {
+        const term = currentSearchTermVal.trim();
+        if (term) { // Only apply where clause if term is not empty
+            switch(currentFilterTypeVal) {
+                case 'userId': constraints.push(where('userId', '==', term)); break;
+                case 'storeId': constraints.push(where('storeId', '==', term)); break;
+                case 'productId': constraints.push(where('productId', '==', term)); break;
+                case 'couponId': constraints.push(where('couponId', '==', term)); break;
+                case 'clickId': constraints.push(where('clickId', '==', term)); break;
+                case 'all': // 'all' implies searching by userId if a term is provided, or no filter if no term.
+                    constraints.push(where('userId', '==', term));
+                    break;
+                default:
+                    console.warn("Admin/Clicks: Unknown filter type for search:", currentFilterTypeVal);
+            }
         }
-      }
-      
-      // Add a general filter if no search term but a specific type is selected (other than userId)
-      if (!currentSearchTerm && currentFilterType !== 'all' && currentFilterType !== 'userId') {
-          constraints.push(where(currentFilterType, '!=', null)); // e.g., where('productId', '!=', null)
+      } else if (currentFilterTypeVal !== 'all') {
+        // If no search term, but a specific filter is selected (other than 'all'),
+        // this implies listing all clicks of that type, which might be too broad.
+        // For now, we require a search term for specific ID types.
+        // Or, adjust to show recent clicks of a type if that's desired.
+        // Example: constraints.push(where(currentFilterTypeVal, '!=', null)); // but this needs an orderBy
+        console.log("Admin/Clicks: Filter type selected without search term. Defaulting to all recent clicks.");
       }
 
 
@@ -117,12 +131,14 @@ function AdminClicksPageContent() {
       constraints.push(limit(CLICKS_PER_PAGE));
 
       const q = query(clicksCollection, ...constraints);
+      console.log("Admin/Clicks: Executing query with constraints:", constraints);
       const querySnapshot = await getDocs(q);
+      console.log("Admin/Clicks: Query returned", querySnapshot.size, "documents.");
 
       const clicksData = querySnapshot.docs.map(docSnap => {
         const data = docSnap.data();
         return {
-          id: docSnap.id, // This is the clickId used as document ID
+          id: docSnap.id,
           ...data,
           timestamp: safeToDate(data.timestamp) || new Date(0),
         } as Click;
@@ -130,12 +146,14 @@ function AdminClicksPageContent() {
       
       if(isMounted) {
         setClicks(prev => isLoadMoreOperation ? [...prev, ...clicksData] : clicksData);
-        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+        const newLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
+        setLastVisible(newLastVisible);
         setHasMore(querySnapshot.docs.length === CLICKS_PER_PAGE);
+        console.log("Admin/Clicks: Clicks state updated. HasMore:", querySnapshot.docs.length === CLICKS_PER_PAGE);
       }
 
     } catch (err) {
-      console.error("Error fetching clicks:", err);
+      console.error("Admin/Clicks: Error fetching clicks:", err);
       if(isMounted) {
         const errorMsg = err instanceof Error ? err.message : "Failed to load click history.";
         setPageError(errorMsg);
@@ -146,6 +164,7 @@ function AdminClicksPageContent() {
       if(isMounted) {
         if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
         setIsSearching(false);
+        console.log("Admin/Clicks: Fetch operation finished.");
       }
     }
     return () => { isMounted = false; };
@@ -153,21 +172,34 @@ function AdminClicksPageContent() {
 
   useEffect(() => {
     fetchClicks(false);
-  }, [fetchClicks]);
+  }, [fetchClicks]); // debouncedSearchTerm and filterType are dependencies of fetchClicks
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     // Fetch is triggered by debouncedSearchTerm or filterType change via useEffect
+    // No need to call fetchClicks explicitly here if it's in useEffect deps
   };
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore && lastVisible) {
-      fetchClicks(true);
+      fetchClicks(true, debouncedSearchTerm, filterType, lastVisible);
     }
   };
 
   if (loading && clicks.length === 0 && !pageError) {
     return <ClicksTableSkeleton />;
+  }
+
+  const getPlaceholderText = () => {
+    switch (filterType) {
+        case 'userId': return 'Search by User ID...';
+        case 'storeId': return 'Search by Store ID...';
+        case 'productId': return 'Search by Product ID...';
+        case 'couponId': return 'Search by Coupon ID...';
+        case 'clickId': return 'Search by Click ID...';
+        case 'all':
+        default: return 'Search by User ID (default for all)...';
+    }
   }
 
   return (
@@ -185,7 +217,7 @@ function AdminClicksPageContent() {
       <Card>
         <CardHeader>
           <CardTitle>Filter & Search Clicks</CardTitle>
-          <CardDescription>Search by ID based on the selected filter type.</CardDescription>
+          <CardDescription>Search by ID based on the selected filter type. Search requires an exact ID.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
@@ -202,13 +234,14 @@ function AdminClicksPageContent() {
                   <SelectItem value="storeId">Store ID</SelectItem>
                   <SelectItem value="productId">Product ID</SelectItem>
                   <SelectItem value="couponId">Coupon ID</SelectItem>
+                  <SelectItem value="clickId">Click ID</SelectItem>
                 </SelectContent>
               </Select>
           </div>
           <form onSubmit={handleSearch} className="flex-1 flex gap-2">
             <Input
               type="search"
-              placeholder={`Search by ${filterType === 'all' ? 'User ID' : filterType.replace('Id', ' ID')}...`}
+              placeholder={getPlaceholderText()}
               value={searchTermInput}
               onChange={(e) => setSearchTermInput(e.target.value)}
               disabled={isSearching || loading}
@@ -227,7 +260,7 @@ function AdminClicksPageContent() {
           <CardDescription>List of all recorded user clicks on affiliate links.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading && clicks.length === 0 ? (
+          {loading && clicks.length === 0 && !pageError ? ( // Show skeleton if initial loading and no clicks yet
             <ClicksTableSkeleton />
           ) : !loading && clicks.length === 0 && !pageError ? (
             <p className="text-center text-muted-foreground py-8">
@@ -262,7 +295,7 @@ function AdminClicksPageContent() {
                           {click.affiliateLink} <ExternalLink className="h-3 w-3 inline-block ml-1" />
                         </a>
                       </TableCell>
-                      <TableCell className="font-mono text-xs truncate max-w-[100px] text-right">{click.id}</TableCell>
+                      <TableCell className="font-mono text-xs truncate max-w-[100px] text-right">{click.clickId}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

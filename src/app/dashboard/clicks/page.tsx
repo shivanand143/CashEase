@@ -49,9 +49,12 @@ function ClickHistoryContent() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const fetchClicks = useCallback(async (isLoadMoreOperation = false, docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = lastVisible) => {
+  const fetchClicks = useCallback(async (isLoadMoreOperation = false, docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null) => {
     let isMounted = true;
+    console.log("Dashboard/Clicks: fetchClicks called. isLoadMore:", isLoadMoreOperation, "User:", user?.uid);
+
     if (!user) {
+      console.log("Dashboard/Clicks: No user, aborting fetch.");
       if(isMounted) {
         if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
       }
@@ -59,6 +62,7 @@ function ClickHistoryContent() {
     }
 
     if (firebaseInitializationError || !db) {
+      console.error("Dashboard/Clicks: Firebase not initialized or DB error.");
       if (isMounted) {
         setPageError(firebaseInitializationError || "Database not available.");
         if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
@@ -68,15 +72,18 @@ function ClickHistoryContent() {
     }
 
     if (!isLoadMoreOperation) {
+      console.log("Dashboard/Clicks: Initial fetch, resetting states.");
       setLoading(true);
-      setClicks([]); // Clear previous results for a fresh fetch
+      setClicks([]);
       setLastVisible(null);
-      setHasMore(true); // Reset hasMore
+      setHasMore(true);
     } else {
-      if (!docToStartAfter) { // Don't load more if there's no cursor
+      if (!docToStartAfter) {
+        console.log("Dashboard/Clicks: Load more called but no cursor, aborting.");
         if(isMounted) setLoadingMore(false);
         return () => { isMounted = false; };
       }
+      console.log("Dashboard/Clicks: Loading more clicks.");
       setLoadingMore(true);
     }
     if (!isLoadMoreOperation) setPageError(null);
@@ -95,24 +102,29 @@ function ClickHistoryContent() {
       }
 
       const q = query(clicksCollection, ...constraints);
+      console.log("Dashboard/Clicks: Executing query for user:", user.uid);
       const querySnapshot = await getDocs(q);
+      console.log("Dashboard/Clicks: Query returned", querySnapshot.size, "documents.");
 
       const clicksData = querySnapshot.docs.map(docSnap => {
         const data = docSnap.data();
         return {
-          id: docSnap.id, // This is the clickId used as document ID
+          id: docSnap.id,
           ...data,
           timestamp: safeToDate(data.timestamp) || new Date(0),
         } as Click;
       });
+
       if(isMounted) {
         setClicks(prev => isLoadMoreOperation ? [...prev, ...clicksData] : clicksData);
-        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+        const newLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
+        setLastVisible(newLastVisible);
         setHasMore(querySnapshot.docs.length === CLICKS_PER_PAGE);
+        console.log("Dashboard/Clicks: Clicks state updated. HasMore:", querySnapshot.docs.length === CLICKS_PER_PAGE);
       }
 
     } catch (err) {
-      console.error("Error fetching clicks:", err);
+      console.error("Dashboard/Clicks: Error fetching clicks:", err);
       if(isMounted) {
         const errorMsg = err instanceof Error ? err.message : "Failed to load click history.";
         setPageError(errorMsg);
@@ -121,14 +133,15 @@ function ClickHistoryContent() {
     } finally {
       if(isMounted) {
         if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+        console.log("Dashboard/Clicks: Fetch operation finished. Loading state:", !isLoadMoreOperation ? false : loading, "LoadingMore state:", isLoadMoreOperation ? false : loadingMore);
       }
     }
     return () => { isMounted = false; };
-  }, [user, lastVisible]); // Include lastVisible
+  }, [user]);
 
    useEffect(() => {
     if (user && !authLoading) {
-      fetchClicks(false, null); // Initial fetch
+      fetchClicks(false, null);
     } else if (!authLoading && !user) {
       router.push('/login');
     }
@@ -144,7 +157,7 @@ function ClickHistoryContent() {
     return <ClickHistoryTableSkeleton />;
   }
 
-  if (!user && !authLoading) { // Should be caught by ProtectedRoute, but defensive
+  if (!user && !authLoading) {
     return (
         <Alert variant="destructive" className="max-w-md mx-auto">
             <AlertCircle className="h-4 w-4" />
@@ -174,14 +187,14 @@ function ClickHistoryContent() {
       <Card>
         <CardHeader>
           <CardTitle>Your Recent Clicks</CardTitle>
-          <CardDescription>View the stores and offers you recently clicked on.</CardDescription>
+          <CardDescription>View the stores and offers you recently clicked on. Clicks are retained for 90 days.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading && clicks.length === 0 ? (
+          {loading && clicks.length === 0 ? ( // Show skeleton if initial loading and no clicks yet
             <ClickHistoryTableSkeleton />
           ) : !loading && clicks.length === 0 && !pageError ? (
             <div className="text-center py-16 text-muted-foreground">
-              <p className="mb-4">You haven't clicked on any offers yet.</p>
+              <p className="mb-4">You haven't clicked on any offers yet, or your clicks are older than 90 days.</p>
               <Button asChild>
                 <Link href="/stores">Browse Stores & Offers</Link>
               </Button>
@@ -215,7 +228,7 @@ function ClickHistoryContent() {
                               </a>
                           </Button>
                       </TableCell>
-                      <TableCell className="font-mono text-xs truncate max-w-[100px] text-right">{click.id}</TableCell>
+                      <TableCell className="font-mono text-xs truncate max-w-[100px] text-right">{click.clickId}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
