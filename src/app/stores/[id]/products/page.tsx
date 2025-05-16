@@ -3,7 +3,7 @@
 
 import * as React from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { collection, query, where, orderBy, limit, getDocs, doc, getDoc, startAfter, QueryDocumentSnapshot, DocumentData, Timestamp } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, doc, getDoc, startAfter, QueryDocumentSnapshot, DocumentData, Timestamp, QueryConstraint } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { Store, Product } from '@/lib/types';
 import Link from 'next/link';
@@ -27,72 +27,104 @@ export default function StoreProductsPage() {
   const [store, setStore] = React.useState<Store | null>(null);
   const [products, setProducts] = React.useState<Product[]>([]);
   const [loadingStore, setLoadingStore] = React.useState(true);
-  const [loadingProducts, setLoadingProducts] = React.useState(true);
+  const [loadingProducts, setLoadingProducts] = React.useState(true); // For initial products load
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [lastVisibleProduct, setLastVisibleProduct] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMoreProducts, setHasMoreProducts] = React.useState(true);
-  const [loadingMoreProducts, setLoadingMoreProducts] = React.useState(false);
+  const [loadingMoreProducts, setLoadingMoreProducts] = React.useState(false); // For "load more" specifically
 
   const fetchStoreDetails = React.useCallback(async () => {
-    setLoadingStore(true);
-    if (!db || firebaseInitializationError) {
-      setPageError(firebaseInitializationError || "Database not available.");
-      setLoadingStore(false);
-      return;
+    let isMounted = true;
+    if (!storeId) {
+      if (isMounted) {
+        setPageError("Invalid store identifier.");
+        setLoadingStore(false);
+      }
+      return () => { isMounted = false; };
     }
+
+    setLoadingStore(true);
+    setPageError(null);
+
+    if (!db || firebaseInitializationError) {
+      if (isMounted) {
+        setPageError(firebaseInitializationError || "Database not available.");
+        setLoadingStore(false);
+      }
+      return () => { isMounted = false; };
+    }
+
     try {
       const storeDocRef = doc(db, 'stores', storeId);
       const storeSnap = await getDoc(storeDocRef);
-      if (storeSnap.exists()) {
+      if (storeSnap.exists() && storeSnap.data()?.isActive) {
         const storeData = storeSnap.data();
-        setStore({
-          id: storeSnap.id,
-          ...storeData,
-          createdAt: safeToDate(storeData.createdAt as Timestamp | undefined),
-          updatedAt: safeToDate(storeData.updatedAt as Timestamp | undefined),
-        } as Store);
+        if (isMounted) {
+          setStore({
+            id: storeSnap.id,
+            ...storeData,
+            createdAt: safeToDate(storeData.createdAt as Timestamp | undefined),
+            updatedAt: safeToDate(storeData.updatedAt as Timestamp | undefined),
+          } as Store);
+        }
       } else {
         throw new Error("Store not found or is not active.");
       }
     } catch (err) {
       console.error("Error fetching store details:", err);
-      setPageError(err instanceof Error ? err.message : "Failed to load store details.");
+      if (isMounted) setPageError(err instanceof Error ? err.message : "Failed to load store details.");
     } finally {
-      setLoadingStore(false);
+      if (isMounted) setLoadingStore(false);
     }
+    return () => { isMounted = false; };
   }, [storeId]);
 
-  const fetchStoreProducts = React.useCallback(async (loadMore = false) => {
-    if (!storeId || !db || firebaseInitializationError) {
-      if (!loadMore) setLoadingProducts(false); else setLoadingMoreProducts(false);
-      if (firebaseInitializationError) setPageError(firebaseInitializationError);
-      else if (!db) setPageError("Database not available for fetching products.");
-      return;
+  const fetchStoreProducts = React.useCallback(async (
+    currentStoreId: string,
+    loadMoreOperation: boolean,
+    docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
+  ) => {
+    let isMounted = true;
+    if (!currentStoreId) {
+      if(isMounted) {
+          if (!loadMoreOperation) setLoadingProducts(false); else setLoadingMoreProducts(false);
+      }
+      return () => { isMounted = false; };
     }
 
-    if (!loadMore) {
-      setLoadingProducts(true);
+    if (!db || firebaseInitializationError) {
+      if (isMounted) {
+        setPageError(firebaseInitializationError || "Database not available for fetching products.");
+        if (!loadMoreOperation) setLoadingProducts(false); else setLoadingMoreProducts(false);
+        setHasMoreProducts(false);
+      }
+      return () => { isMounted = false; };
+    }
+
+    if (!loadMoreOperation) {
+      setLoadingProducts(true); // Only set main loading for initial fetch
       setProducts([]);
       setLastVisibleProduct(null);
       setHasMoreProducts(true);
     } else {
       setLoadingMoreProducts(true);
     }
-    setPageError(null);
+    if(!loadMoreOperation) setPageError(null);
+
 
     try {
       const productsCollection = collection(db, 'products');
       const constraints: QueryConstraint[] = [
-        where('storeId', '==', storeId),
+        where('storeId', '==', currentStoreId),
         where('isActive', '==', true),
         orderBy('isFeatured', 'desc'),
         orderBy('name', 'asc'),
-        limit(PRODUCTS_PER_PAGE)
       ];
 
-      if (loadMore && lastVisibleProduct) {
-        constraints.splice(constraints.length -1, 0, startAfter(lastVisibleProduct)); // Insert startAfter before limit
+      if (loadMoreOperation && docToStartAfter) {
+        constraints.push(startAfter(docToStartAfter));
       }
+      constraints.push(limit(PRODUCTS_PER_PAGE));
       
       const q = query(productsCollection, ...constraints);
       const productSnap = await getDocs(q);
@@ -104,29 +136,41 @@ export default function StoreProductsPage() {
         updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined),
       } as Product));
       
-      setProducts(prev => loadMore ? [...prev, ...fetchedProducts] : fetchedProducts);
-      setLastVisibleProduct(productSnap.docs[productSnap.docs.length - 1] || null);
-      setHasMoreProducts(fetchedProducts.length === PRODUCTS_PER_PAGE);
+      if (isMounted) {
+          setProducts(prev => loadMoreOperation ? [...prev, ...fetchedProducts] : fetchedProducts);
+          setLastVisibleProduct(productSnap.docs[productSnap.docs.length - 1] || null);
+          setHasMoreProducts(fetchedProducts.length === PRODUCTS_PER_PAGE);
+      }
 
     } catch (err) {
-      console.error(`Error fetching products for store ${storeId}:`, err);
-      setPageError(err instanceof Error ? err.message : "Failed to load products.");
+      console.error(`Error fetching products for store ${currentStoreId}:`, err);
+      if (isMounted) {
+          setPageError(err instanceof Error ? err.message : "Failed to load products.");
+          setHasMoreProducts(false);
+      }
     } finally {
-      if (!loadMore) setLoadingProducts(false); else setLoadingMoreProducts(false);
+      if (isMounted) {
+        if (!loadMoreOperation) setLoadingProducts(false); else setLoadingMoreProducts(false);
+      }
     }
-  }, [storeId, lastVisibleProduct]);
+    return () => { isMounted = false; };
+  }, [toast]); // Removed lastVisibleProduct from here
 
 
   React.useEffect(() => {
+    let isMounted = true;
     if (storeId) {
-      fetchStoreDetails();
-      fetchStoreProducts(false);
+      fetchStoreDetails(); // This seems fine
+      fetchStoreProducts(storeId, false, null); // Initial product fetch
     } else {
-      setPageError("Invalid store identifier.");
-      setLoadingStore(false);
-      setLoadingProducts(false);
+      if (isMounted) {
+        setPageError("Invalid store identifier.");
+        setLoadingStore(false);
+        setLoadingProducts(false); // Ensure this is set
+      }
     }
-  }, [storeId, fetchStoreDetails, fetchStoreProducts]);
+    return () => { isMounted = false; };
+  }, [storeId, fetchStoreDetails, fetchStoreProducts]); // Dependencies for initial load
 
   React.useEffect(() => {
     if (pageError) {
@@ -136,16 +180,19 @@ export default function StoreProductsPage() {
 
 
   const handleLoadMoreProducts = () => {
-    if (!loadingMoreProducts && hasMoreProducts) {
-      fetchStoreProducts(true);
+    if (!loadingMoreProducts && hasMoreProducts && storeId) {
+      fetchStoreProducts(storeId, true, lastVisibleProduct);
     }
   };
 
-  if (loadingStore) {
+  const overallInitialLoading = loadingStore || (loadingProducts && products.length === 0);
+
+
+  if (overallInitialLoading && !pageError) {
     return <StoreProductsPageSkeleton />;
   }
 
-  if (pageError && !store) {
+  if (pageError && !store && !loadingStore) { // If store itself failed to load and not currently trying
     return (
       <div className="container mx-auto max-w-4xl text-center py-12">
         <Alert variant="destructive">
@@ -160,7 +207,7 @@ export default function StoreProductsPage() {
     );
   }
 
-  if (!store && !loadingStore) {
+  if (!store && !loadingStore && !pageError) { // If loading done, no error, but no store
     return (
       <div className="text-center py-16 text-muted-foreground">
         Store not found or is no longer available.
@@ -180,20 +227,22 @@ export default function StoreProductsPage() {
                     src={store.heroImageUrl}
                     alt={`${store.name} Products Banner`}
                     width={1200}
-                    height={300} // Adjusted height
-                    className="object-cover w-full h-48 md:h-56" // Adjusted height
+                    height={300} 
+                    className="object-cover w-full h-48 md:h-56" 
                     data-ai-hint={`${store.name} products promotional banner`}
                     priority
+                    onError={(e) => ((e.target as HTMLImageElement).src = 'https://placehold.co/1200x300.png')}
                 />
             ) : (
                 <div className="w-full h-48 md:h-56 bg-gradient-to-r from-primary/10 to-secondary/10 flex items-center justify-center">
-                     {/* Placeholder content if no hero image */}
+                    {/* Placeholder for store name if no hero image */}
+                    <h1 className="text-4xl font-bold text-white/70 drop-shadow-lg">{store.name}</h1>
                 </div>
             )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent flex flex-col justify-end p-6">
             <div className="flex items-center gap-4 mb-2">
                 {store.logoUrl && (
-                    <Image src={store.logoUrl} alt={`${store.name} Logo`} width={80} height={40} className="object-contain bg-white p-1 rounded-sm shadow" data-ai-hint={`${store.name} logo`}/>
+                    <Image src={store.logoUrl} alt={`${store.name} Logo`} width={80} height={40} className="object-contain bg-white p-1 rounded-sm shadow" data-ai-hint={store.dataAiHint || `${store.name} logo`}  onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')}/>
                 )}
                 <h1 className="text-3xl md:text-4xl font-bold text-white drop-shadow-lg">{store.name} Products</h1>
             </div>
@@ -210,9 +259,10 @@ export default function StoreProductsPage() {
         <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
           <ShoppingBag className="w-6 h-6 text-primary" /> Products from {store?.name || 'this Store'}
         </h2>
-        {loadingProducts && products.length === 0 ? (
+        {/* Show skeleton for product list if main product loading is true AND no products yet AND no page-level error for products */}
+        {loadingProducts && products.length === 0 && !pageError ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
-            {Array.from({ length: 12 }).map((_, index) => <Skeleton key={`prod-skel-${index}`} className="h-64 rounded-lg" />)}
+            {Array.from({ length: 12 }).map((_, index) => <Skeleton key={`prod-skel-list-${index}`} className="h-64 rounded-lg" />)}
           </div>
         ) : products.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
@@ -220,13 +270,21 @@ export default function StoreProductsPage() {
               <ProductCard key={product.id} product={product} storeContext={store} />
             ))}
           </div>
-        ) : (
+        // If done loading products, no products exist, AND no error was set *specifically for products*
+        ) : !loadingProducts && products.length === 0 && !pageError ? (
           <div className="text-center py-16 text-muted-foreground bg-muted/30 rounded-lg border">
             <Info className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
             <p className="text-lg">No products found for {store?.name || 'this store'} at the moment.</p>
             <p className="text-sm mt-1">Check back later or explore other stores.</p>
           </div>
-        )}
+        // If there was a product-specific error (even if store loaded)
+        ) : pageError && !loadingProducts ? (
+             <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Error Loading Products</AlertTitle>
+                <AlertDescription>{pageError}</AlertDescription>
+            </Alert>
+        ) : null }
       </section>
 
       {hasMoreProducts && !loadingProducts && products.length > 0 && (
