@@ -1,30 +1,28 @@
 
 "use client";
 
-import type { Product, Store } from '@/lib/types'; // Store type might be needed for context
+import type { Product, Store } from '@/lib/types';
 import Image from 'next/image';
-import Link from 'next/link'; // For linking to product details on your site (optional)
+import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ExternalLink, ShoppingCart, Loader2 } from 'lucide-react'; // Using ShoppingCart for "Shop Now", added Loader2
+import { ExternalLink, ShoppingCart, Loader2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
-import { trackClick } from '@/lib/actions/tracking';
+import { trackClick, TrackClickData } from '@/lib/actions/tracking'; // Import type
 import { v4 as uuidv4 } from 'uuid';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
 interface ProductCardProps {
   product: Product;
-  storeContext?: Store; // Optional: pass store context if available (e.g., for better tracking)
+  storeContext?: Store;
 }
 
-// Basic check to see if a string looks like a valid HTTP/S URL
 const isValidHttpUrl = (string: string | undefined | null): boolean => {
   if (!string) return false;
   let url;
   try {
-    // More robust check against potentially very long or malformed strings
     if (string.startsWith("Error:") || string.startsWith("Unhandled") || string.length > 2048) {
         return false;
     }
@@ -35,7 +33,6 @@ const isValidHttpUrl = (string: string | undefined | null): boolean => {
   return url.protocol === "http:" || url.protocol === "https:";
 }
 
-// Function to append click ID to a URL
 const appendClickIdToUrl = (url: string, clickId: string): string => {
   try {
     const urlObj = new URL(url);
@@ -53,50 +50,58 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
   const router = useRouter();
   const { toast } = useToast();
 
-  const placeholderText = product && product.name ? product.name.substring(0, 15) : "Product";
-  const imageUrl = isValidHttpUrl(product.imageUrl)
-    ? product.imageUrl
+  const placeholderText = product?.name ? product.name.substring(0, 15) : "Product";
+  const imageUrl = isValidHttpUrl(product?.imageUrl)
+    ? product.imageUrl!
     : `https://placehold.co/300x300.png?text=${encodeURIComponent(placeholderText)}`;
 
-  const productTitle = product.name || 'Product Title';
-  const affiliateLink = product.affiliateLink || '#';
-  // category is not directly used in the card display but might be useful for future features
-  // const category = product.category || 'Uncategorized';
-  const priceDisplay = product.priceDisplay || (product.price !== null && product.price !== undefined ? formatCurrency(product.price) : 'Price not available');
+  const productTitle = product?.name || 'Product Title';
+  const affiliateLink = product?.affiliateLink || '#';
+  const priceDisplay = product?.priceDisplay || (product?.price !== null && product?.price !== undefined ? formatCurrency(product.price) : 'Price not available');
 
   const handleShopNow = async () => {
     if (authLoading) {
       toast({ title: "Please wait", description: "Checking authentication..."});
       return;
     }
-
-    // If not logged in, redirect to login, saving intended destination
-    if (!user) {
-        sessionStorage.setItem('loginRedirectUrl', affiliateLink);
-        sessionStorage.setItem('loginRedirectSource', router.asPath); // current page
-        router.push('/login?message=Please login to track your cashback for this product.');
+    if (!product || !affiliateLink || affiliateLink === '#') {
+        toast({ title: "Link Error", description: "Product link is not available.", variant: "destructive" });
         return;
     }
 
     const clickId = uuidv4();
     const finalAffiliateLink = appendClickIdToUrl(affiliateLink, clickId);
 
+    // If not logged in, redirect to login, saving intended destination
+    if (!user) {
+        sessionStorage.setItem('loginRedirectUrl', finalAffiliateLink); // Save final link
+        sessionStorage.setItem('loginRedirectSource', router.asPath);
+        router.push('/login?message=Please login to track your cashback for this product.');
+        return;
+    }
+
+    const clickData: Omit<TrackClickData, 'timestamp'> = {
+        userId: user.uid,
+        storeId: product.storeId,
+        storeName: storeContext?.name || product.storeName || null,
+        productId: product.id,
+        productName: product.name,
+        couponId: null,
+        clickId: clickId,
+        affiliateLink: finalAffiliateLink,
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+    };
+
     try {
-        await trackClick({
-            userId: user.uid,
-            storeId: product.storeId,
-            storeName: storeContext?.name || product.storeName || 'Unknown Store',
-            productId: product.id, // Pass product ID
-            productName: product.name, // Pass product name
-            couponId: null, // No specific coupon for a product click like this
-            clickId: clickId,
-            affiliateLink: finalAffiliateLink, // The link with click ID
-            timestamp: new Date(),
-        });
-        console.log(`Product click tracked: User ${user.uid}, Product ${product.id}, ClickID ${clickId}`);
+        const trackResult = await trackClick(clickData);
+        if (trackResult.success) {
+            console.log(`Product click tracked: User ${user.uid}, Product ${product.id}, ClickID ${clickId}`);
+        } else {
+            console.error("Failed to track product click (server action error):", trackResult.error);
+            toast({title: "Tracking Issue", description: "Could not fully track click, but redirecting.", variant: "destructive"})
+        }
     } catch (e) {
-        console.error("Failed to track product click:", e);
-        // Don't block the user, but maybe log this error more formally
+        console.error("Error calling trackClick:", e);
     }
 
     window.open(finalAffiliateLink, '_blank', 'noopener,noreferrer');
@@ -105,7 +110,6 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
 
   return (
     <Card className="overflow-hidden h-full flex flex-col group border shadow-sm hover:shadow-lg transition-shadow duration-300">
-      {/* Product Image */}
       <div className="block aspect-square relative overflow-hidden bg-muted">
         <Image
           src={imageUrl}
@@ -113,7 +117,7 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
           className="object-contain group-hover:scale-105 transition-transform duration-300 p-2"
-          data-ai-hint={product.dataAiHint || "product image"}
+          data-ai-hint={product?.dataAiHint || "product image"}
           onError={(e) => {
             (e.target as HTMLImageElement).src = `https://placehold.co/300x300.png?text=${encodeURIComponent(placeholderText)}`;
           }}
@@ -124,6 +128,11 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
           <h3 className="text-sm font-medium leading-snug mb-2 h-10 line-clamp-2" title={productTitle}>
             {productTitle}
           </h3>
+           {storeContext?.name && (
+             <Link href={`/stores/${storeContext.id}`} className="text-xs text-muted-foreground hover:text-primary transition-colors mb-1 block truncate">
+               From: {storeContext.name}
+             </Link>
+           )}
         </div>
         <div className="mt-auto">
           <p className="text-base font-semibold text-primary mb-3">

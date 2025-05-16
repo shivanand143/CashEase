@@ -18,7 +18,7 @@ import {
   QueryDocumentSnapshot,
   DocumentData
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase/config';
+import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { Click } from '@/lib/types';
 import {
   Table,
@@ -44,26 +44,43 @@ function ClickHistoryContent() {
   const router = useRouter();
   const [clicks, setClicks] = useState<Click[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
   const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const fetchClicks = useCallback(async (loadMore = false) => {
+  const fetchClicks = useCallback(async (isLoadMoreOperation = false, docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = lastVisible) => {
+    let isMounted = true;
     if (!user) {
-      if (!loadMore) setLoading(false); else setLoadingMore(false);
-      return;
+      if(isMounted) {
+        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+      }
+      return () => { isMounted = false; };
     }
 
-    if (!loadMore) {
+    if (firebaseInitializationError || !db) {
+      if (isMounted) {
+        setPageError(firebaseInitializationError || "Database not available.");
+        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+        setHasMore(false);
+      }
+      return () => { isMounted = false; };
+    }
+
+    if (!isLoadMoreOperation) {
       setLoading(true);
-      setLastVisible(null);
       setClicks([]); // Clear previous results for a fresh fetch
+      setLastVisible(null);
       setHasMore(true); // Reset hasMore
     } else {
+      if (!docToStartAfter) { // Don't load more if there's no cursor
+        if(isMounted) setLoadingMore(false);
+        return () => { isMounted = false; };
+      }
       setLoadingMore(true);
     }
-    setError(null);
+    if (!isLoadMoreOperation) setPageError(null);
+
 
     try {
       const clicksCollection = collection(db, 'clicks');
@@ -73,8 +90,8 @@ function ClickHistoryContent() {
         limit(CLICKS_PER_PAGE)
       ];
 
-      if (loadMore && lastVisible) {
-        constraints.push(startAfter(lastVisible));
+      if (isLoadMoreOperation && docToStartAfter) {
+        constraints.push(startAfter(docToStartAfter));
       }
 
       const q = query(clicksCollection, ...constraints);
@@ -83,47 +100,51 @@ function ClickHistoryContent() {
       const clicksData = querySnapshot.docs.map(docSnap => {
         const data = docSnap.data();
         return {
-          id: docSnap.id,
+          id: docSnap.id, // This is the clickId used as document ID
           ...data,
           timestamp: safeToDate(data.timestamp) || new Date(0),
         } as Click;
       });
-
-      setClicks(prev => loadMore ? [...prev, ...clicksData] : clicksData);
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-      setHasMore(querySnapshot.docs.length === CLICKS_PER_PAGE);
+      if(isMounted) {
+        setClicks(prev => isLoadMoreOperation ? [...prev, ...clicksData] : clicksData);
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+        setHasMore(querySnapshot.docs.length === CLICKS_PER_PAGE);
+      }
 
     } catch (err) {
       console.error("Error fetching clicks:", err);
-      const errorMsg = err instanceof Error ? err.message : "Failed to load click history.";
-      setError(errorMsg);
-      setHasMore(false); // Stop pagination on error
+      if(isMounted) {
+        const errorMsg = err instanceof Error ? err.message : "Failed to load click history.";
+        setPageError(errorMsg);
+        setHasMore(false);
+      }
     } finally {
-      if (!loadMore) setLoading(false); else setLoadingMore(false);
+      if(isMounted) {
+        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+      }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, lastVisible]); // lastVisible is needed if fetchClicks itself manages the cursor for loadMore
+    return () => { isMounted = false; };
+  }, [user, lastVisible]); // Include lastVisible
 
    useEffect(() => {
-    if (user) {
-      fetchClicks(false); // Initial fetch
-    } else if (!authLoading) {
+    if (user && !authLoading) {
+      fetchClicks(false, null); // Initial fetch
+    } else if (!authLoading && !user) {
       router.push('/login');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, authLoading, router]); // Removed fetchClicks from here to avoid potential loop
+  }, [user, authLoading, router, fetchClicks]);
 
   const handleLoadMore = () => {
-    if (!loadingMore && hasMore) {
-      fetchClicks(true); // Pass true for loadMore
+    if (!loadingMore && hasMore && lastVisible) {
+      fetchClicks(true, lastVisible);
     }
   };
 
-  if (authLoading || (loading && clicks.length === 0 && !error)) {
+  if (authLoading || (loading && clicks.length === 0 && !pageError)) {
     return <ClickHistoryTableSkeleton />;
   }
 
-  if (!user && !authLoading) {
+  if (!user && !authLoading) { // Should be caught by ProtectedRoute, but defensive
     return (
         <Alert variant="destructive" className="max-w-md mx-auto">
             <AlertCircle className="h-4 w-4" />
@@ -142,11 +163,11 @@ function ClickHistoryContent() {
         <MousePointerClick className="w-7 h-7" /> Click History
       </h1>
 
-      {error && (
+      {pageError && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error Loading History</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{pageError}</AlertDescription>
         </Alert>
       )}
 
@@ -158,7 +179,7 @@ function ClickHistoryContent() {
         <CardContent>
           {loading && clicks.length === 0 ? (
             <ClickHistoryTableSkeleton />
-          ) : !loading && clicks.length === 0 ? (
+          ) : !loading && clicks.length === 0 && !pageError ? (
             <div className="text-center py-16 text-muted-foreground">
               <p className="mb-4">You haven't clicked on any offers yet.</p>
               <Button asChild>
@@ -201,7 +222,7 @@ function ClickHistoryContent() {
               </Table>
             </div>
           )}
-          {hasMore && !loading && (
+          {hasMore && !loading && clicks.length > 0 &&(
             <div className="mt-6 text-center">
               <Button onClick={handleLoadMore} disabled={loadingMore}>
                 {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -209,6 +230,7 @@ function ClickHistoryContent() {
               </Button>
             </div>
           )}
+           {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
         </CardContent>
       </Card>
     </div>

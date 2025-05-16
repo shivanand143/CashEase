@@ -19,7 +19,7 @@ import {
   DocumentData,
   Timestamp
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase/config';
+import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { Transaction, CashbackStatus } from '@/lib/types';
 import {
   Table,
@@ -35,7 +35,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { formatCurrency, safeToDate } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 import { AlertCircle, History, Loader2, CheckCircle, XCircle, Hourglass } from 'lucide-react';
 import ProtectedRoute from '@/components/guards/protected-route';
 
@@ -69,76 +69,53 @@ function CashbackHistoryContent() {
   const router = useRouter();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
   const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const fetchInitialTransactions = useCallback(async () => {
-    if (!user) return;
+  const fetchTransactions = useCallback(async (isLoadMoreOperation = false, docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = lastVisible) => {
+    let isMounted = true;
+    if (!user) {
+      if(isMounted) {
+         if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+      }
+      return () => { isMounted = false; };
+    }
+    if (firebaseInitializationError || !db) {
+      if(isMounted) {
+        setPageError(firebaseInitializationError || "Database connection not available.");
+        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+        setHasMore(false);
+      }
+      return () => { isMounted = false; };
+    }
 
-    setLoading(true);
-    setError(null);
-    setLastVisible(null);
-    setTransactions([]);
-    setHasMore(true);
-
-    try {
-      const transactionsCollection = collection(db, 'transactions');
-      const constraints = [
-        where('userId', '==', user.uid),
-        orderBy('transactionDate', 'desc'),
-        limit(TRANSACTIONS_PER_PAGE)
-      ];
-
-      const q = query(transactionsCollection, ...constraints);
-      const querySnapshot = await getDocs(q);
-
-      const transactionsData = querySnapshot.docs.map(docSnap => {
-        const data = docSnap.data();
-        return {
-          id: docSnap.id,
-          ...data,
-          transactionDate: safeToDate(data.transactionDate) || new Date(0),
-          confirmationDate: safeToDate(data.confirmationDate),
-          paidDate: safeToDate(data.paidDate),
-          createdAt: safeToDate(data.createdAt) || new Date(0),
-          updatedAt: safeToDate(data.updatedAt) || new Date(0),
-        } as Transaction;
-      });
-
-      setTransactions(transactionsData);
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-      setHasMore(querySnapshot.docs.length === TRANSACTIONS_PER_PAGE);
-      setError(null);
-
-    } catch (err) {
-      console.error("Error fetching initial transactions:", err);
-      const errorMsg = err instanceof Error ? err.message : "Failed to load transaction history.";
-      setError(errorMsg);
+    if (!isLoadMoreOperation) {
+      setLoading(true);
       setTransactions([]);
-      setHasMore(false);
-    } finally {
-      setLoading(false);
+      setLastVisible(null);
+      setHasMore(true);
+    } else {
+       if (!docToStartAfter) { // Don't load more if there's no cursor
+        if(isMounted) setLoadingMore(false);
+        return () => { isMounted = false; };
+      }
+      setLoadingMore(true);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
-
-
-  const fetchMoreTransactions = useCallback(async () => {
-    if (!user || !lastVisible || !hasMore) return;
-
-    setLoadingMore(true);
-    setError(null);
+    if (!isLoadMoreOperation) setPageError(null);
 
     try {
       const transactionsCollection = collection(db, 'transactions');
       const constraints = [
         where('userId', '==', user.uid),
         orderBy('transactionDate', 'desc'),
-        startAfter(lastVisible),
         limit(TRANSACTIONS_PER_PAGE)
       ];
+
+      if (isLoadMoreOperation && docToStartAfter) {
+        constraints.push(startAfter(docToStartAfter));
+      }
 
       const q = query(transactionsCollection, ...constraints);
       const querySnapshot = await getDocs(q);
@@ -155,36 +132,43 @@ function CashbackHistoryContent() {
           updatedAt: safeToDate(data.updatedAt) || new Date(0),
         } as Transaction;
       });
-
-      setTransactions(prev => [...prev, ...transactionsData]);
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-      setHasMore(querySnapshot.docs.length === TRANSACTIONS_PER_PAGE);
+      if(isMounted){
+        setTransactions(prev => isLoadMoreOperation ? [...prev, ...transactionsData] : transactionsData);
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+        setHasMore(querySnapshot.docs.length === TRANSACTIONS_PER_PAGE);
+      }
 
     } catch (err) {
-      console.error("Error fetching more transactions:", err);
-      const errorMsg = err instanceof Error ? err.message : "Failed to load more transactions.";
-      setError(errorMsg);
+      console.error("Error fetching transactions:", err);
+      if(isMounted){
+        const errorMsg = err instanceof Error ? err.message : "Failed to load transaction history.";
+        setPageError(errorMsg);
+        setHasMore(false);
+      }
     } finally {
-      setLoadingMore(false);
+      if(isMounted){
+        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+      }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, lastVisible, hasMore]);
+    return () => { isMounted = false; };
+  }, [user, lastVisible]);
+
 
   useEffect(() => {
-    if (user) {
-      fetchInitialTransactions();
-    } else if (!authLoading) {
+    if (user && !authLoading) {
+      fetchTransactions(false, null); // Initial fetch
+    } else if (!authLoading && !user) {
       router.push('/login');
     }
-  }, [user, authLoading, fetchInitialTransactions, router]);
+  }, [user, authLoading, fetchTransactions, router]);
 
   const handleLoadMore = () => {
-    if (!loadingMore && hasMore) {
-      fetchMoreTransactions();
+    if (!loadingMore && hasMore && lastVisible) {
+      fetchTransactions(true, lastVisible);
     }
   };
 
-  if (authLoading || (loading && transactions.length === 0 && !error)) {
+  if (authLoading || (loading && transactions.length === 0 && !pageError)) {
     return <HistoryTableSkeleton />;
   }
 
@@ -208,11 +192,11 @@ function CashbackHistoryContent() {
         <History className="w-7 h-7" /> Cashback History
       </h1>
 
-      {error && (
+      {pageError && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error Loading History</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{pageError}</AlertDescription>
         </Alert>
       )}
 
@@ -224,7 +208,7 @@ function CashbackHistoryContent() {
         <CardContent>
           {loading && transactions.length === 0 ? (
             <HistoryTableSkeleton />
-          ) : !loading && transactions.length === 0 ? (
+          ) : !loading && transactions.length === 0 && !pageError ? (
             <div className="text-center py-16 text-muted-foreground">
               <p className="mb-4">You haven't earned any cashback yet.</p>
               <Button asChild>
@@ -250,20 +234,20 @@ function CashbackHistoryContent() {
                         <TableCell className="font-medium">{tx.storeName || tx.storeId || 'Unknown Store'}</TableCell>
                         <TableCell>{formatCurrency(tx.saleAmount)}</TableCell>
                         <TableCell className="font-semibold">{formatCurrency(tx.cashbackAmount)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{tx.transactionDate ? format(new Date(tx.transactionDate), 'PPp') : 'N/A'}</TableCell>
+                        <TableCell className="whitespace-nowrap">{tx.transactionDate && isValid(new Date(tx.transactionDate as Date)) ? format(new Date(tx.transactionDate as Date), 'PPp') : 'N/A'}</TableCell>
                         <TableCell>
                         <Badge variant={getStatusVariant(tx.status)} className="flex items-center gap-1 w-fit">
                             {getStatusIcon(tx.status)}
                             {tx.status}
                         </Badge>
-                        {tx.status === 'confirmed' && tx.confirmationDate && (
+                        {tx.status === 'confirmed' && tx.confirmationDate && isValid(new Date(tx.confirmationDate as Date)) && (
                             <span className="block text-[10px] text-muted-foreground mt-1">
-                            Confirmed: {format(new Date(tx.confirmationDate), 'PP')}
+                            Confirmed: {format(new Date(tx.confirmationDate as Date), 'PP')}
                             </span>
                         )}
-                        {tx.status === 'paid' && tx.paidDate && (
+                        {tx.status === 'paid' && tx.paidDate && isValid(new Date(tx.paidDate as Date)) &&(
                             <span className="block text-[10px] text-muted-foreground mt-1">
-                            Paid: {format(new Date(tx.paidDate), 'PP')}
+                            Paid: {format(new Date(tx.paidDate as Date), 'PP')}
                             </span>
                         )}
                         </TableCell>
@@ -276,7 +260,7 @@ function CashbackHistoryContent() {
                 </Table>
             </div>
           )}
-          {hasMore && (
+          {hasMore && !loading && transactions.length > 0 && (
             <div className="mt-6 text-center">
               <Button onClick={handleLoadMore} disabled={loadingMore}>
                 {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -284,6 +268,7 @@ function CashbackHistoryContent() {
               </Button>
             </div>
           )}
+           {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
         </CardContent>
       </Card>
     </div>

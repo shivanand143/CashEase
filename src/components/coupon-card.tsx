@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { Coupon, Store } from '@/lib/types';
@@ -13,153 +14,126 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tag, ExternalLink, Clock, Store as StoreIcon } from 'lucide-react';
+import { Tag, ExternalLink, Clock, Store as StoreIcon, Loader2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/hooks/use-auth'; // Import useAuth to check user login status
-import { useRouter } from 'next/navigation'; // Import useRouter for redirection
-import { trackClick } from '@/lib/actions/tracking'; // Import the tracking action
-import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
+import { useAuth } from '@/hooks/use-auth';
+import { useRouter } from 'next/navigation';
+import { trackClick, TrackClickData } from '@/lib/actions/tracking';
+import { v4 as uuidv4 } from 'uuid';
 
 interface CouponCardProps {
-  coupon: Coupon & { store?: Store }; // Coupon data, optionally with nested store data
+  coupon: Coupon & { store?: Store };
 }
 
 export default function CouponCard({ coupon }: CouponCardProps) {
   const { toast } = useToast();
-  const { user } = useAuth(); // Get the user object
-  const router = useRouter(); // Initialize router
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
 
-  // Function to append click ID to a URL
   const appendClickId = (url: string, clickId: string): string => {
     try {
       const urlObj = new URL(url);
-      // Common affiliate parameters: subid, clickid, ref, aff_sub
-      // Check common ones or make configurable per store if needed
-      urlObj.searchParams.set('subid', clickId); // Example: Adjust based on network
-      urlObj.searchParams.set('aff_sub', clickId); // Another common example
+      urlObj.searchParams.set('subid', clickId);
+      urlObj.searchParams.set('aff_sub', clickId);
       return urlObj.toString();
     } catch (e) {
-      console.warn("Invalid URL for click tracking:", url);
-      return url; // Return original URL if invalid
+      console.warn("Invalid URL for click tracking, returning original:", url);
+      return url;
     }
   };
 
-  const handleGetCode = async (code: string) => {
-    const clickId = uuidv4(); // Generate unique click ID
-    let targetUrl = coupon.store?.affiliateLink; // Default to store link
-
-    if (!targetUrl) {
-        console.warn(`Missing affiliate link for storeId: ${coupon.storeId}`);
-        targetUrl = '#'; // Fallback URL
-    } else {
-        targetUrl = appendClickId(targetUrl, clickId);
+  const handleInteraction = async (isCode: boolean, codeOrLink?: string | null) => {
+    if (authLoading) {
+      toast({ title: "Please wait", description: "Checking authentication..."});
+      return;
     }
 
-
-    // Track click if user is logged in
-    if (user && coupon.storeId) {
-      try {
-        await trackClick({
-          userId: user.uid,
-          storeId: coupon.storeId,
-          storeName: coupon.store?.name,
-          couponId: coupon.id, // Track the coupon ID
-          clickId: clickId,
-          affiliateLink: targetUrl, // Track the final link
-          timestamp: new Date(),
-        });
-        console.log(`Tracked click for code coupon ${coupon.id} by user ${user.uid}, clickId: ${clickId}`);
-      } catch (trackError) {
-        console.error("Error tracking coupon code click:", trackError);
-        // Don't block user flow for tracking errors
-      }
+    const clickId = uuidv4();
+    let targetUrl = coupon.link || coupon.store?.affiliateLink || '#';
+    if (targetUrl === '#') {
+        toast({ title: "Link Error", description: "No valid link for this offer.", variant: "destructive"});
+        return;
     }
+    targetUrl = appendClickId(targetUrl, clickId);
 
-    // Copy code and show toast
-    try {
-      await navigator.clipboard.writeText(code);
-      toast({
-        title: 'Code Copied!',
-        description: `Coupon code "${code}" copied. Redirecting...`,
-      });
-       // Redirect after a short delay to allow toast visibility
-       setTimeout(() => {
-        window.open(targetUrl, '_blank', 'noopener,noreferrer');
-       }, 500);
-    } catch (err) {
-      console.error('Failed to copy code:', err);
-      toast({
-        variant: 'destructive',
-        title: 'Copy Failed',
-        description: 'Could not copy the code.',
-      });
-    }
-  };
 
-  const handleGetDeal = async () => {
-    const clickId = uuidv4(); // Generate unique click ID
-    let targetUrl = coupon.link || coupon.store?.affiliateLink; // Prioritize coupon link
-
-    if (!targetUrl) {
-        toast({
-            variant: 'destructive',
-            title: 'No Link Available',
-            description: 'Could not find a link for this deal.',
-        });
+    if (!user) {
+        sessionStorage.setItem('loginRedirectUrl', targetUrl);
+        sessionStorage.setItem('loginRedirectSource', router.asPath);
+        router.push(`/login?message=Please login to use this ${isCode ? 'code' : 'deal'} and track cashback.`);
         return;
     }
 
-    targetUrl = appendClickId(targetUrl, clickId);
-
-    // Track click if user is logged in
-     if (user && coupon.storeId) {
+    if (user && coupon.storeId) {
+      const clickData: Omit<TrackClickData, 'timestamp'> = {
+        userId: user.uid,
+        storeId: coupon.storeId,
+        storeName: coupon.store?.name || null,
+        couponId: coupon.id,
+        productId: null,
+        productName: null,
+        clickId: clickId,
+        affiliateLink: targetUrl,
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      };
       try {
-        await trackClick({
-          userId: user.uid,
-          storeId: coupon.storeId,
-          storeName: coupon.store?.name,
-          couponId: coupon.id, // Track the coupon ID
-          clickId: clickId,
-          affiliateLink: targetUrl, // Track the final link
-          timestamp: new Date(),
-        });
-         console.log(`Tracked click for deal ${coupon.id} by user ${user.uid}, clickId: ${clickId}`);
+        const trackResult = await trackClick(clickData);
+        if(trackResult.success){
+            console.log(`Tracked click for ${isCode ? 'code' : 'deal'} coupon ${coupon.id} by user ${user.uid}, clickId: ${clickId}`);
+        } else {
+            console.error("Failed to track coupon click (server action error):", trackResult.error);
+            toast({title: "Tracking Issue", description: "Could not fully track click, but proceeding.", variant: "destructive"})
+        }
       } catch (trackError) {
-        console.error("Error tracking deal click:", trackError);
-        // Don't block user flow for tracking errors
+        console.error(`Error tracking ${isCode ? 'code' : 'deal'} click:`, trackError);
       }
     }
-    // Open the deal link in a new tab
-    window.open(targetUrl, '_blank', 'noopener,noreferrer');
+
+    if (isCode && codeOrLink) {
+      try {
+        await navigator.clipboard.writeText(codeOrLink);
+        toast({
+          title: 'Code Copied!',
+          description: `Coupon code "${codeOrLink}" copied. Redirecting...`,
+        });
+        setTimeout(() => {
+          window.open(targetUrl, '_blank', 'noopener,noreferrer');
+        }, 500);
+      } catch (err) {
+        console.error('Failed to copy code:', err);
+        toast({ variant: 'destructive', title: 'Copy Failed', description: 'Could not copy the code. Redirecting anyway...' });
+        window.open(targetUrl, '_blank', 'noopener,noreferrer'); // Still redirect
+      }
+    } else {
+      // For "Get Deal" or fallback
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    }
   };
 
-   // Handle clicks on the main card content to redirect to store page
    const handleCardClick = (e: React.MouseEvent) => {
-     // Prevent redirection if the click was on the button itself
      if ((e.target as HTMLElement).closest('button')) {
        return;
      }
-     router.push(`/stores/${coupon.storeId}`);
+     if (coupon.storeId) {
+       router.push(`/stores/${coupon.storeId}`);
+     } else {
+        toast({title: "Navigation Error", description: "Store details are not available for this coupon."})
+     }
    };
 
-  const expiryDate = coupon.expiryDate ? new Date(coupon.expiryDate) : null;
+  const expiryDate = coupon.expiryDate ? safeToDate(coupon.expiryDate) : null;
   const isExpired = expiryDate ? expiryDate < new Date() : false;
-  const storeName = coupon.store?.name ?? 'Store'; // Use store name if available
-  const storeLogoUrl = coupon.store?.logoUrl ?? '/placeholder-logo.png'; // Use store logo if available
+  const storeName = coupon.store?.name ?? 'Store';
+  const storeLogoUrl = coupon.store?.logoUrl ?? '/placeholder-logo.png';
 
   return (
     <Card
       className={`flex flex-col justify-between border rounded-lg overflow-hidden shadow-sm hover:shadow-lg transition-shadow duration-300 ${
         isExpired ? 'opacity-60 bg-muted/50' : ''
       }`}
-      // Remove onClick handler from the Card itself if you want buttons to be the primary action
-      // onClick={handleCardClick}
-      // style={{ cursor: 'pointer' }}
     >
-      <CardHeader className="p-4 pb-2">
-         {/* Link the header content to the store page */}
-         <Link href={`/stores/${coupon.storeId}`} className="block hover:bg-muted/30 rounded -m-2 p-2 transition-colors">
+      <div className="p-4 pb-2 cursor-pointer hover:bg-muted/30 rounded-t-lg transition-colors" onClick={handleCardClick}>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 {coupon.store?.logoUrl ? (
@@ -169,7 +143,8 @@ export default function CouponCard({ coupon }: CouponCardProps) {
                     width={24}
                     height={24}
                     className="rounded-sm object-contain"
-                     data-ai-hint={`${storeName} logo`}
+                    data-ai-hint={`${storeName} logo`}
+                    onError={(e) => ((e.target as HTMLImageElement).src = 'https://placehold.co/24x24.png?text=logo')}
                   />
                 ) : (
                   <StoreIcon className="w-6 h-6 text-muted-foreground" />
@@ -184,8 +159,7 @@ export default function CouponCard({ coupon }: CouponCardProps) {
             <CardDescription className="text-sm leading-snug h-10 line-clamp-2">
               {coupon.description}
             </CardDescription>
-         </Link>
-      </CardHeader>
+      </div>
       <CardContent className="p-4 pt-0 pb-2 flex-grow">
          {expiryDate && !isExpired && (
            <div className="flex items-center text-xs text-muted-foreground mb-2">
@@ -193,7 +167,6 @@ export default function CouponCard({ coupon }: CouponCardProps) {
              Expires {formatDistanceToNow(expiryDate, { addSuffix: true })}
            </div>
          )}
-         {/* Add any other relevant coupon details here */}
       </CardContent>
       <CardFooter className="p-4 pt-0 bg-muted/30 border-t">
         {coupon.code ? (
@@ -202,41 +175,28 @@ export default function CouponCard({ coupon }: CouponCardProps) {
             size="sm"
             className="w-full border-dashed border-primary text-primary hover:bg-primary/10 justify-between group"
             onClick={(e) => {
-               e.stopPropagation(); // Prevent card click handler
-               handleGetCode(coupon.code!);
+               e.stopPropagation();
+               handleInteraction(true, coupon.code!);
             }}
-            disabled={isExpired}
+            disabled={isExpired || authLoading}
           >
-             <span className="font-mono font-medium truncate">{coupon.code}</span>
+             {authLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="font-mono font-medium truncate">{coupon.code}</span>}
              <span className="text-xs opacity-80 group-hover:opacity-100 transition-opacity">Copy Code</span>
           </Button>
-        ) : coupon.link ? (
+        ) : (
           <Button
              variant="default"
              size="sm"
              className="w-full bg-secondary hover:bg-secondary/90"
              onClick={(e) => {
-                e.stopPropagation(); // Prevent card click handler
-                handleGetDeal();
+                e.stopPropagation();
+                handleInteraction(false, coupon.link);
              }}
-             disabled={isExpired}
+             disabled={isExpired || authLoading}
            >
-             Get Deal <ExternalLink className="w-4 h-4 ml-1" />
+             {authLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Get Deal"}
+             {!authLoading && <ExternalLink className="w-4 h-4 ml-1" />}
            </Button>
-        ) : (
-          // If no code and no specific deal link, link to the store
-          <Button
-            variant="secondary"
-            size="sm"
-            className="w-full"
-            onClick={(e) => {
-               e.stopPropagation();
-               handleCardClick(e); // Reuse card click logic for store redirect
-            }}
-            disabled={isExpired}
-          >
-            Visit Store <StoreIcon className="w-4 h-4 ml-1" />
-          </Button>
         )}
       </CardFooter>
     </Card>

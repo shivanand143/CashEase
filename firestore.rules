@@ -4,77 +4,90 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Helper function to check if the user is an admin
     function isAdmin() {
-      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    // Helper function to check if the user is authenticated
     function isAuthenticated() {
       return request.auth != null;
     }
 
+    // Helper function to check if the user owns the resource
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    // Users Collection
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      // Allow users to update specific, non-critical fields. Admins can update more.
       allow update: if (isOwner(userId) &&
                         request.resource.data.uid == resource.data.uid &&
-                        // User cannot change their own role, isDisabled, or balances directly
-                        !(request.resource.data.role != resource.data.role) &&
-                        !(request.resource.data.isDisabled != resource.data.isDisabled) &&
-                        !(request.resource.data.cashbackBalance != resource.data.cashbackBalance) &&
+                        !(request.resource.data.role != resource.data.role) && // User cannot change their own role
+                        !(request.resource.data.isDisabled != resource.data.isDisabled) && // User cannot disable/enable their own account
+                        !(request.resource.data.cashbackBalance != resource.data.cashbackBalance) && // User cannot directly change balances
                         !(request.resource.data.pendingCashback != resource.data.pendingCashback) &&
-                        !(request.resource.data.lifetimeCashback != resource.data.lifetimeCashback)
-                       ) || isAdmin(); // Admin can update anything
-      allow delete: if false;
+                        !(request.resource.data.lifetimeCashback != resource.data.lifetimeCashback) &&
+                        !(request.resource.data.referralCount != resource.data.referralCount) &&
+                        !(request.resource.data.referralBonusEarned != resource.data.referralBonusEarned)
+                       ) || isAdmin();
+      allow delete: if false; // Prevent direct deletion
     }
 
+    // Stores Collection
     match /stores/{storeId} {
       allow read: if resource.data.isActive == true || isAdmin();
       allow create, update, delete: if isAdmin();
     }
 
+    // Products Collection
     match /products/{productId} {
-      allow read: if resource.data.isActive == true || isAdmin();
+      allow read: if resource.data.isActive == true || isAdmin(); // Public can read active products
       allow create, update, delete: if isAdmin();
     }
 
+    // Coupons Collection
     match /coupons/{couponId} {
       allow read: if resource.data.isActive == true || isAdmin();
       allow create, update, delete: if isAdmin();
     }
 
+    // Categories Collection
     match /categories/{categoryId} {
       allow read: if resource.data.isActive == true || isAdmin();
       allow create, update, delete: if isAdmin();
     }
 
+    // Banners Collection
     match /banners/{bannerId} {
       allow read: if resource.data.isActive == true || isAdmin();
       allow create, update, delete: if isAdmin();
     }
 
+    // Clicks Collection
     match /clicks/{clickId} {
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow update: if false; // Clicks should be immutable after creation by user
-      allow delete: if isAdmin();
+      allow update, delete: if isAdmin();
     }
 
+    // Transactions Collection
     match /transactions/{transactionId} {
       allow read: if isOwner(resource.data.userId) || isAdmin();
-      // Transactions should ideally be created by a backend/admin process
-      // For this simulation, admin can create/update.
-      allow create, update: if isAdmin();
+      allow create: if isAdmin(); // Only admins can create transactions (simulating backend process)
+      allow update: if isAdmin(); // Only admins can update status (confirm/reject)
       allow delete: if isAdmin();
     }
 
+    // PayoutRequests Collection
     match /payoutRequests/{requestId} {
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && request.resource.data.amount >= 250; // Basic amount check
       allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow update: if isAdmin(); // Only admins can update status, adminNotes, etc.
+      allow update: if isAdmin(); // Only admins process payouts
       allow delete: if isAdmin();
     }
   }

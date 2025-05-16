@@ -1,34 +1,34 @@
 
 'use server';
 
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore'; // Use setDoc with specific ID
-import { db } from '@/lib/firebase/config';
-// Click interface will be in types.ts
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db, firebaseInitializationError } from '@/lib/firebase/config';
 
-interface TrackClickData {
+export interface TrackClickData { // Exporting for potential use in other server components
   userId: string;
   storeId: string;
-  storeName?: string;
+  storeName?: string | null; // Made explicitly nullable
   couponId?: string | null;
   productId?: string | null;
-  productName?: string | null;
+  productName?: string | null; // Made explicitly nullable
   affiliateLink: string;
   clickId: string; // This will be used as the document ID
-  userAgent?: string;
+  userAgent?: string | null; // Made explicitly nullable
+  timestamp: Date | ReturnType<typeof serverTimestamp>; // Allow Date for client-side, serverTimestamp for server
 }
 
-export async function trackClick(data: TrackClickData): Promise<void> {
-  console.log('Tracking click (Server Action):', data);
-  if (!db) {
-    console.error("Firestore not initialized. Cannot track click.");
-    return;
+export async function trackClick(data: Omit<TrackClickData, 'timestamp'>): Promise<{success: boolean, error?: string}> {
+  console.log('TRACKING CLICK (Server Action): Attempting to track click for user:', data.userId, 'clickId:', data.clickId);
+  if (firebaseInitializationError || !db) {
+    const errorMsg = `Firestore not initialized. Cannot track click. Error: ${firebaseInitializationError}`;
+    console.error(errorMsg);
+    return { success: false, error: errorMsg };
   }
 
   try {
-    // Use the generated clickId as the document ID for easy lookup and idempotency (if needed)
     const clickDocRef = doc(db, 'clicks', data.clickId);
 
-    await setDoc(clickDocRef, {
+    const clickDataToSave: Omit<TrackClickData, 'id' | 'timestamp'> & { timestamp: ReturnType<typeof serverTimestamp> } = {
       userId: data.userId,
       storeId: data.storeId,
       storeName: data.storeName || null,
@@ -36,12 +36,17 @@ export async function trackClick(data: TrackClickData): Promise<void> {
       productId: data.productId || null,
       productName: data.productName || null,
       affiliateLink: data.affiliateLink,
-      timestamp: serverTimestamp(), // Use Firestore server timestamp
-      userAgent: data.userAgent || null,
-    });
+      clickId: data.clickId, // Ensure clickId is part of the document data as well
+      userAgent: data.userAgent || null, // Store User-Agent if available
+      timestamp: serverTimestamp(),
+    };
 
-    console.log(`Click tracked successfully for user ${data.userId}, clickId: ${data.clickId}`);
+    await setDoc(clickDocRef, clickDataToSave);
+
+    console.log(`CLICK TRACKED: User ${data.userId}, Click ID ${data.clickId}, Store ${data.storeId}`);
+    return { success: true };
   } catch (error) {
-    console.error('Error writing click data to Firestore:', error);
+    console.error('ERROR TRACKING CLICK: Firestore write failed for clickId', data.clickId, error);
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error tracking click." };
   }
 }

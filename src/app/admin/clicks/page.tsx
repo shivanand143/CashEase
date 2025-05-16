@@ -37,13 +37,15 @@ import { safeToDate } from '@/lib/utils';
 import { format } from 'date-fns';
 import AdminGuard from '@/components/guards/admin-guard';
 import { useDebounce } from '@/hooks/use-debounce';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 
 const CLICKS_PER_PAGE = 25;
 
 function AdminClicksPageContent() {
   const [clicks, setClicks] = useState<Click[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
   const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -52,53 +54,65 @@ function AdminClicksPageContent() {
   const [searchTermInput, setSearchTermInput] = useState('');
   const debouncedSearchTerm = useDebounce(searchTermInput, 500);
   const [isSearching, setIsSearching] = useState(false);
-  const [filterType, setFilterType] = useState<'all' | 'store' | 'product' | 'coupon'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'storeId' | 'productId' | 'couponId' | 'userId'>('all');
 
 
-  const fetchClicks = useCallback(async (loadMore = false) => {
+  const fetchClicks = useCallback(async (
+    isLoadMoreOperation = false,
+    currentSearchTerm = debouncedSearchTerm,
+    currentFilterType = filterType,
+    docToStartAfter = lastVisible
+  ) => {
     let isMounted = true;
     if (!db || firebaseInitializationError) {
         if(isMounted) {
-            setError(firebaseInitializationError || "Database connection not available.");
-            if (!loadMore) setLoading(false); else setLoadingMore(false);
+            setPageError(firebaseInitializationError || "Database connection not available.");
+            if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
             setHasMore(false);
         }
       return () => { isMounted = false; };
     }
 
-    if (!loadMore) {
+    if (!isLoadMoreOperation) {
       setLoading(true);
-      setLastVisible(null);
       setClicks([]);
+      setLastVisible(null);
       setHasMore(true);
     } else {
+      if (!docToStartAfter) {
+        if(isMounted) setLoadingMore(false);
+        return () => { isMounted = false; };
+      }
       setLoadingMore(true);
     }
-    if(!loadMore) setError(null);
-    setIsSearching(debouncedSearchTerm !== '' || filterType !== 'all');
+    if(!isLoadMoreOperation) setPageError(null);
+    setIsSearching(currentSearchTerm !== '' || currentFilterType !== 'all');
 
     try {
       const clicksCollection = collection(db, 'clicks');
       const constraints: QueryConstraint[] = [];
 
-      if (debouncedSearchTerm) {
-        // Basic search by user ID or store ID. More complex search might need Algolia/Typesense.
-        // This example assumes searching by userId. Could add more `where` clauses if needed.
-        constraints.push(where('userId', '==', debouncedSearchTerm));
-      }
-
-      if (filterType === 'store' && !filterType.includes('productId') && !filterType.includes('couponId')) {
-        constraints.push(where('productId', '==', null), where('couponId', '==', null));
-      } else if (filterType === 'product') {
-        constraints.push(where('productId', '!=', null));
-      } else if (filterType === 'coupon') {
-        constraints.push(where('couponId', '!=', null));
+      if (currentSearchTerm) {
+        if (currentFilterType === 'userId' || currentFilterType === 'all') { // Default search to userId if 'all'
+            constraints.push(where('userId', '==', currentSearchTerm));
+        } else if (currentFilterType === 'storeId') {
+            constraints.push(where('storeId', '==', currentSearchTerm));
+        } else if (currentFilterType === 'productId') {
+            constraints.push(where('productId', '==', currentSearchTerm));
+        } else if (currentFilterType === 'couponId') {
+            constraints.push(where('couponId', '==', currentSearchTerm));
+        }
       }
       
+      // Add a general filter if no search term but a specific type is selected (other than userId)
+      if (!currentSearchTerm && currentFilterType !== 'all' && currentFilterType !== 'userId') {
+          constraints.push(where(currentFilterType, '!=', null)); // e.g., where('productId', '!=', null)
+      }
+
 
       constraints.push(orderBy('timestamp', 'desc'));
-      if (loadMore && lastVisible) {
-        constraints.push(startAfter(lastVisible));
+      if (isLoadMoreOperation && docToStartAfter) {
+        constraints.push(startAfter(docToStartAfter));
       }
       constraints.push(limit(CLICKS_PER_PAGE));
 
@@ -108,14 +122,14 @@ function AdminClicksPageContent() {
       const clicksData = querySnapshot.docs.map(docSnap => {
         const data = docSnap.data();
         return {
-          id: docSnap.id,
+          id: docSnap.id, // This is the clickId used as document ID
           ...data,
           timestamp: safeToDate(data.timestamp) || new Date(0),
         } as Click;
       });
       
       if(isMounted) {
-        setClicks(prev => loadMore ? [...prev, ...clicksData] : clicksData);
+        setClicks(prev => isLoadMoreOperation ? [...prev, ...clicksData] : clicksData);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(querySnapshot.docs.length === CLICKS_PER_PAGE);
       }
@@ -123,36 +137,36 @@ function AdminClicksPageContent() {
     } catch (err) {
       console.error("Error fetching clicks:", err);
       if(isMounted) {
-        setError(err instanceof Error ? err.message : "Failed to load click history.");
-        toast({ variant: "destructive", title: "Fetch Error", description: String(err) });
+        const errorMsg = err instanceof Error ? err.message : "Failed to load click history.";
+        setPageError(errorMsg);
+        toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
         setHasMore(false);
       }
     } finally {
       if(isMounted) {
-        if (!loadMore) setLoading(false); else setLoadingMore(false);
+        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
         setIsSearching(false);
       }
     }
     return () => { isMounted = false; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearchTerm, filterType, toast]); // Removed lastVisible
+  }, [debouncedSearchTerm, filterType, lastVisible, toast]);
 
   useEffect(() => {
     fetchClicks(false);
-  }, [fetchClicks]); // fetchClicks is stable
+  }, [fetchClicks]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchClicks(false); // Re-fetch with new search term
+    // Fetch is triggered by debouncedSearchTerm or filterType change via useEffect
   };
 
   const handleLoadMore = () => {
-    if (!loadingMore && hasMore) {
-      fetchClicks(true); // Pass true for loadMore
+    if (!loadingMore && hasMore && lastVisible) {
+      fetchClicks(true);
     }
   };
 
-  if (loading && clicks.length === 0 && !error) {
+  if (loading && clicks.length === 0 && !pageError) {
     return <ClicksTableSkeleton />;
   }
 
@@ -160,24 +174,41 @@ function AdminClicksPageContent() {
     <div className="space-y-6">
       <h1 className="text-3xl font-bold">Click Logs</h1>
 
-      {error && !loading && (
+      {pageError && !loading && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{pageError}</AlertDescription>
         </Alert>
       )}
 
       <Card>
         <CardHeader>
           <CardTitle>Filter & Search Clicks</CardTitle>
-          <CardDescription>Search by User ID or filter by click type.</CardDescription>
+          <CardDescription>Search by ID based on the selected filter type.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
+             <Select value={filterType} onValueChange={(value) => {
+                setFilterType(value as any);
+                setSearchTermInput(''); // Clear search term when filter changes
+             }}>
+                <SelectTrigger id="click-filter-type">
+                  <SelectValue placeholder="Filter by type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All (Search by User ID)</SelectItem>
+                  <SelectItem value="userId">User ID</SelectItem>
+                  <SelectItem value="storeId">Store ID</SelectItem>
+                  <SelectItem value="productId">Product ID</SelectItem>
+                  <SelectItem value="couponId">Coupon ID</SelectItem>
+                </SelectContent>
+              </Select>
+          </div>
           <form onSubmit={handleSearch} className="flex-1 flex gap-2">
             <Input
               type="search"
-              placeholder="Search by User ID..."
+              placeholder={`Search by ${filterType === 'all' ? 'User ID' : filterType.replace('Id', ' ID')}...`}
               value={searchTermInput}
               onChange={(e) => setSearchTermInput(e.target.value)}
               disabled={isSearching || loading}
@@ -187,18 +218,6 @@ function AdminClicksPageContent() {
               <span className="sr-only sm:not-sr-only sm:ml-2">Search</span>
             </Button>
           </form>
-          {/* Basic filter example, could be expanded */}
-          {/* <Select value={filterType} onValueChange={(value) => setFilterType(value as any)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filter by type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Clicks</SelectItem>
-              <SelectItem value="store">Store Visits</SelectItem>
-              <SelectItem value="product">Product Clicks</SelectItem>
-              <SelectItem value="coupon">Coupon Clicks</SelectItem>
-            </SelectContent>
-          </Select> */}
         </CardContent>
       </Card>
 
@@ -208,9 +227,9 @@ function AdminClicksPageContent() {
           <CardDescription>List of all recorded user clicks on affiliate links.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading && clicks.length === 0 && !error ? (
+          {loading && clicks.length === 0 ? (
             <ClicksTableSkeleton />
-          ) : !loading && clicks.length === 0 && !error ? (
+          ) : !loading && clicks.length === 0 && !pageError ? (
             <p className="text-center text-muted-foreground py-8">
               {debouncedSearchTerm || filterType !== 'all' ? 'No clicks found matching your criteria.' : 'No clicks recorded yet.'}
             </p>
@@ -221,7 +240,7 @@ function AdminClicksPageContent() {
                   <TableRow>
                     <TableHead>User ID</TableHead>
                     <TableHead>Store</TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead>Type (ID)</TableHead>
                     <TableHead>Clicked At</TableHead>
                     <TableHead>Affiliate Link</TableHead>
                     <TableHead className="text-right">Click ID</TableHead>
@@ -232,25 +251,25 @@ function AdminClicksPageContent() {
                     <TableRow key={click.id}>
                       <TableCell className="font-mono text-xs truncate max-w-[100px]">{click.userId}</TableCell>
                       <TableCell className="truncate max-w-[150px]">{click.storeName || click.storeId}</TableCell>
-                      <TableCell className="text-xs">
+                      <TableCell className="text-xs max-w-[150px] truncate">
                         {click.productId ? `Product: ${click.productName || click.productId}` :
                          click.couponId ? `Coupon: ${click.couponId}` :
                          'Store Visit'}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">{click.timestamp ? format(new Date(click.timestamp), 'PPp') : 'N/A'}</TableCell>
                       <TableCell>
-                        <a href={click.affiliateLink} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate block max-w-[250px]" title={click.affiliateLink}>
+                        <a href={click.affiliateLink} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate block max-w-[200px]" title={click.affiliateLink}>
                           {click.affiliateLink} <ExternalLink className="h-3 w-3 inline-block ml-1" />
                         </a>
                       </TableCell>
-                      <TableCell className="font-mono text-xs truncate max-w-[150px] text-right">{click.id}</TableCell>
+                      <TableCell className="font-mono text-xs truncate max-w-[100px] text-right">{click.id}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
           )}
-          {hasMore && !loading && (
+          {hasMore && !loading && clicks.length > 0 && (
             <div className="mt-6 text-center">
               <Button onClick={handleLoadMore} disabled={loadingMore}>
                 {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

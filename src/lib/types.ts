@@ -12,7 +12,7 @@ export interface UserProfile {
   photoURL: string | null;
   role: 'user' | 'admin'; // User roles
   cashbackBalance: number; // Confirmed cashback available for payout
-  pendingCashback: number; // Cashback tracked but not yet confirmed (sum of pending transactions for this user)
+  pendingCashback: number; // Cashback tracked but not yet confirmed
   lifetimeCashback: number; // Total confirmed cashback earned over time
   referralCode: string | null; // User's unique referral code
   referralCount: number; // Number of users referred
@@ -31,7 +31,7 @@ export interface PayoutDetails {
   detail: string;
 }
 
-export type CashbackStatus = 'pending' | 'confirmed' | 'rejected' | 'paid' | 'cancelled'; // Added 'cancelled'
+export type CashbackStatus = 'pending' | 'confirmed' | 'rejected' | 'paid' | 'cancelled';
 
 export interface Transaction {
   id: string; // Firestore document ID
@@ -95,7 +95,7 @@ export interface Store {
   terms?: string | null;
   isFeatured: boolean;
   isActive: boolean;
-  isTodaysDeal?: boolean;
+  isTodaysDeal?: boolean; // For highlighting stores with special deals
   dataAiHint?: string | null;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
@@ -111,7 +111,6 @@ export interface Coupon {
   expiryDate: Date | Timestamp | null;
   isFeatured: boolean;
   isActive: boolean;
-  // isTodaysDeal?: boolean; // Removed from Coupon, moved to Store
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
@@ -153,7 +152,7 @@ export interface Product {
   affiliateLink: string;
   price?: number | null;
   priceDisplay?: string | null;
-  category?: string | null;
+  category?: string | null; // Category slug
   brand?: string | null;
   sku?: string | null;
   rating?: number | null;
@@ -162,7 +161,7 @@ export interface Product {
   specifications?: Record<string, string>;
   isActive: boolean;
   isFeatured?: boolean;
-  isTodaysPick?: boolean;
+  isTodaysPick?: boolean; // For highlighting specific products
   dataAiHint?: string | null;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
@@ -191,9 +190,7 @@ export interface ProductWithStore extends Product {
 }
 
 // Form values
-export interface StoreFormValues extends Omit<Store, 'id' | 'createdAt' | 'updatedAt'> {
-  isTodaysDeal?: boolean;
-}
+export interface StoreFormValues extends Omit<Store, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface CouponFormValues extends Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'store'> {}
 export interface BannerFormValues extends Omit<Banner, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface CategoryFormValues extends Omit<Category, 'id' | 'createdAt' | 'updatedAt'> {}
