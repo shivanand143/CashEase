@@ -7,23 +7,23 @@ import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ExternalLink, ShoppingCart, Loader2 } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, safeToDate } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
-import { trackClick, TrackClickData } from '@/lib/actions/tracking';
+import { trackClickClientSide } from '@/lib/actions/tracking'; // Updated import
+import type { TrackClickData } from '@/lib/actions/tracking'; // Import TrackClickData type
 import { v4 as uuidv4 } from 'uuid';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
 interface ProductCardProps {
   product: Product;
-  storeContext?: Store; // Store data can be passed directly if available (e.g., on store product page)
+  storeContext?: Store;
 }
 
 const isValidHttpUrl = (string: string | undefined | null): boolean => {
   if (!string) return false;
   let url;
   try {
-    // Basic check to avoid passing overly long strings or error messages as URLs
     if (string.startsWith("Error:") || string.startsWith("Unhandled") || string.length > 2048) {
         return false;
     }
@@ -37,13 +37,12 @@ const isValidHttpUrl = (string: string | undefined | null): boolean => {
 const appendClickIdToUrl = (url: string, clickId: string): string => {
   try {
     const urlObj = new URL(url);
-    urlObj.searchParams.set('subid', clickId); // Common parameter name
-    urlObj.searchParams.set('aff_sub', clickId); // Another common one
-    // Add other common subid parameters if needed, e.g., aff_click_id, click_id
+    urlObj.searchParams.set('subid', clickId);
+    urlObj.searchParams.set('aff_sub', clickId);
     return urlObj.toString();
   } catch (e) {
     console.warn("Invalid URL for click tracking, returning original:", url);
-    return url; // Return original URL if parsing fails
+    return url;
   }
 };
 
@@ -81,36 +80,37 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
     if (!user) {
         console.log("ProductCard: User not logged in. Storing redirect and navigating to login.");
         sessionStorage.setItem('loginRedirectUrl', finalAffiliateLink);
-        sessionStorage.setItem('loginRedirectSource', router.asPath);
+        sessionStorage.setItem('loginRedirectSource', router.asPath); // Save current path
         router.push('/login?message=Please login to track your cashback for this product.');
         return;
     }
 
-    const clickData: Omit<TrackClickData, 'timestamp'> = {
+    // Prepare data for client-side tracking
+    const clickData: Omit<TrackClickData, 'timestamp' | 'userAgent'> = { // Omit fields handled by trackClickClientSide
         userId: user.uid,
         storeId: product.storeId,
-        storeName: storeContext?.name || product.storeName || "Unknown Store", // Prioritize context, then product's own storeName
+        storeName: storeContext?.name || product.storeName || "Unknown Store",
         productId: product.id,
         productName: product.name,
-        couponId: null, // No coupon involved for direct product click
+        couponId: null,
         clickId: clickId,
         affiliateLink: finalAffiliateLink,
-        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
     };
 
-    console.log("ProductCard: Preparing to track click with data:", clickData);
+    console.log("ProductCard: Preparing to track click with data (client-side):", clickData);
 
     try {
-        const trackResult = await trackClick(clickData);
+        // Call the client-side tracking function
+        const trackResult = await trackClickClientSide(clickData);
         if (trackResult.success) {
-            console.log(`ProductCard: Click tracked successfully for Product ${product.id}, ClickID ${trackResult.clickId}`);
+            console.log(`ProductCard: Click tracked successfully (client-side) for Product ${product.id}, ClickID ${trackResult.clickId}`);
             toast({ title: "Tracking...", description: "Redirecting to store..." });
         } else {
-            console.error("ProductCard: Failed to track product click (server action error):", trackResult.error);
+            console.error("ProductCard: Failed to track product click (client-side util error):", trackResult.error);
             toast({title: "Tracking Issue", description: `Could not fully track click: ${trackResult.error}. Proceeding to store.`, variant: "destructive", duration: 7000})
         }
     } catch (e) {
-        console.error("ProductCard: Error calling trackClick:", e);
+        console.error("ProductCard: Error calling trackClickClientSide:", e);
         toast({title: "Tracking Error", description: "An unexpected error occurred during click tracking. Proceeding to store.", variant: "destructive", duration: 7000})
     }
 
@@ -143,7 +143,7 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
                 {productTitle}
             </Link>
           </h3>
-           {(storeContext?.name || product.storeName) && ( // Display store name if available
+           {(storeContext?.name || product.storeName) && (
              <Link href={`/stores/${product.storeId}`} className="text-xs text-muted-foreground hover:text-primary transition-colors mb-1 block truncate">
                From: {storeContext?.name || product.storeName}
              </Link>
