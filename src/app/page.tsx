@@ -10,7 +10,7 @@ import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious
 import Autoplay from "embla-carousel-autoplay";
 import Image from 'next/image';
 import { Input } from '@/components/ui/input';
-import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info, AlertCircle, Loader2, Package } from 'lucide-react';
+import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info, AlertCircle, Loader2, Package, Star } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { collection, getDocs, query, where, limit, orderBy, QueryConstraint, DocumentData, getDoc, doc, Timestamp } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
@@ -61,109 +61,64 @@ async function fetchData<T>(collectionName: string, constraints: QueryConstraint
         });
     } catch (err) {
         console.error(`Error fetching ${collectionName}:`, err);
-        throw new Error(`Failed to fetch ${collectionName}`);
+        // Instead of throwing, return empty and let UI handle it
+        // throw new Error(`Failed to fetch ${collectionName}`);
     }
     return data;
 }
 
-async function fetchCouponsWithStoreData(constraints: QueryConstraint[], orderFields: { field: string, direction: 'asc' | 'desc' }[] = [], fetchLimit?: number): Promise<CouponWithStore[]> {
-    let coupons: Coupon[] = [];
-    let enrichedCoupons: CouponWithStore[] = [];
+async function fetchItemsWithStoreData<T extends Coupon | Product>(
+    itemType: 'coupons' | 'products',
+    constraints: QueryConstraint[],
+    orderFields: { field: string, direction: 'asc' | 'desc' }[] = [],
+    fetchLimit?: number
+): Promise<(T & { store?: Store })[]> {
+    let items: T[] = [];
+    let enrichedItems: (T & { store?: Store })[] = [];
     if (!db || firebaseInitializationError) {
-        console.warn(`Firestore DB not initialized or error during init in fetchCouponsWithStoreData. Error: ${firebaseInitializationError}`);
+        console.warn(`Firestore DB not initialized for fetchItemsWithStoreData for ${itemType}. Error: ${firebaseInitializationError}`);
         return [];
     }
     try {
-        coupons = await fetchData<Coupon>('coupons', constraints, orderFields, fetchLimit);
-        if (coupons.length > 0) {
+        items = await fetchData<T>(itemType, constraints, orderFields, fetchLimit);
+        if (items.length > 0) {
             const storeCache = new Map<string, Store>();
-            const storePromises = coupons.map(async (coupon) => {
-                if (!coupon.storeId) return coupon;
-                if (storeCache.has(coupon.storeId)) {
-                    return { ...coupon, store: storeCache.get(coupon.storeId)! };
+            const itemPromises = items.map(async (item) => {
+                if (!item.storeId) return item;
+                if (storeCache.has(item.storeId)) {
+                    return { ...item, store: storeCache.get(item.storeId)! };
                 }
                 if (!db) {
-                  console.warn("DB not available for store fetch in fetchCouponsWithStoreData");
-                  return coupon;
+                    console.warn(`DB not available for store fetch in fetchItemsWithStoreData for ${itemType}`);
+                    return item;
                 }
                 try {
-                    const storeDocRef = doc(db, 'stores', coupon.storeId);
-                    const storeSnap = await getDoc(storeDocRef);
-                    if (storeSnap.exists()) {
-                         const storeDataRaw = storeSnap.data();
-                         const storeData = {
-                             id: storeSnap.id,
-                             ...storeDataRaw,
-                             createdAt: safeToDate(storeDataRaw.createdAt as Timestamp | undefined),
-                             updatedAt: safeToDate(storeDataRaw.updatedAt as Timestamp | undefined),
-                         } as Store;
-                        storeCache.set(coupon.storeId, storeData);
-                        return { ...coupon, store: storeData };
-                    }
-                    return coupon;
-                } catch (storeError) {
-                    console.error(`Error fetching store ${coupon.storeId} for coupon ${coupon.id}:`, storeError);
-                    return coupon;
-                }
-            });
-            enrichedCoupons = await Promise.all(storePromises);
-        }
-    } catch (err) {
-        console.error("Error in fetchCouponsWithStoreData:", err);
-         throw new Error("Failed to fetch coupons with store data");
-    }
-    return enrichedCoupons;
-}
-
-async function fetchProductsWithStoreData(constraints: QueryConstraint[], orderFields: { field: string, direction: 'asc' | 'desc' }[] = [], fetchLimit?: number): Promise<ProductWithStore[]> {
-    let products: Product[] = [];
-    let enrichedProducts: ProductWithStore[] = [];
-     if (!db || firebaseInitializationError) {
-        console.warn(`Firestore DB not initialized or error during init in fetchProductsWithStoreData. Error: ${firebaseInitializationError}`);
-        return [];
-    }
-    try {
-        products = await fetchData<Product>('products', constraints, orderFields, fetchLimit);
-        if (products.length > 0) {
-            const storeCache = new Map<string, Store>();
-            const productPromises = products.map(async (product) => {
-                if (!product.storeId) return product;
-                if (storeCache.has(product.storeId)) {
-                    return { ...product, store: storeCache.get(product.storeId)! };
-                }
-                 if (!db) {
-                  console.warn("DB not available for store fetch in fetchProductsWithStoreData");
-                  return product;
-                }
-                try {
-                    const storeDocRef = doc(db, 'stores', product.storeId);
+                    const storeDocRef = doc(db, 'stores', item.storeId);
                     const storeSnap = await getDoc(storeDocRef);
                     if (storeSnap.exists()) {
                         const storeDataRaw = storeSnap.data();
                         const storeData = {
-                             id: storeSnap.id,
-                             ...storeDataRaw,
-                             createdAt: safeToDate(storeDataRaw.createdAt as Timestamp | undefined),
-                             updatedAt: safeToDate(storeDataRaw.updatedAt as Timestamp | undefined),
-                         } as Store;
-                        storeCache.set(product.storeId, storeData);
-                        return { ...product, store: storeData };
+                            id: storeSnap.id,
+                            ...storeDataRaw,
+                            createdAt: safeToDate(storeDataRaw.createdAt as Timestamp | undefined),
+                            updatedAt: safeToDate(storeDataRaw.updatedAt as Timestamp | undefined),
+                        } as Store;
+                        storeCache.set(item.storeId, storeData);
+                        return { ...item, store: storeData };
                     }
-                    // If store doesn't exist, still return product but store will be undefined
-                    console.warn(`Store with ID ${product.storeId} not found for product ${product.id}`);
-                    return product;
+                    console.warn(`Store with ID ${item.storeId} not found for ${itemType} ${item.id}`);
+                    return item;
                 } catch (storeError) {
-                    console.error(`Error fetching store ${product.storeId} for product ${product.id}:`, storeError);
-                    return product;
+                    console.error(`Error fetching store ${item.storeId} for ${itemType} ${item.id}:`, storeError);
+                    return item;
                 }
             });
-            enrichedProducts = await Promise.all(productPromises);
+            enrichedItems = await Promise.all(itemPromises);
         }
     } catch (err) {
-        console.error("Error in fetchProductsWithStoreData:", err);
-        throw new Error("Failed to fetch products with store data");
+        console.error(`Error in fetchItemsWithStoreData for ${itemType}:`, err);
     }
-    return enrichedProducts;
+    return enrichedItems;
 }
 
 
@@ -176,13 +131,12 @@ export default function HomePage() {
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [todaysPicksProducts, setTodaysPicksProducts] = React.useState<ProductWithStore[]>([]);
 
-
   const [loadingBanners, setLoadingBanners] = React.useState(true);
   const [loadingFeaturedStores, setLoadingFeaturedStores] = React.useState(true);
   const [loadingTopCoupons, setLoadingTopCoupons] = React.useState(true);
   const [loadingCategories, setLoadingCategories] = React.useState(true);
   const [loadingTodaysPicksProducts, setLoadingTodaysPicksProducts] = React.useState(true);
-  const [pageError, setPageError] = React.useState<string | null>(null);
+  const [pageError, setPageError] = React.useState<string[]>([]);
   const [searchTerm, setSearchTerm] = React.useState('');
 
 
@@ -191,73 +145,65 @@ export default function HomePage() {
     const loadAllData = async () => {
       if (firebaseInitializationError) {
         if (isMounted) {
-            setPageError(`Failed to connect to the database: ${firebaseInitializationError}`);
+            setPageError(prev => [...prev, `Failed to connect to the database: ${firebaseInitializationError}`]);
             setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingCategories(false); setLoadingTodaysPicksProducts(false);
         }
         return;
       }
       if (!db) {
         if(isMounted) {
-            setPageError("Database not available. Please try again later.");
+            setPageError(prev => [...prev, "Database not available. Please try again later."]);
             setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingCategories(false); setLoadingTodaysPicksProducts(false);
         }
         return;
       }
 
       setLoadingBanners(true); setLoadingFeaturedStores(true); setLoadingTopCoupons(true); setLoadingCategories(true); setLoadingTodaysPicksProducts(true);
-      setPageError(null);
-      let combinedErrorMessages: string[] = [];
+      setPageError([]);
+      
+      const errors: string[] = [];
+
+      const bannerFetchPromise = fetchData<Banner>(
+        'banners', [where('isActive', '==', true)], [{field: 'order', direction: 'asc'}], 5
+      ).catch(err => { console.error("Banner fetch failed:", err); errors.push("banners"); return []; });
+
+      const featuredStoreFetchPromise = fetchData<Store>(
+        'stores', [where('isActive', '==', true), where('isFeatured', '==', true)], [{field: 'name', direction: 'asc'}], 12
+      ).catch(err => { console.error("Featured Store fetch failed:", err); errors.push("featured stores"); return []; });
+
+      const topCouponFetchPromise = fetchItemsWithStoreData(
+        'coupons', [where('isActive', '==', true), where('isFeatured', '==', true)], [{field: 'createdAt', direction: 'desc'}], 6
+      ).catch(err => { console.error("Top Coupon fetch failed:", err); errors.push("top coupons"); return []; });
+
+      const categoryFetchPromise = fetchData<Category>(
+           'categories', [where('isActive', '==', true)],
+           [{field: 'order', direction: 'asc'}, {field: 'name', direction: 'asc'}], 12
+       ).catch(err => { console.error("Category fetch failed:", err); errors.push("categories"); return []; });
+
+      const todaysPicksProductsFetchPromise = fetchItemsWithStoreData(
+          'products', [where('isActive', '==', true), where('isTodaysPick', '==', true)],
+          [{ field: 'updatedAt', direction: 'desc' }],
+          6
+      ).catch(err => { console.error("Today's Picks Products fetch failed:", err); errors.push("today's picks products"); return []; });
 
 
-      try {
-        const bannerFetchPromise = fetchData<Banner>(
-          'banners', [where('isActive', '==', true)], [{field: 'order', direction: 'asc'}], 5
-        ).catch(err => { console.error("Banner fetch failed:", err); combinedErrorMessages.push("banners"); return []; });
+      const [bannerData, featuredStoreData, topCouponData, categoryData, todaysPicksData] = await Promise.all([
+          bannerFetchPromise, featuredStoreFetchPromise, topCouponFetchPromise, categoryFetchPromise, todaysPicksProductsFetchPromise
+      ]);
 
-        const featuredStoreFetchPromise = fetchData<Store>(
-          'stores', [where('isActive', '==', true), where('isFeatured', '==', true)], [{field: 'name', direction: 'asc'}], 12
-        ).catch(err => { console.error("Featured Store fetch failed:", err); combinedErrorMessages.push("featured stores"); return []; });
+      if (isMounted) {
+        setBanners(bannerData);
+        setFeaturedStores(featuredStoreData);
+        setTopCoupons(topCouponData);
+        setCategories(categoryData);
+        setTodaysPicksProducts(todaysPicksData);
 
-        const topCouponFetchPromise = fetchCouponsWithStoreData(
-          [where('isActive', '==', true), where('isFeatured', '==', true)], [{field: 'createdAt', direction: 'desc'}], 6
-        ).catch(err => { console.error("Top Coupon fetch failed:", err); combinedErrorMessages.push("top coupons"); return []; });
-
-        const categoryFetchPromise = fetchData<Category>(
-             'categories', [where('isActive', '==', true)],
-             [{field: 'order', direction: 'asc'}, {field: 'name', direction: 'asc'}], 12
-         ).catch(err => { console.error("Category fetch failed:", err); combinedErrorMessages.push("categories"); return []; });
-
-        const todaysPicksProductsFetchPromise = fetchProductsWithStoreData(
-            [where('isActive', '==', true), where('isTodaysPick', '==', true)],
-            [{ field: 'updatedAt', direction: 'desc' }], // Order by most recently updated today's pick
-            6
-        ).catch(err => { console.error("Today's Picks Products fetch failed:", err); combinedErrorMessages.push("today's picks products"); return []; });
-
-
-        const [bannerData, featuredStoreData, topCouponData, categoryData, todaysPicksData] = await Promise.all([
-            bannerFetchPromise, featuredStoreFetchPromise, topCouponFetchPromise, categoryFetchPromise, todaysPicksProductsFetchPromise
-        ]);
-
-        if (isMounted) {
-          setBanners(bannerData);
-          setFeaturedStores(featuredStoreData);
-          setTopCoupons(topCouponData);
-          setCategories(categoryData);
-          setTodaysPicksProducts(todaysPicksData);
-
-          if (combinedErrorMessages.length > 0) {
-             setPageError(`Failed to load some data sections: ${combinedErrorMessages.join(', ')}.`);
-          }
+        if (errors.length > 0) {
+           setPageError(errors);
         }
-      } catch (err) {
-        if (isMounted) {
-           console.error("Error loading page data:", err);
-           setPageError("Failed to load page data. Please try again.");
-        }
-      } finally {
-        if (isMounted) {
-          setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingCategories(false); setLoadingTodaysPicksProducts(false);
-        }
+      }
+      if (isMounted) {
+        setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingCategories(false); setLoadingTodaysPicksProducts(false);
       }
     };
 
@@ -267,11 +213,11 @@ export default function HomePage() {
 
 
   React.useEffect(() => {
-    if (pageError) {
+    if (pageError.length > 0) {
       toast({
         variant: "destructive",
-        title: "Error Loading Data",
-        description: pageError,
+        title: "Error Loading Some Data",
+        description: `Failed to load: ${pageError.join(', ')}. Some content may be missing.`,
         duration: 7000,
       });
     }
@@ -294,7 +240,7 @@ export default function HomePage() {
     Autoplay({ delay: 4000, stopOnInteraction: true })
   );
 
-  const isPageLoading = loadingBanners || loadingFeaturedStores || loadingTopCoupons || loadingCategories || loadingTodaysPicksProducts;
+  const isAnySectionLoading = loadingBanners || loadingFeaturedStores || loadingTopCoupons || loadingCategories || loadingTodaysPicksProducts;
 
   return (
     <div className="container mx-auto px-4 py-8 space-y-12 md:space-y-16 lg:space-y-20">
@@ -338,16 +284,17 @@ export default function HomePage() {
            </div>
        </section>
 
-        {pageError && !isPageLoading && (
+        {pageError.length > 0 && !isAnySectionLoading && (
           <Alert variant="destructive" className="mt-8">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Data Loading Issues</AlertTitle>
             <AlertDescription>
-              {pageError} Some content may be missing. Please try refreshing the page. If the problem persists, contact support.
+              Failed to load: {pageError.join(', ')}. Some content may be missing. Please try refreshing the page. If the problem persists, contact support.
             </AlertDescription>
           </Alert>
        )}
 
+       {/* Banners Section */}
        <section>
          <h2 className="text-3xl font-bold text-center mb-6 md:mb-8 flex items-center justify-center gap-2">
            <TrendingUp className="text-primary w-7 h-7"/> Today's Top Offers
@@ -396,7 +343,7 @@ export default function HomePage() {
                </>
              )}
            </Carousel>
-         ) : !pageError ? (
+         ) : !pageError.includes("banners") ? (
              <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border">
                 No special top offers featured right now. Check back soon!
              </div>
@@ -434,22 +381,18 @@ export default function HomePage() {
          </Button>
       </section>
 
+       {/* Today's Picks (Products) Section */}
        <section>
          <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
             <h2 className="text-3xl font-bold flex items-center gap-2">
-                <Package className="text-primary w-7 h-7"/> Today's Picks
+                <Star className="text-primary w-7 h-7"/> Today's Picks
             </h2>
-            {/* Optional: Add a "View All Products" or "View All Deals" link here if you have such a page */}
-            {/* <Button variant="outline" size="sm" asChild>
-                <Link href="/deals" className="flex items-center gap-1">
-                    View All Deals <ArrowRight className="w-4 h-4" />
-                </Link>
-            </Button> */}
+            {/* Optional "View All Products" or "View All Deals" Link */}
          </div>
           {loadingTodaysPicksProducts ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
                   {Array.from({ length: 6 }).map((_, index) => (
-                      <Skeleton key={`todayspick-skel-page-${index}`} className="h-64 rounded-lg" />
+                      <Skeleton key={`todayspick-skel-page-${index}`} className="h-72 rounded-lg" />
                   ))}
               </div>
           ) : todaysPicksProducts.length > 0 ? (
@@ -458,12 +401,12 @@ export default function HomePage() {
                       <ProductCard key={product.id} product={product} storeContext={product.store} />
                   ))}
               </div>
-          ) : !pageError ? (
+          ) : !pageError.includes("today's picks products") ? (
               <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No products marked as "Today's Picks" right now. Check back soon!</p>
           ) : null}
        </section>
 
-
+       {/* Popular Categories Section */}
         <section>
            <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
                <h2 className="text-3xl font-bold flex items-center gap-2">
@@ -506,11 +449,12 @@ export default function HomePage() {
                    </Link>
                  ))}
                </div>
-           ) : !pageError ? (
+           ) : !pageError.includes("categories") ? (
                <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No categories found.</p>
            ): null}
        </section>
 
+      {/* Featured Stores Section */}
       <section>
         <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
           <h2 className="text-3xl font-bold flex items-center gap-2">
@@ -530,11 +474,12 @@ export default function HomePage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
             {featuredStores.map((store) => ( <StoreCard key={store.id} store={store} /> ))}
           </div>
-        ) : !pageError ? (
+        ) : !pageError.includes("featured stores") ? (
           <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No featured stores available right now.</p>
         ) : null}
       </section>
 
+      {/* Top Coupons Section */}
       <section>
         <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
           <h2 className="text-3xl font-bold flex items-center gap-2">
@@ -554,7 +499,7 @@ export default function HomePage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {topCoupons.map((coupon) => ( <CouponCard key={coupon.id} coupon={coupon} /> ))}
           </div>
-        ) : !pageError ? (
+        ) : !pageError.includes("top coupons") ? (
           <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No top coupons available at the moment.</p>
         ): null}
       </section>

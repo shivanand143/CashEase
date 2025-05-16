@@ -18,9 +18,27 @@
       }
     ]
   },
+  "emulators": {
+    "auth": {
+      "port": 9099
+    },
+    "firestore": {
+      "port": 8080
+    },
+    "storage": {
+      "port": 9199
+    },
+    "ui": {
+      "enabled": true,
+      "port": 4000
+    }
+},
+
+
   "storage": {
     "rules": "storage.rules"
   },
+  
   "functions": [
     {
       "source": "functions",
@@ -32,7 +50,9 @@
         "firebase-debug.*.log",
         "*.local"
       ],
-       "runtime": "nodejs20" // Specify Node.js 20 runtime
+       "runtime": "nodejs20" 
     }
   ]
 }
+
+  
