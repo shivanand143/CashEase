@@ -1,42 +1,47 @@
+
 'use server';
 
-import { collection, addDoc, serverTimestamp, doc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore'; // Use setDoc with specific ID
 import { db } from '@/lib/firebase/config';
-import type { Click } from '@/lib/types';
+// Click interface will be in types.ts
 
 interface TrackClickData {
   userId: string;
   storeId: string;
-  storeName?: string; // Optional denormalized name
+  storeName?: string;
   couponId?: string | null;
-  affiliateLink: string; // The final link clicked (potentially with clickId)
-  clickId: string; // The unique ID generated for this click
+  productId?: string | null;
+  productName?: string | null;
+  affiliateLink: string;
+  clickId: string; // This will be used as the document ID
   userAgent?: string;
-  // ipAddress?: string; // Consider privacy implications before storing IP
 }
 
 export async function trackClick(data: TrackClickData): Promise<void> {
   console.log('Tracking click (Server Action):', data);
   if (!db) {
     console.error("Firestore not initialized. Cannot track click.");
-    // Optionally throw an error or handle it differently
     return;
   }
 
   try {
-    const clicksCollection = collection(db, 'clicks');
-    // Use the generated clickId as the document ID for easy lookup
-    const clickDocRef = doc(clicksCollection, data.clickId);
+    // Use the generated clickId as the document ID for easy lookup and idempotency (if needed)
+    const clickDocRef = doc(db, 'clicks', data.clickId);
 
-    await addDoc(clicksCollection,{
-      ...data,
+    await setDoc(clickDocRef, {
+      userId: data.userId,
+      storeId: data.storeId,
+      storeName: data.storeName || null,
+      couponId: data.couponId || null,
+      productId: data.productId || null,
+      productName: data.productName || null,
+      affiliateLink: data.affiliateLink,
       timestamp: serverTimestamp(), // Use Firestore server timestamp
+      userAgent: data.userAgent || null,
     });
 
     console.log(`Click tracked successfully for user ${data.userId}, clickId: ${data.clickId}`);
   } catch (error) {
     console.error('Error writing click data to Firestore:', error);
-    // Decide how to handle the error. Maybe log it to a different service.
-    // Avoid throwing an error here if you don't want to block the user's redirection.
   }
 }

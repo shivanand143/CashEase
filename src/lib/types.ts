@@ -12,197 +12,193 @@ export interface UserProfile {
   photoURL: string | null;
   role: 'user' | 'admin'; // User roles
   cashbackBalance: number; // Confirmed cashback available for payout
-  pendingCashback: number; // Cashback tracked but not yet confirmed
+  pendingCashback: number; // Cashback tracked but not yet confirmed (sum of pending transactions for this user)
   lifetimeCashback: number; // Total confirmed cashback earned over time
   referralCode: string | null; // User's unique referral code
   referralCount: number; // Number of users referred
   referralBonusEarned: number; // Total bonus earned from referrals
   referredBy: string | null; // UID of the user who referred this user
   isDisabled: boolean; // To disable user accounts
-  createdAt: Date | Timestamp; // Use Date on client, Timestamp on server/write
+  createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
-  lastPayoutRequestAt?: Date | Timestamp | null; // Last payout request time
-  payoutDetails?: PayoutDetails | null; // Saved payout details
+  lastPayoutRequestAt?: Date | Timestamp | null;
+  payoutDetails?: PayoutDetails | null;
 }
 
-// Payout Details (flexible structure)
+// Payout Details
 export interface PayoutDetails {
   method: PayoutMethod;
-  detail: string; // e.g., PayPal email, UPI ID, Bank details string
+  detail: string;
 }
 
-
-export type CashbackStatus = 'pending' | 'confirmed' | 'rejected' | 'paid';
+export type CashbackStatus = 'pending' | 'confirmed' | 'rejected' | 'paid' | 'cancelled'; // Added 'cancelled'
 
 export interface Transaction {
   id: string; // Firestore document ID
   userId: string;
   storeId: string;
   storeName?: string; // Denormalized for easier display
-  clickId?: string | null; // ID from the click tracking system
+  orderId?: string | null; // Retailer's order ID
+  clickId?: string | null; // Link to the click record
   saleAmount: number;
-  cashbackAmount: number;
+  cashbackAmount: number; // Cashback earned by the user for this transaction
+  commissionAmount?: number | null; // Optional: Commission earned by the platform
   status: CashbackStatus;
   transactionDate: Date | Timestamp; // Date of purchase
-  confirmationDate?: Date | Timestamp | null; // Date cashback confirmed by retailer
+  confirmationDate?: Date | Timestamp | null; // Date cashback confirmed by retailer/admin
   paidDate?: Date | Timestamp | null; // Date cashback was included in a payout
   payoutId?: string | null; // ID of the PayoutRequest this transaction was part of
-  adminNotes?: string | null; // Notes added by admin (e.g., reason for rejection)
+  adminNotes?: string | null;
+  notesToUser?: string | null; // e.g. reason for rejection if status is 'rejected'
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
 
-// For logging user clicks on affiliate links
 export interface Click {
-    id: string; // Firestore document ID (can be the generated clickId)
+    id: string; // Firestore document ID (this will be the generated clickId)
     userId: string;
     storeId: string;
-    storeName?: string; // Optional: Denormalized store name
-    couponId?: string | null; // Optional: if the click was on a specific coupon
-    productId?: string | null; // Optional: if the click was on a specific product
-    productName?: string | null; // Optional: Denormalized product name
-    affiliateLink: string; // The specific link that was clicked (with clickId appended if applicable)
-    timestamp: Date | Timestamp; // Firestore server timestamp preferred
-    userAgent?: string; // Optional: User agent string
+    storeName?: string;
+    couponId?: string | null;
+    productId?: string | null;
+    productName?: string | null;
+    affiliateLink: string; // The final affiliate link clicked
+    timestamp: Date | Timestamp;
+    userAgent?: string;
 }
-
 
 export type CashbackType = 'percentage' | 'fixed';
-export type PayoutMethod = 'paypal' | 'bank_transfer' | 'gift_card'; // Allow customization
+export type PayoutMethod = 'paypal' | 'bank_transfer' | 'gift_card';
 export type PayoutStatus = 'pending' | 'approved' | 'processing' | 'paid' | 'rejected' | 'failed';
 
-
-// Store information
 export interface Store {
-  id: string; // Firestore document ID
+  id: string;
   name: string;
-  slug?: string; // URL-friendly identifier, often same as ID if using slugs as IDs
+  slug?: string;
   logoUrl: string | null;
-  heroImageUrl?: string | null; // For the store detail page hero banner
-  affiliateLink: string; // The BASE tracking link (clickId added dynamically)
-  cashbackRate: string; // User-friendly display string (e.g., "Up to 5%", "Flat ₹50")
-  cashbackRateValue: number; // The numeric value for calculations
-  cashbackType: CashbackType; // 'percentage' or 'fixed'
+  heroImageUrl?: string | null;
+  affiliateLink: string;
+  cashbackRate: string;
+  cashbackRateValue: number;
+  cashbackType: CashbackType;
   description: string;
-  detailedDescription?: string | null; // Longer description for store page
-  categories: string[]; // Array of category slugs or names
-  rating?: number | null; // e.g., 4.5
-  ratingCount?: number | null; // e.g., 1800
-  cashbackTrackingTime?: string | null; // e.g., "36 Hours"
-  cashbackConfirmationTime?: string | null; // e.g., "35 Days"
-  cashbackOnAppOrders?: boolean | null; // Is cashback available on app orders?
-  detailedCashbackRatesLink?: string | null; // Link to a page with detailed cashback rates
-  topOffersText?: string | null; // Text for "Top Store Offers" section
-  offerDetailsLink?: string | null; // Link for "See Offer Details"
-  terms?: string | null; // Specific terms and conditions for offers
-  isFeatured: boolean; // Highlighted store
-  isActive: boolean; // Whether the store is active on the platform
-  isTodaysDeal?: boolean; // New flag for "Today's Deal" stores
-  dataAiHint?: string | null; // Optional hint for AI image generation/search
+  detailedDescription?: string | null;
+  categories: string[];
+  rating?: number | null;
+  ratingCount?: number | null;
+  cashbackTrackingTime?: string | null;
+  cashbackConfirmationTime?: string | null;
+  cashbackOnAppOrders?: boolean | null;
+  detailedCashbackRatesLink?: string | null;
+  topOffersText?: string | null;
+  offerDetailsLink?: string | null;
+  terms?: string | null;
+  isFeatured: boolean;
+  isActive: boolean;
+  isTodaysDeal?: boolean;
+  dataAiHint?: string | null;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
 
-// Coupon information
 export interface Coupon {
-  id: string; // Firestore document ID
-  storeId: string; // ID of the store this coupon belongs to
-  store?: Store; // Optional: Denormalized store data for display
-  code: string | null; // The actual coupon code (if applicable)
-  description: string; // What the coupon offers
-  link: string | null; // Direct link to the offer page (if applicable, overrides store link)
-  expiryDate: Date | Timestamp | null; // When the coupon expires
-  isFeatured: boolean; // Highlighted coupon
-  isActive: boolean; // Whether the coupon is active
+  id: string;
+  storeId: string;
+  store?: Store;
+  code: string | null;
+  description: string;
+  link: string | null;
+  expiryDate: Date | Timestamp | null;
+  isFeatured: boolean;
+  isActive: boolean;
+  // isTodaysDeal?: boolean; // Removed from Coupon, moved to Store
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
 
-// Category information
 export interface Category {
-    id: string; // Firestore document ID (often same as slug for simplicity)
+    id: string;
     name: string;
-    slug: string; // URL-friendly identifier (e.g., 'electronics', 'mens-fashion')
+    slug: string;
     description?: string | null;
-    imageUrl?: string | null; // Optional image for the category
-    order: number; // For custom sorting of categories
+    imageUrl?: string | null;
+    order: number;
     isActive: boolean;
     dataAiHint?: string | null;
     createdAt: Date | Timestamp;
     updatedAt: Date | Timestamp;
 }
 
-// Banner information
 export interface Banner {
-    id: string; // Firestore document ID
+    id: string;
     title?: string | null;
     subtitle?: string | null;
     imageUrl: string;
-    link?: string | null; // URL the banner links to
-    altText: string; // For accessibility
-    dataAiHint?: string | null; // Optional hint for AI image generation/search
-    order: number; // Display order
-    isActive: boolean; // Whether the banner is currently displayed
+    link?: string | null;
+    altText: string;
+    dataAiHint?: string | null;
+    order: number;
+    isActive: boolean;
     createdAt: Date | Timestamp;
     updatedAt: Date | Timestamp;
 }
 
-// Product information
 export interface Product {
-  id: string; // Firestore document ID
-  storeId: string; // ID of the store this product belongs to
-  storeName?: string; // Denormalized store name for display convenience
+  id: string;
+  storeId: string;
+  storeName?: string;
   name: string;
   description?: string | null;
   imageUrl: string | null;
-  affiliateLink: string; // Specific affiliate link for this product
-  price?: number | null; // Numeric price for sorting/filtering if needed
-  priceDisplay?: string | null; // Formatted price string (e.g., "₹1,999", "₹1,999 - ₹2,499")
-  category?: string | null; // Slug of the primary category this product falls into (can be an array if multi-category)
+  affiliateLink: string;
+  price?: number | null;
+  priceDisplay?: string | null;
+  category?: string | null;
   brand?: string | null;
-  sku?: string | null; // Stock Keeping Unit
+  sku?: string | null;
   rating?: number | null;
   ratingCount?: number | null;
-  features?: string[]; // Array of key feature strings
-  specifications?: Record<string, string>; // Key-value pairs for detailed specifications
-  isActive: boolean; // Is the product currently active and visible?
-  isFeatured?: boolean; // Should this product be highlighted?
+  features?: string[];
+  specifications?: Record<string, string>;
+  isActive: boolean;
+  isFeatured?: boolean;
   isTodaysPick?: boolean;
   dataAiHint?: string | null;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
 
-
-// Payout Request
 export interface PayoutRequest {
-  id: string; // Firestore document ID
+  id: string;
   userId: string;
-  amount: number; // Amount requested
+  amount: number;
   status: PayoutStatus;
   requestedAt: Date | Timestamp;
-  processedAt?: Date | Timestamp | null; // Timestamp when status changed from pending
+  processedAt?: Date | Timestamp | null;
   paymentMethod: PayoutMethod;
-  paymentDetails: PayoutDetails; // Nested object for details
-  transactionIds: string[]; // IDs of the 'confirmed' transactions included in this payout
-  adminNotes?: string | null; // Notes from admin (e.g., reason for rejection, transaction ID)
-  failureReason?: string | null; // If status is 'failed'
+  paymentDetails: PayoutDetails;
+  transactionIds: string[]; // IDs of 'confirmed' transactions included
+  adminNotes?: string | null;
+  failureReason?: string | null;
 }
 
-// Helper type for combining Coupon and Store data
 export interface CouponWithStore extends Coupon {
-  store?: Store; // Optional nested store data
+  store?: Store;
 }
 
-// Form values for Store, used in admin panel
+export interface ProductWithStore extends Product {
+  store?: Store;
+}
+
+// Form values
 export interface StoreFormValues extends Omit<Store, 'id' | 'createdAt' | 'updatedAt'> {
   isTodaysDeal?: boolean;
 }
-// Form values for Coupon, used in admin panel
 export interface CouponFormValues extends Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'store'> {}
-// Form values for Banner, used in admin panel
 export interface BannerFormValues extends Omit<Banner, 'id' | 'createdAt' | 'updatedAt'> {}
-// Form values for Category, used in admin panel
 export interface CategoryFormValues extends Omit<Category, 'id' | 'createdAt' | 'updatedAt'> {}
-// Form values for Product, used in admin panel
 export interface ProductFormValues extends Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'storeName'> {}
+// Form values for manual transaction entry by admin
+export interface TransactionFormValues extends Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'confirmationDate' | 'paidDate' | 'payoutId'> {
+    transactionDate: Date; // Ensure it's Date for form
+}

@@ -1,3 +1,4 @@
+
 // src/app/dashboard/history/page.tsx
 "use client";
 
@@ -35,21 +36,33 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { formatCurrency, safeToDate } from '@/lib/utils';
 import { format } from 'date-fns';
-import { AlertCircle, History, Loader2 } from 'lucide-react';
-import ProtectedRoute from '@/components/guards/protected-route'; // Use ProtectedRoute
+import { AlertCircle, History, Loader2, CheckCircle, XCircle, Hourglass } from 'lucide-react';
+import ProtectedRoute from '@/components/guards/protected-route';
 
 const TRANSACTIONS_PER_PAGE = 15;
 
-// Helper function to map status to badge variant
 const getStatusVariant = (status: CashbackStatus): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
-    case 'confirmed': return 'default'; // Green/Primary for confirmed
-    case 'paid': return 'secondary'; // Blue/Secondary for paid
-    case 'pending': return 'outline'; // Muted/Outline for pending
-    case 'rejected': return 'destructive'; // Red for rejected
+    case 'confirmed': return 'default';
+    case 'paid': return 'secondary';
+    case 'pending': return 'outline';
+    case 'rejected':
+    case 'cancelled': return 'destructive';
     default: return 'outline';
   }
 };
+
+const getStatusIcon = (status: CashbackStatus) => {
+    switch (status) {
+      case 'confirmed':
+      case 'paid': return <CheckCircle className="h-3 w-3" />;
+      case 'pending': return <Hourglass className="h-3 w-3" />;
+      case 'rejected':
+      case 'cancelled': return <XCircle className="h-3 w-3" />;
+      default: return <AlertCircle className="h-3 w-3" />;
+    }
+};
+
 
 function CashbackHistoryContent() {
   const { user, loading: authLoading } = useAuth();
@@ -97,17 +110,18 @@ function CashbackHistoryContent() {
       setTransactions(transactionsData);
       setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
       setHasMore(querySnapshot.docs.length === TRANSACTIONS_PER_PAGE);
-      setError(null); // Clear error on successful fetch
+      setError(null);
 
     } catch (err) {
       console.error("Error fetching initial transactions:", err);
       const errorMsg = err instanceof Error ? err.message : "Failed to load transaction history.";
       setError(errorMsg);
-      setTransactions([]); // Clear transactions on error
+      setTransactions([]);
       setHasMore(false);
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
 
@@ -149,17 +163,17 @@ function CashbackHistoryContent() {
     } catch (err) {
       console.error("Error fetching more transactions:", err);
       const errorMsg = err instanceof Error ? err.message : "Failed to load more transactions.";
-      setError(errorMsg); // Show error for loading more
+      setError(errorMsg);
     } finally {
       setLoadingMore(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, lastVisible, hasMore]);
 
   useEffect(() => {
     if (user) {
       fetchInitialTransactions();
     } else if (!authLoading) {
-      // If auth is done loading and still no user, redirect
       router.push('/login');
     }
   }, [user, authLoading, fetchInitialTransactions, router]);
@@ -175,7 +189,6 @@ function CashbackHistoryContent() {
   }
 
   if (!user && !authLoading) {
-    // This should ideally be handled by ProtectedRoute, but good as a fallback
     return (
         <Alert variant="destructive" className="max-w-md mx-auto">
             <AlertCircle className="h-4 w-4" />
@@ -219,7 +232,7 @@ function CashbackHistoryContent() {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto"> {/* Wrap table for horizontal scroll */}
+            <div className="overflow-x-auto">
                 <Table>
                 <TableHeader>
                     <TableRow>
@@ -228,8 +241,7 @@ function CashbackHistoryContent() {
                     <TableHead>Cashback</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Transaction ID</TableHead> {/* Added Transaction ID */}
-                    {/* <TableHead>Details</TableHead> */}
+                    <TableHead>Notes</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -240,7 +252,10 @@ function CashbackHistoryContent() {
                         <TableCell className="font-semibold">{formatCurrency(tx.cashbackAmount)}</TableCell>
                         <TableCell className="whitespace-nowrap">{tx.transactionDate ? format(new Date(tx.transactionDate), 'PPp') : 'N/A'}</TableCell>
                         <TableCell>
-                        <Badge variant={getStatusVariant(tx.status)}>{tx.status}</Badge>
+                        <Badge variant={getStatusVariant(tx.status)} className="flex items-center gap-1 w-fit">
+                            {getStatusIcon(tx.status)}
+                            {tx.status}
+                        </Badge>
                         {tx.status === 'confirmed' && tx.confirmationDate && (
                             <span className="block text-[10px] text-muted-foreground mt-1">
                             Confirmed: {format(new Date(tx.confirmationDate), 'PP')}
@@ -252,13 +267,9 @@ function CashbackHistoryContent() {
                             </span>
                         )}
                         </TableCell>
-                        <TableCell className="font-mono text-xs truncate max-w-[100px]">
-                            {tx.id}
+                        <TableCell className="text-xs text-muted-foreground truncate max-w-[150px]" title={tx.notesToUser || tx.adminNotes || ''}>
+                            {tx.notesToUser || tx.adminNotes || '-'}
                         </TableCell>
-                        {/* <TableCell className="text-xs text-muted-foreground truncate max-w-[150px]">
-                        {tx.adminNotes || '-'}
-                        {tx.clickId && <span className="block">Click: {tx.clickId}</span>}
-                        </TableCell> */}
                     </TableRow>
                     ))}
                 </TableBody>
@@ -279,7 +290,6 @@ function CashbackHistoryContent() {
   );
 }
 
-// Skeleton Loader
 function HistoryTableSkeleton() {
    return (
      <Card>
@@ -288,11 +298,11 @@ function HistoryTableSkeleton() {
          <Skeleton className="h-4 w-2/3" />
        </CardHeader>
        <CardContent>
-          <div className="overflow-x-auto"> {/* Add overflow here too */}
+          <div className="overflow-x-auto">
             <Table>
             <TableHeader>
                 <TableRow>
-                {Array.from({ length: 6 }).map((_, index) => ( // Adjusted length for new column
+                {Array.from({ length: 6 }).map((_, index) => (
                     <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead>
                 ))}
                 </TableRow>
@@ -300,7 +310,7 @@ function HistoryTableSkeleton() {
             <TableBody>
                 {Array.from({ length: 10 }).map((_, rowIndex) => (
                 <TableRow key={rowIndex}>
-                    {Array.from({ length: 6 }).map((_, colIndex) => ( // Adjusted length
+                    {Array.from({ length: 6 }).map((_, colIndex) => (
                     <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell>
                     ))}
                 </TableRow>
@@ -313,7 +323,6 @@ function HistoryTableSkeleton() {
    );
  }
 
- // Wrap the page content with ProtectedRoute
  export default function CashbackHistoryPage() {
    return (
      <ProtectedRoute>
@@ -321,4 +330,3 @@ function HistoryTableSkeleton() {
      </ProtectedRoute>
    );
  }
-    

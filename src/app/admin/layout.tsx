@@ -26,10 +26,10 @@ import {
   ClipboardList,
   Building2,
   BadgePercent,
-  TicketPercent,
+  TicketPercent, // Keep for banners
   BarChart3,
-  PanelLeft,
-  Package // Icon for Products
+  Package,
+  MousePointerClick // For Clicks
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -42,13 +42,15 @@ const adminNavItems = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard },
   { href: '/admin/users', label: 'Manage Users', icon: Users },
   { href: '/admin/stores', label: 'Manage Stores', icon: Store },
+  { href: '/admin/products', label: 'Manage Products', icon: Package },
   { href: '/admin/coupons', label: 'Manage Coupons', icon: BadgePercent },
   { href: '/admin/categories', label: 'Manage Categories', icon: Building2 },
   { href: '/admin/banners', label: 'Manage Banners', icon: TicketPercent },
-  { href: '/admin/products', label: 'Manage Products', icon: Package }, // New Product Link
   { href: '/admin/transactions', label: 'Transactions', icon: ClipboardList },
+  { href: '/admin/clicks', label: 'Click Logs', icon: MousePointerClick }, // New Click Logs
   { href: '/admin/payouts', label: 'Payout Requests', icon: CreditCard },
   { href: '/admin/reports', label: 'Reports', icon: BarChart3 },
+  // { href: '/admin/settings', label: 'Admin Settings', icon: Settings }, // If you add global admin settings
 ];
 
 export default function AdminLayout({

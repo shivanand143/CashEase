@@ -1,3 +1,4 @@
+
 // src/app/dashboard/clicks/page.tsx
 "use client";
 
@@ -5,7 +6,7 @@ import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link'; // Import Link
+import Link from 'next/link';
 import {
   collection,
   query,
@@ -18,7 +19,7 @@ import {
   DocumentData
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import type { Click } from '@/lib/types'; // Import Click type
+import type { Click } from '@/lib/types';
 import {
   Table,
   TableBody,
@@ -33,8 +34,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { safeToDate } from '@/lib/utils';
 import { format } from 'date-fns';
-import { AlertCircle, History, Loader2, MousePointerClick, ExternalLink } from 'lucide-react';
-import ProtectedRoute from '@/components/guards/protected-route'; // Use ProtectedRoute
+import { AlertCircle, Loader2, MousePointerClick, ExternalLink } from 'lucide-react';
+import ProtectedRoute from '@/components/guards/protected-route';
 
 const CLICKS_PER_PAGE = 20;
 
@@ -50,15 +51,15 @@ function ClickHistoryContent() {
 
   const fetchClicks = useCallback(async (loadMore = false) => {
     if (!user) {
-      setLoading(false);
-      setLoadingMore(false);
+      if (!loadMore) setLoading(false); else setLoadingMore(false);
       return;
     }
 
     if (!loadMore) {
       setLoading(true);
       setLastVisible(null);
-      setClicks([]);
+      setClicks([]); // Clear previous results for a fresh fetch
+      setHasMore(true); // Reset hasMore
     } else {
       setLoadingMore(true);
     }
@@ -82,18 +83,13 @@ function ClickHistoryContent() {
       const clicksData = querySnapshot.docs.map(docSnap => {
         const data = docSnap.data();
         return {
-          id: docSnap.id, // Use clickId as ID
+          id: docSnap.id,
           ...data,
           timestamp: safeToDate(data.timestamp) || new Date(0),
         } as Click;
       });
 
-      if (loadMore) {
-        setClicks(prev => [...prev, ...clicksData]);
-      } else {
-        setClicks(clicksData);
-      }
-
+      setClicks(prev => loadMore ? [...prev, ...clicksData] : clicksData);
       setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
       setHasMore(querySnapshot.docs.length === CLICKS_PER_PAGE);
 
@@ -101,31 +97,33 @@ function ClickHistoryContent() {
       console.error("Error fetching clicks:", err);
       const errorMsg = err instanceof Error ? err.message : "Failed to load click history.";
       setError(errorMsg);
+      setHasMore(false); // Stop pagination on error
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (!loadMore) setLoading(false); else setLoadingMore(false);
     }
-  }, [user, lastVisible]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, lastVisible]); // lastVisible is needed if fetchClicks itself manages the cursor for loadMore
 
-  useEffect(() => {
+   useEffect(() => {
     if (user) {
-      fetchClicks(false);
+      fetchClicks(false); // Initial fetch
     } else if (!authLoading) {
       router.push('/login');
     }
-  }, [user, authLoading, fetchClicks, router]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, authLoading, router]); // Removed fetchClicks from here to avoid potential loop
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      fetchClicks(true);
+      fetchClicks(true); // Pass true for loadMore
     }
   };
 
-  if (authLoading || (loading && clicks.length === 0 && !error)) { // Ensure skeleton shows only on initial load without error
+  if (authLoading || (loading && clicks.length === 0 && !error)) {
     return <ClickHistoryTableSkeleton />;
   }
 
-  if (!user && !authLoading) { // Show login prompt if auth check finished and no user
+  if (!user && !authLoading) {
     return (
         <Alert variant="destructive" className="max-w-md mx-auto">
             <AlertCircle className="h-4 w-4" />
@@ -158,9 +156,9 @@ function ClickHistoryContent() {
           <CardDescription>View the stores and offers you recently clicked on.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading && clicks.length === 0 ? ( // Show skeleton only if loading and no clicks yet
+          {loading && clicks.length === 0 ? (
             <ClickHistoryTableSkeleton />
-          ) : !loading && clicks.length === 0 ? ( // Show empty state only if not loading and no clicks
+          ) : !loading && clicks.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <p className="mb-4">You haven't clicked on any offers yet.</p>
               <Button asChild>
@@ -168,24 +166,27 @@ function ClickHistoryContent() {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto"> {/* Wrap table for horizontal scroll */}
+            <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Store</TableHead>
-                    <TableHead>Coupon/Deal</TableHead>
+                    <TableHead>Item Clicked</TableHead>
                     <TableHead>Clicked At</TableHead>
-                    <TableHead>Click ID</TableHead>
                     <TableHead>Link Clicked</TableHead>
+                    <TableHead className="text-right">Click ID</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {clicks.map((click) => (
                     <TableRow key={click.id}>
-                      <TableCell className="font-medium">{click.storeName || click.storeId || 'Unknown Store'}</TableCell>
-                      <TableCell>{click.couponId || 'Store Visit'}</TableCell>
+                      <TableCell className="font-medium">{click.storeName || click.storeId || 'N/A'}</TableCell>
+                      <TableCell>
+                        {click.productId ? `Product: ${click.productName || click.productId}` :
+                         click.couponId ? `Coupon: ${click.couponId}` :
+                         'Store Visit'}
+                      </TableCell>
                       <TableCell className="whitespace-nowrap">{click.timestamp ? format(new Date(click.timestamp), 'PPp') : 'N/A'}</TableCell>
-                      <TableCell className="font-mono text-xs truncate max-w-[100px]">{click.id}</TableCell>
                       <TableCell>
                           <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs">
                               <a href={click.affiliateLink} target="_blank" rel="noopener noreferrer" title={click.affiliateLink} className="truncate block max-w-[200px]">
@@ -193,13 +194,14 @@ function ClickHistoryContent() {
                               </a>
                           </Button>
                       </TableCell>
+                      <TableCell className="font-mono text-xs truncate max-w-[100px] text-right">{click.id}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
           )}
-          {hasMore && (
+          {hasMore && !loading && (
             <div className="mt-6 text-center">
               <Button onClick={handleLoadMore} disabled={loadingMore}>
                 {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -213,7 +215,6 @@ function ClickHistoryContent() {
   );
 }
 
-// Skeleton Loader
 function ClickHistoryTableSkeleton() {
    return (
      <Card>
@@ -222,7 +223,7 @@ function ClickHistoryTableSkeleton() {
          <Skeleton className="h-4 w-2/3" />
        </CardHeader>
        <CardContent>
-         <div className="overflow-x-auto"> {/* Add overflow here too for consistency */}
+         <div className="overflow-x-auto">
             <Table>
             <TableHeader>
                 <TableRow>
@@ -254,4 +255,3 @@ function ClickHistoryTableSkeleton() {
      </ProtectedRoute>
    );
  }
-    

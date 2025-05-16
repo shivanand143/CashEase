@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from 'react';
@@ -6,20 +7,31 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, ArrowRight, Banknote, Clock, Gift, History, IndianRupee, Loader2, Send, Settings, User } from 'lucide-react';
+import { AlertCircle, ArrowRight, Banknote, Clock, Gift, History, IndianRupee, Loader2, Send, Settings, User, MousePointerClick } from 'lucide-react';
 import Link from 'next/link';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { formatCurrency } from '@/lib/utils'; // Assuming you have a currency formatting utility
-import ProtectedRoute from '@/components/guards/protected-route'; // Ensure this handles redirection
+import { formatCurrency } from '@/lib/utils';
+import ProtectedRoute from '@/components/guards/protected-route';
 
 function DashboardContent() {
-  const { user, userProfile, loading: authLoading, error: authError } = useAuth();
+  const { user, userProfile, loading: authLoading, authError, fetchUserProfile } = useAuth(); // Added fetchUserProfile
   const router = useRouter();
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
 
-  // Combine loading states
-  const isLoading = authLoading || (!user && !authError); // Loading if auth is loading OR no user yet and no error
 
-  // Handle auth errors specifically
+  React.useEffect(() => {
+    // Refresh user profile data when component mounts or user changes,
+    // to ensure dashboard displays the most up-to-date balances.
+    if (user && fetchUserProfile) {
+        setIsRefreshing(true);
+        fetchUserProfile(user.uid).finally(() => setIsRefreshing(false));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]); // fetchUserProfile is memoized, safe to not list if it's stable
+
+
+  const isLoading = authLoading || isRefreshing || (!user && !authError);
+
   if (authError) {
     return (
       <Alert variant="destructive">
@@ -40,17 +52,10 @@ function DashboardContent() {
     return <DashboardSkeleton />;
   }
 
-  // If loading is finished, but still no user/profile (should be handled by ProtectedRoute, but defensively check)
   if (!user || !userProfile) {
-    console.log("Dashboard: No user or profile found after loading, redirecting (likely handled by ProtectedRoute).");
-    // ProtectedRoute should ideally handle the redirect before this point.
-    // If it reaches here, return null or a minimal message while redirect happens.
     return null;
-     // Or return <DashboardSkeleton /> if preferred during redirect flicker
   }
 
-
-  // --- Data Ready: Render Dashboard ---
   const stats = [
     { title: "Available Balance", value: formatCurrency(userProfile.cashbackBalance ?? 0), icon: IndianRupee, color: "text-green-600", description: "Ready for withdrawal" },
     { title: "Pending Cashback", value: formatCurrency(userProfile.pendingCashback ?? 0), icon: Clock, color: "text-yellow-600", description: "Awaiting confirmation" },
@@ -60,7 +65,7 @@ function DashboardContent() {
 
   const quickLinks = [
     { href: "/dashboard/history", label: "Cashback History", icon: History },
-    { href: "/dashboard/clicks", label: "Click History", icon: Clock }, // Assuming Clock icon for Click History
+    { href: "/dashboard/clicks", label: "Click History", icon: MousePointerClick },
     { href: "/dashboard/payout", label: "Request Payout", icon: Send },
     { href: "/dashboard/referrals", label: "Refer & Earn", icon: Gift },
     { href: "/dashboard/settings", label: "Account Settings", icon: Settings },
@@ -70,7 +75,6 @@ function DashboardContent() {
     <div className="space-y-8">
       <h1 className="text-3xl font-bold">Dashboard</h1>
 
-      {/* Stats Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
           <Card key={stat.title} className="shadow-sm hover:shadow-md transition-shadow">
@@ -86,9 +90,7 @@ function DashboardContent() {
         ))}
       </div>
 
-       {/* Welcome Message & Quick Links */}
        <div className="grid gap-8 md:grid-cols-2">
-         {/* Welcome */}
          <Card className="shadow-sm">
              <CardHeader>
                  <CardTitle>Welcome back, {userProfile.displayName || 'User'}!</CardTitle>
@@ -109,7 +111,6 @@ function DashboardContent() {
              </CardContent>
          </Card>
 
-         {/* Quick Links */}
           <Card className="shadow-sm">
             <CardHeader>
               <CardTitle>Quick Links</CardTitle>
@@ -133,18 +134,14 @@ function DashboardContent() {
             </CardContent>
           </Card>
        </div>
-
     </div>
   );
 }
 
-// Skeleton component remains the same
 function DashboardSkeleton() {
   return (
     <div className="space-y-8">
       <Skeleton className="h-9 w-48" />
-
-      {/* Stats Skeleton */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
           <Card key={index}>
@@ -159,8 +156,6 @@ function DashboardSkeleton() {
           </Card>
         ))}
       </div>
-
-       {/* Welcome/Links Skeleton */}
        <div className="grid gap-8 md:grid-cols-2">
            <Card>
                <CardHeader>
@@ -182,7 +177,7 @@ function DashboardSkeleton() {
                 <Skeleton className="h-4 w-3/4"/>
              </CardHeader>
              <CardContent className="grid gap-2">
-                {Array.from({ length: 5 }).map((_, index) => ( // Updated length
+                {Array.from({ length: 5 }).map((_, index) => (
                     <Skeleton key={index} className="h-10 w-full"/>
                 ))}
              </CardContent>
@@ -192,7 +187,6 @@ function DashboardSkeleton() {
   );
 }
 
-// Wrap the page content with ProtectedRoute
 export default function DashboardPage() {
     return (
         <ProtectedRoute>

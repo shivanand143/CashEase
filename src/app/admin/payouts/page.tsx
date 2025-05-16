@@ -18,10 +18,12 @@ import {
   DocumentData,
   QueryDocumentSnapshot,
   Timestamp,
-  runTransaction
+  runTransaction,
+  getDoc, // Ensure getDoc is imported for fetching single documents
+  writeBatch
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { PayoutRequest, PayoutStatus, UserProfile } from '@/lib/types';
+import type { PayoutRequest, PayoutStatus, UserProfile, Transaction, CashbackStatus } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -43,7 +45,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { formatCurrency, safeToDate } from '@/lib/utils';
 import AdminGuard from '@/components/guards/admin-guard';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { useDebounce } from '@/hooks/use-debounce';
 
 const PAYOUTS_PER_PAGE = 15;
@@ -56,11 +58,11 @@ interface PayoutRequestWithUser extends PayoutRequest {
 const getStatusVariant = (status: PayoutStatus): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
     case 'approved': return 'default';
-    case 'paid': return 'secondary';
+    case 'paid': return 'secondary'; // More distinct variant for 'paid'
     case 'pending': return 'outline';
     case 'rejected':
     case 'failed': return 'destructive';
-    case 'processing': return 'default';
+    case 'processing': return 'default'; // Using default for processing too, or could be another color
     default: return 'outline';
   }
 };
@@ -76,6 +78,7 @@ const getStatusIcon = (status: PayoutStatus) => {
     default: return <Info className="h-4 w-4 text-muted-foreground" />;
   }
 };
+
 
 function AdminPayoutsPageContent() {
   const [payouts, setPayouts] = useState<PayoutRequestWithUser[]>([]);
@@ -98,15 +101,21 @@ function AdminPayoutsPageContent() {
   const [isUpdating, setIsUpdating] = useState(false);
 
    const fetchUserDataForPayouts = useCallback(async (payoutRequests: PayoutRequest[]): Promise<PayoutRequestWithUser[]> => {
-        if (!payoutRequests || payoutRequests.length === 0 || !db) return payoutRequests;
+        let isMounted = true;
+        if (!payoutRequests || payoutRequests.length === 0 || !db || firebaseInitializationError) {
+            if (isMounted && firebaseInitializationError) setError(prev => prev + (firebaseInitializationError || "DB error in fetchUserData. "));
+            return payoutRequests;
+        }
 
         const userIds = [...new Set(payoutRequests.map(p => p.userId))];
         const userProfiles: Record<string, UserProfile> = {};
 
         try {
+            // Batch user profile fetches if possible, or iterate
             for (const userId of userIds) {
+                 if (!userId) continue; // Skip if userId is invalid
                 const userRef = doc(db, 'users', userId);
-                const userSnap = await getDoc(userRef); // Changed to getDoc for single document
+                const userSnap = await getDoc(userRef);
                  if (userSnap.exists()) {
                     const userData = userSnap.data() as UserProfile;
                     userProfiles[userId] = userData;
@@ -116,34 +125,37 @@ function AdminPayoutsPageContent() {
             }
         } catch (userFetchError) {
             console.error("Error fetching user data for payouts:", userFetchError);
+            if (isMounted) setError(prev => prev + "Error fetching user details for some payouts. ");
         }
-
-        return payoutRequests.map(payout => ({
+        return () => {isMounted = false; payoutRequests.map(payout => ({
             ...payout,
             userDisplayName: userProfiles[payout.userId]?.displayName || 'Unknown User',
             userEmail: userProfiles[payout.userId]?.email || 'N/A',
-        }));
+        }))};
+   // eslint-disable-next-line react-hooks/exhaustive-deps
    }, []);
 
 
   const fetchPayouts = useCallback(async (loadMore = false) => {
+    let isMounted = true;
     if (!db || firebaseInitializationError) {
-      setError(firebaseInitializationError || "Database connection not available.");
-      setLoading(false);
-      setLoadingMore(false);
-      setHasMore(false);
-      return;
+      if (isMounted) {
+        setError(firebaseInitializationError || "Database connection not available.");
+        if (!loadMore) setLoading(false); else setLoadingMore(false);
+        setHasMore(false);
+      }
+      return () => { isMounted = false; };
     }
-    const isInitialOrNewSearch = !loadMore;
-    if (isInitialOrNewSearch) {
+
+    if (!loadMore) {
       setLoading(true);
       setLastVisible(null);
-      setPayouts([]);
+      setPayouts([]); // Clear previous results for new search/filter
       setHasMore(true);
     } else {
       setLoadingMore(true);
     }
-    setError(null);
+    if(!loadMore) setError(null);
     setIsSearching(debouncedSearchTerm !== '');
 
     try {
@@ -153,7 +165,7 @@ function AdminPayoutsPageContent() {
       if (filterStatus !== 'all') {
         constraints.push(where('status', '==', filterStatus));
       }
-      if (debouncedSearchTerm) {
+      if (debouncedSearchTerm) { // Assuming search by userId
         constraints.push(where('userId', '==', debouncedSearchTerm));
       }
 
@@ -174,36 +186,37 @@ function AdminPayoutsPageContent() {
       } as PayoutRequest));
 
       const payoutsWithUserData = await fetchUserDataForPayouts(rawPayoutsData);
-
-      if (isInitialOrNewSearch) {
-        setPayouts(payoutsWithUserData);
-      } else {
-        setPayouts(prev => [...prev, ...payoutsWithUserData]);
+      
+      if(isMounted) {
+        setPayouts(prev => loadMore ? [...prev, ...payoutsWithUserData] : payoutsWithUserData);
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+        setHasMore(querySnapshot.docs.length === PAYOUTS_PER_PAGE);
       }
-
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-      setHasMore(querySnapshot.docs.length === PAYOUTS_PER_PAGE);
 
     } catch (err) {
       console.error("Error fetching payout requests:", err);
-      setError(err instanceof Error ? err.message : "Failed to fetch payouts");
-      toast({ variant: "destructive", title: "Fetch Error", description: String(err) });
+      if (isMounted) {
+        setError(err instanceof Error ? err.message : "Failed to fetch payouts");
+        toast({ variant: "destructive", title: "Fetch Error", description: String(err) });
+        setHasMore(false);
+      }
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      setIsSearching(false);
+      if (isMounted) {
+        if (!loadMore) setLoading(false); else setLoadingMore(false);
+        setIsSearching(false);
+      }
     }
-  }, [filterStatus, debouncedSearchTerm, lastVisible, fetchUserDataForPayouts, toast]);
-
+    return () => { isMounted = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterStatus, debouncedSearchTerm, toast, fetchUserDataForPayouts]); // Removed lastVisible from here, managed internally
 
   useEffect(() => {
     fetchPayouts(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterStatus, debouncedSearchTerm, fetchPayouts]); // fetchPayouts is stable
+  }, [fetchPayouts]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    // useEffect handles fetching due to debouncedSearchTerm change
+    fetchPayouts(false);
   };
 
   const handleLoadMore = () => {
@@ -227,61 +240,75 @@ function AdminPayoutsPageContent() {
     const payoutRef = doc(db, 'payoutRequests', selectedPayout.id);
     const userRef = doc(db, 'users', selectedPayout.userId);
     const originalStatus = selectedPayout.status;
+    const newPayoutStatus = updateStatus; // Use the state variable for the new status
 
     try {
        await runTransaction(db, async (transaction) => {
-           const payoutDoc = await transaction.get(payoutRef);
-           const userDoc = await transaction.get(userRef);
+           const payoutDocSnap = await transaction.get(payoutRef);
+           const userDocSnap = await transaction.get(userRef);
 
-           if (!payoutDoc.exists()) throw new Error("Payout request not found.");
-           if (!userDoc.exists()) throw new Error("User profile not found.");
+           if (!payoutDocSnap.exists()) throw new Error("Payout request not found.");
+           if (!userDocSnap.exists()) throw new Error("User profile not found.");
 
-           const payoutData = payoutDoc.data() as PayoutRequest;
-           const userData = userDoc.data() as UserProfile;
+           const payoutData = payoutDocSnap.data() as PayoutRequest;
+           const userData = userDocSnap.data() as UserProfile;
            const amount = payoutData.amount;
 
            const payoutUpdateData: Partial<PayoutRequest> = {
-               status: updateStatus,
+               status: newPayoutStatus,
                adminNotes: adminNotes.trim() || null,
-               failureReason: updateStatus === 'failed' ? failureReason.trim() || null : null,
+               failureReason: newPayoutStatus === 'failed' ? failureReason.trim() || null : null,
                processedAt: serverTimestamp(),
            };
+           transaction.update(payoutRef, payoutUpdateData);
 
+           // User profile updates
            const userUpdateData: Partial<UserProfile> = { updatedAt: serverTimestamp() };
 
-           if (updateStatus === 'paid' && (originalStatus === 'approved' || originalStatus === 'processing')) {
-             // No direct balance change here as it's assumed to be handled at request or pre-approval
-           } else if (updateStatus === 'rejected' && originalStatus === 'pending') {
-                console.log(`Rejecting pending request for user ${selectedPayout.userId}. Re-adding ${amount} to balance.`);
-                userUpdateData.cashbackBalance = (userData.cashbackBalance || 0) + amount;
-           } else if (updateStatus === 'failed' && (originalStatus === 'processing' || originalStatus === 'approved')) {
-                // This case implies money was committed but failed.
-                // Re-adding to balance might be complex and depend on specific accounting.
-                // For now, we only mark as failed. Manual adjustment or further logic might be needed.
-                console.warn(`Payout ${selectedPayout.id} marked as failed. Balance was likely committed. Review required.`);
+           // If payout is rejected or failed, and was pending/approved, return amount to user's pendingCashback
+           // This assumes the amount was moved from cashbackBalance to a 'held' state or similar logic
+           // For this implementation, if it's rejected from 'pending', it simply means the request is voided.
+           // If it was 'approved' and then 'rejected'/'failed', cashback needs to be returned.
+           if ((newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') &&
+               (originalStatus === 'pending' || originalStatus === 'approved' || originalStatus === 'processing')) {
+                // The amount for payout requests is derived from user's 'confirmed' transactions.
+                // If rejected/failed, these transactions are no longer part of this payout.
+                // The user's `cashbackBalance` should effectively reflect this by NOT being reduced
+                // if the payout doesn't complete. The transactions themselves might need status reversion.
+                // For this simplified flow: if payout fails, we're just marking it.
+                // Complex balance rollbacks require careful transaction status management.
+                console.log(`Payout ${selectedPayout.id} ${newPayoutStatus}. User cashbackBalance was already reduced at request time. No further balance change needed.`);
            }
 
-            if (userUpdateData.cashbackBalance !== undefined && userUpdateData.cashbackBalance < 0) {
-                throw new Error("User balance cannot go below zero.");
+            // Update transactions linked to this payout if status becomes 'paid'
+            if (newPayoutStatus === 'paid' && payoutData.transactionIds && payoutData.transactionIds.length > 0) {
+                const batch = writeBatch(db); // Use a batch for updating multiple transactions
+                payoutData.transactionIds.forEach(txId => {
+                    const txRef = doc(db, 'transactions', txId);
+                    batch.update(txRef, { status: 'paid' as CashbackStatus, paidDate: serverTimestamp() });
+                });
+                await batch.commit(); // Commit transaction updates
+                console.log(`Updated ${payoutData.transactionIds.length} transactions to 'paid' for payout ${selectedPayout.id}`);
             }
 
-            transaction.update(payoutRef, payoutUpdateData);
-            if (Object.keys(userUpdateData).length > 1) {
+
+            if (Object.keys(userUpdateData).length > 1 || (Object.keys(userUpdateData).length === 1 && !userUpdateData.updatedAt) ) {
                 transaction.update(userRef, userUpdateData);
-            } else {
-                 transaction.update(userRef, { updatedAt: serverTimestamp() });
+            } else if (!userDocSnap.data()?.updatedAt) { // Ensure updatedAt is always set
+                 transaction.update(userRef, {updatedAt: serverTimestamp()});
             }
+
        });
 
       setPayouts(prev =>
         prev.map(p =>
           p.id === selectedPayout.id
-            ? { ...p, status: updateStatus, adminNotes: adminNotes.trim() || null, failureReason: updateStatus === 'failed' ? failureReason.trim() || null : null, processedAt: new Date() }
+            ? { ...p, status: newPayoutStatus, adminNotes: adminNotes.trim() || null, failureReason: newPayoutStatus === 'failed' ? failureReason.trim() || null : null, processedAt: new Date() }
             : p
         )
       );
 
-      toast({ title: "Payout Updated", description: `Status set to ${updateStatus}.` });
+      toast({ title: "Payout Updated", description: `Status set to ${newPayoutStatus}.` });
       setSelectedPayout(null);
 
     } catch (err) {
@@ -397,13 +424,11 @@ function AdminPayoutsPageContent() {
                       )}
                     </TableCell>
                     <TableCell>
-                       <Dialog>
-                         <DialogTrigger asChild>
+                       <DialogTrigger asChild>
                             <Button size="sm" variant="outline" onClick={() => openUpdateDialog(payout)}>
                                 Manage
                             </Button>
-                         </DialogTrigger>
-                       </Dialog>
+                       </DialogTrigger>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -427,12 +452,12 @@ function AdminPayoutsPageContent() {
            <DialogHeader>
              <DialogTitle>Manage Payout Request</DialogTitle>
              <DialogDescription>
-               Update status and add notes for User: {selectedPayout?.userDisplayName || selectedPayout?.userId} ({formatCurrency(selectedPayout?.amount || 0)})
+               Update status for User: {selectedPayout?.userDisplayName || selectedPayout?.userId} ({formatCurrency(selectedPayout?.amount || 0)})
              </DialogDescription>
            </DialogHeader>
            <div className="grid gap-4 py-4">
              <div>
-                <label htmlFor="payout-status" className="text-sm font-medium mb-1 block">Status</label>
+                <Label htmlFor="payout-status" className="text-sm font-medium mb-1 block">Status</Label>
                 <Select value={updateStatus} onValueChange={(value) => setUpdateStatus(value as PayoutStatus)} disabled={isUpdating}>
                   <SelectTrigger id="payout-status">
                     <SelectValue placeholder="Select Status" />
@@ -448,7 +473,7 @@ function AdminPayoutsPageContent() {
                 </Select>
              </div>
              <div>
-                <label htmlFor="admin-notes" className="text-sm font-medium mb-1 block">Admin Notes</label>
+                <Label htmlFor="admin-notes" className="text-sm font-medium mb-1 block">Admin Notes</Label>
                 <Textarea
                     id="admin-notes"
                     value={adminNotes}
@@ -459,7 +484,7 @@ function AdminPayoutsPageContent() {
              </div>
              {updateStatus === 'failed' && (
                  <div>
-                     <label htmlFor="failure-reason" className="text-sm font-medium mb-1 block">Failure Reason</label>
+                     <Label htmlFor="failure-reason" className="text-sm font-medium mb-1 block">Failure Reason</Label>
                      <Textarea
                          id="failure-reason"
                          value={failureReason}
