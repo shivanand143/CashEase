@@ -1,3 +1,4 @@
+
 // src/app/dashboard/settings/page.tsx
 'use client';
 
@@ -36,9 +37,20 @@ import {
   DialogTrigger,
   DialogClose
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger, // Ensure this is imported
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import type { PayoutDetails, PayoutMethod, UserProfile } from '@/lib/types'; // Import types
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; // Import Select
+import ProtectedRoute from '@/components/guards/protected-route';
 
 // --- Profile Update Schema ---
 const profileSchema = z.object({
@@ -73,8 +85,8 @@ const payoutSchema = z.object({
 type PayoutFormValues = z.infer<typeof payoutSchema>;
 
 
-export default function SettingsPage() {
-  const { user, userProfile, loading: authLoading, updateUserProfileData } = useAuth();
+function SettingsPageContent() {
+  const { user, userProfile, loading: authLoading, updateUserProfileData, createOrUpdateUserProfile } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -174,6 +186,38 @@ export default function SettingsPage() {
          setProfileLoading(false);
      }
   };
+
+  const handleMakeAdmin = async () => {
+    if (!user || !userProfile) return;
+    const myAdminUid = process.env.NEXT_PUBLIC_INITIAL_ADMIN_UID; // Get your UID from env
+    if (!myAdminUid) {
+        toast({ variant: "destructive", title: "Configuration Error", description: "Admin UID not set." });
+        return;
+    }
+    if (user.uid !== myAdminUid) {
+         toast({ variant: "destructive", title: "Permission Denied", description: "You are not authorized for this action." });
+        return;
+    }
+
+    try {
+      // Use the spread operator on `user` to pass existing auth properties,
+      // then override the role.
+      // The `createOrUpdateUserProfile` function is designed to handle both creation and updates.
+      // We need to cast `authUser` to `User` type as it's expected by `createOrUpdateUserProfile`
+      // even though we are just updating the role and not all fields of User.
+      // The function should ideally only update fields present in its second argument.
+      const authUserWithAdminRole = { ...user, role: "admin" } as unknown as User;
+      await createOrUpdateUserProfile(authUserWithAdminRole, null); // No referral code needed here
+      toast({
+        title: 'User Promoted to Admin',
+        description: 'User role has been updated to admin.',
+      });
+    } catch (err: any) {
+      console.error("Admin promotion failed:", err);
+      setProfileError(err.message || "Failed to promote user to admin.");
+       toast({ variant: "destructive", title: 'Admin Promotion Failed', description: err.message || "Failed to promote user to admin." });
+    }
+ };
 
   // Re-authenticate user before sensitive operations (email/password change)
   const reauthenticate = async (password: string): Promise<boolean> => {
@@ -381,6 +425,11 @@ export default function SettingsPage() {
                  {profileLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</> : <> <Save className="mr-2 h-4 w-4"/> Save Profile</>}
               </Button>
            </form>
+            {userProfile?.role !== 'admin' && process.env.NEXT_PUBLIC_INITIAL_ADMIN_UID && user?.uid === process.env.NEXT_PUBLIC_INITIAL_ADMIN_UID && (
+                 <Button type="button" onClick={handleMakeAdmin} disabled={profileLoading} className="mt-4 ml-2" variant="outline">
+                    Become Admin (Dev Only)
+                 </Button>
+            )}
         </CardContent>
       </Card>
 
@@ -592,29 +641,10 @@ export default function SettingsPage() {
   );
 }
 
-
-// Placeholder for delete account logic - Requires careful implementation
-// async function handleDeleteAccount() {
-//    // 1. Re-authenticate user
-//    // 2. Delete Firestore user profile document
-//    // 3. Delete Firebase Auth user account
-//    // 4. Handle potential errors and sign out
-//    console.warn("Account deletion not implemented yet.");
-//    toast({ variant: "destructive", title: "Not Implemented", description: "Account deletion is not yet available." });
-// }
-
-// Make Admin Button (moved from previous example, keep ONLY if testing locally/temporarily)
-{/* {userProfile?.role !== 'admin' && process.env.NODE_ENV === 'development' && (
- <Button type="button" onClick={handleMakeAdmin} disabled={profileLoading} className="mt-4">
-    Make Admin (Dev Only)
- </Button>
-)} */}
-// async function handleMakeAdmin() {
-//    if (!user || !userProfile) return;
-//    const myAdminUid = process.env.NEXT_PUBLIC_INITIAL_ADMIN_UID; // Use env var
-//    if (user.uid !== myAdminUid) {
-//        toast({ variant: "destructive", title: "Permission Denied", description: "You are not authorized to perform this action." });
-//        return;
-//    }
-//    // ... rest of the make admin logic using updateUserProfileData ...
-// }
+export default function SettingsPage() {
+  return (
+    <ProtectedRoute>
+      <SettingsPageContent />
+    </ProtectedRoute>
+  );
+}

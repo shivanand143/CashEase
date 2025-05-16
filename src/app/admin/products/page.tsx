@@ -47,7 +47,17 @@ import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, ExternalLink, S
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger, // Ensure this is imported
+} from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import Image from 'next/image';
 import { Switch } from '@/components/ui/switch';
@@ -116,45 +126,51 @@ function AdminProductsPageContent() {
   });
 
   useEffect(() => {
+    let isMounted = true;
     const fetchSelectOptions = async () => {
+      if (!isMounted) return;
       setLoadingOptions(true);
       if (!db || firebaseInitializationError) {
-        setPageError(firebaseInitializationError || "Database not available for fetching options.");
-        setLoadingOptions(false);
+        if (isMounted) {
+          setPageError(firebaseInitializationError || "Database not available for fetching options.");
+          setLoadingOptions(false);
+        }
         return;
       }
       try {
         const storesSnap = await getDocs(query(collection(db, 'stores'), orderBy('name')));
-        setStoreList(storesSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name })));
+        if(isMounted) setStoreList(storesSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name })));
 
         const categoriesSnap = await getDocs(query(collection(db, 'categories'), where('isActive', '==', true), orderBy('name')));
-        setCategoryList(categoriesSnap.docs.map(doc => ({ slug: doc.data().slug, name: doc.data().name })));
+        if(isMounted) setCategoryList(categoriesSnap.docs.map(doc => ({ slug: doc.data().slug, name: doc.data().name })));
       } catch (err) {
         console.error("Error fetching stores/categories for product form:", err);
-        toast({ variant: "destructive", title: "Error", description: "Could not load store/category options." });
+        if (isMounted) toast({ variant: "destructive", title: "Error", description: "Could not load store/category options." });
       } finally {
-        setLoadingOptions(false);
+        if (isMounted) setLoadingOptions(false);
       }
     };
     fetchSelectOptions();
+    return () => { isMounted = false; };
   }, [toast]);
 
   const fetchProducts = useCallback(async (
-    loadMore = false,
-    currentSearchTerm = debouncedSearchTerm,
-    currentFilterStoreId = filterStoreId,
-    docToStartAfter = loadMore ? lastVisible : null
+    isLoadMoreOperation: boolean,
+    currentSearchTerm: string,
+    currentFilterStoreId: string,
+    docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
   ) => {
     let isMounted = true;
     if (!db || firebaseInitializationError) {
       if (isMounted) {
         setPageError(firebaseInitializationError || "Database connection not available.");
-        setLoading(false); setLoadingMore(false); setHasMore(false);
+        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+        setHasMore(false);
       }
       return () => { isMounted = false; };
     }
 
-    if (!loadMore) { setLoading(true); setProducts([]); setLastVisible(null); setHasMore(true); }
+    if (!isLoadMoreOperation) { setLoading(true); setProducts([]); setLastVisible(null); setHasMore(true); }
     else { setLoadingMore(true); }
     setPageError(null);
     setIsSearching(currentSearchTerm !== '' || currentFilterStoreId !== 'all');
@@ -168,13 +184,13 @@ function AdminProductsPageContent() {
       }
 
       if (currentSearchTerm) {
+        constraints.push(orderBy('name')); // Order by name first for text search
         constraints.push(where('name', '>=', currentSearchTerm));
         constraints.push(where('name', '<=', currentSearchTerm + '\uf8ff'));
-        constraints.push(orderBy('name'));
-      } else if (currentFilterStoreId !== 'all') {
+      } else if (currentFilterStoreId !== 'all') { // If filtering by store, still sort by name
         constraints.push(orderBy('name'));
       }
-      else {
+      else { // Default sort if no search/filter
         constraints.push(orderBy('createdAt', 'desc'));
       }
 
@@ -217,7 +233,7 @@ function AdminProductsPageContent() {
       const productsWithNames = await Promise.all(productsDataPromises);
 
       if (isMounted) {
-        setProducts(prev => loadMore ? [...prev, ...productsWithNames] : productsWithNames);
+        setProducts(prev => isLoadMoreOperation ? [...prev, ...productsWithNames] : productsWithNames);
         const newLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
         setLastVisible(newLastVisible);
         setHasMore(querySnapshot.docs.length === PRODUCTS_PER_PAGE);
@@ -233,21 +249,22 @@ function AdminProductsPageContent() {
       if (isMounted) { setLoading(false); setLoadingMore(false); setIsSearching(false); }
     }
     return () => { isMounted = false; };
-  }, [toast, debouncedSearchTerm, filterStoreId, lastVisible]);
+  }, [toast]);
 
 
   useEffect(() => {
-    fetchProducts(false);
+    fetchProducts(false, debouncedSearchTerm, filterStoreId, null);
   }, [debouncedSearchTerm, filterStoreId, fetchProducts]);
 
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+     // fetchProducts will be called by the useEffect due to debouncedSearchTerm change
   };
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      fetchProducts(true);
+      fetchProducts(true, debouncedSearchTerm, filterStoreId, lastVisible);
     }
   };
 

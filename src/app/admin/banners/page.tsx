@@ -48,7 +48,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialogTrigger, // Ensure this is imported
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import Image from 'next/image';
@@ -95,10 +95,20 @@ function AdminBannersPageContent() {
   });
 
   const fetchBanners = useCallback(async () => {
-    if (!db || firebaseInitializationError) {
-        setError(firebaseInitializationError || "Database not available. Please try again later.");
-        setLoading(false);
-        return;
+    let isMounted = true;
+    if (firebaseInitializationError) {
+        if(isMounted) {
+            setError(firebaseInitializationError || "Database not available. Please try again later.");
+            setLoading(false);
+        }
+        return () => {isMounted = false;};
+    }
+    if (!db) {
+        if(isMounted) {
+            setError("Database connection not available.");
+            setLoading(false);
+        }
+        return () => {isMounted = false;};
     }
     setLoading(true);
     setError(null);
@@ -123,15 +133,18 @@ function AdminBannersPageContent() {
           } as Banner;
       });
        const orderedBanners = bannersData.map((banner, index) => ({ ...banner, order: index }));
-       setBanners(orderedBanners);
+       if(isMounted) setBanners(orderedBanners);
     } catch (err) {
       console.error("Error fetching banners:", err);
       const errorMsg = err instanceof Error ? err.message : "Failed to fetch banners";
-      setError(errorMsg);
-      toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+      if(isMounted) {
+        setError(errorMsg);
+        toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+      }
     } finally {
-      setLoading(false);
+      if(isMounted) setLoading(false);
     }
+    return () => {isMounted = false;};
   }, [toast]);
 
   useEffect(() => {

@@ -56,7 +56,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialogTrigger, // Ensure this is imported
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { safeToDate } from '@/lib/utils';
@@ -72,6 +72,7 @@ const categorySchema = z.object({
   imageUrl: z.string().url('Invalid URL format').optional().nullable().or(z.literal('')),
   order: z.number().min(0).default(0),
   isActive: z.boolean().default(true), // Added isActive
+  dataAiHint: z.string().max(50, 'AI Hint too long').optional().nullable(),
 });
 
 type CategoryFormValues = z.infer<typeof categorySchema>;
@@ -98,19 +99,25 @@ function AdminCategoriesPageContent() {
       imageUrl: '',
       order: 0,
       isActive: true, // Default for new categories
+      dataAiHint: '',
     },
   });
 
   const fetchCategories = useCallback(async () => {
+    let isMounted = true;
     if (firebaseInitializationError) {
-      setError(`Firebase initialization error: ${firebaseInitializationError}`);
-      setLoading(false);
-      return;
+      if(isMounted) {
+        setError(`Firebase initialization error: ${firebaseInitializationError}`);
+        setLoading(false);
+      }
+      return () => {isMounted = false;};
     }
     if (!db) {
-      setError("Database connection not available.");
-      setLoading(false);
-      return;
+      if(isMounted) {
+        setError("Database connection not available.");
+        setLoading(false);
+      }
+      return () => {isMounted = false;};
     }
     setLoading(true);
     setError(null);
@@ -128,19 +135,23 @@ function AdminCategoriesPageContent() {
             imageUrl: data.imageUrl || null,
             order: typeof data.order === 'number' ? data.order : 0,
             isActive: typeof data.isActive === 'boolean' ? data.isActive : true, // Ensure isActive is handled
+            dataAiHint: data.dataAiHint || null,
             createdAt: safeToDate(data.createdAt),
             updatedAt: safeToDate(data.updatedAt),
           } as Category;
       });
-      setCategories(categoriesData);
+      if(isMounted) setCategories(categoriesData);
     } catch (err) {
       console.error("Error fetching categories:", err);
       const errorMsg = err instanceof Error ? err.message : "Failed to fetch categories";
-      setError(errorMsg);
-      toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+      if(isMounted) {
+        setError(errorMsg);
+        toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+      }
     } finally {
-      setLoading(false);
+      if(isMounted) setLoading(false);
     }
+    return () => {isMounted = false;};
   }, [toast]);
 
   useEffect(() => {
@@ -150,7 +161,7 @@ function AdminCategoriesPageContent() {
   const openAddDialog = () => {
     setEditingCategory(null);
     form.reset({
-      name: '', slug: '', description: '', imageUrl: '', 
+      name: '', slug: '', description: '', imageUrl: '', dataAiHint: '',
       order: categories.length > 0 ? Math.max(...categories.map(c => c.order)) + 1 : 0,
       isActive: true,
     });
@@ -166,6 +177,7 @@ function AdminCategoriesPageContent() {
       imageUrl: category.imageUrl || '',
       order: category.order,
       isActive: category.isActive,
+      dataAiHint: category.dataAiHint || '',
     });
     setIsDialogOpen(true);
   };
@@ -179,16 +191,16 @@ function AdminCategoriesPageContent() {
        .replace(/-+/g, '-');
    };
 
-   useEffect(() => {
-     if (!editingCategory && isDialogOpen) { 
-       const subscription = form.watch((value, { name }) => {
-         if (name === 'name' && value.name && !form.formState.dirtyFields.slug) { 
-           form.setValue('slug', generateSlug(value.name), { shouldValidate: true });
-         }
-       });
-       return () => subscription.unsubscribe();
-     }
-   }, [form, editingCategory, isDialogOpen]);
+    useEffect(() => {
+        if (!editingCategory && isDialogOpen) { // Only auto-generate slug for new categories when dialog is open
+            const subscription = form.watch((value, { name: fieldName }) => {
+                if (fieldName === 'name' && value.name && !form.formState.dirtyFields.slug) {
+                    form.setValue('slug', generateSlug(value.name), { shouldValidate: true });
+                }
+            });
+            return () => subscription.unsubscribe();
+        }
+    }, [form, editingCategory, isDialogOpen]);
 
 
   const onSubmit = async (data: CategoryFormValues) => {
@@ -200,8 +212,15 @@ function AdminCategoriesPageContent() {
     setIsSaving(true);
     setError(null);
 
+    const submissionData = {
+        ...data,
+        imageUrl: data.imageUrl || null,
+        description: data.description || null,
+        dataAiHint: data.dataAiHint || null,
+    };
+
     try {
-       const categoryId = data.slug; 
+       const categoryId = data.slug;
        const categoryDocRef = doc(db, 'categories', categoryId);
 
       if (editingCategory) {
@@ -214,13 +233,11 @@ function AdminCategoriesPageContent() {
              setIsSaving(false);
              return;
          }
-         await setDoc(categoryDocRef, {
-           ...data, // isActive is included here
-           imageUrl: data.imageUrl || null,
-           description: data.description || null,
+         await updateDoc(categoryDocRef, { // Use updateDoc for existing
+           ...submissionData,
            updatedAt: serverTimestamp(),
-         }, { merge: true }); 
-         setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, ...data, updatedAt: new Date() } : c).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)));
+         });
+         setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, ...submissionData, updatedAt: new Date() } : c).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)));
          toast({ title: "Category Updated", description: `${data.name} details saved.` });
       } else {
         const existingDoc = await getDoc(categoryDocRef);
@@ -228,19 +245,17 @@ function AdminCategoriesPageContent() {
             toast({
                 variant: "destructive",
                 title: "Slug Already Exists",
-                description: `The slug "${data.slug}" is already in use. Please choose a unique slug.`,
+                description: `The slug "${data.slug}" is already in use. Please choose a unique slug or edit the existing category.`,
             });
             setIsSaving(false);
             return;
         }
-        await setDoc(categoryDocRef, {
-          ...data, // isActive is included here
-           imageUrl: data.imageUrl || null,
-           description: data.description || null,
+        await setDoc(categoryDocRef, { // Use setDoc for new
+          ...submissionData,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        const newCategory: Category = { ...data, id: categoryId, isActive: data.isActive, createdAt: new Date(), updatedAt: new Date() };
+        const newCategory: Category = { ...submissionData, id: categoryId, createdAt: new Date(), updatedAt: new Date() };
         setCategories(prev => [...prev, newCategory].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)));
         toast({ title: "Category Added", description: `${data.name} created successfully.` });
       }
@@ -351,7 +366,7 @@ function AdminCategoriesPageContent() {
                       <TableCell className="w-16 text-center">{category.order}</TableCell>
                       <TableCell>
                         {category.imageUrl ? (
-                          <Image src={category.imageUrl} alt={`${category.name} image`} width={50} height={50} className="object-cover rounded-sm w-12 h-12" data-ai-hint={`${category.name} category icon`}/>
+                          <Image src={category.imageUrl} alt={`${category.name} image`} width={50} height={50} className="object-cover rounded-sm w-12 h-12" data-ai-hint={`${category.dataAiHint || category.name + ' category icon'}`}/>
                         ) : (
                           <div className="w-12 h-12 bg-muted flex items-center justify-center text-xs text-muted-foreground rounded-sm">No Img</div>
                         )}
@@ -430,12 +445,12 @@ function AdminCategoriesPageContent() {
                  placeholder="0"
                  disabled={isSaving}
                />
-               {form.formState.errors.order && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.order.message}</p>}
+               {form.formState.errors.order && <p className="col-span-4 text-sm text-destructive text-right">{form.formState.errors.order.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
                <Label htmlFor="name" className="text-right">Name*</Label>
                <Input id="name" {...form.register('name')} className="col-span-3" disabled={isSaving} />
-               {form.formState.errors.name && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.name.message}</p>}
+               {form.formState.errors.name && <p className="col-span-4 text-sm text-destructive text-right">{form.formState.errors.name.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
                <Label htmlFor="slug" className="text-right">Slug*</Label>
@@ -444,25 +459,30 @@ function AdminCategoriesPageContent() {
                  {...form.register('slug')}
                  className="col-span-3"
                  placeholder="auto-generated or custom"
-                 disabled={isSaving || !!editingCategory} 
+                 disabled={isSaving || !!editingCategory}
                />
                 {editingCategory && <p className="col-span-4 text-xs text-muted-foreground text-right">Slug cannot be changed after creation.</p>}
-               {form.formState.errors.slug && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.slug.message}</p>}
+               {form.formState.errors.slug && <p className="col-span-4 text-sm text-destructive text-right">{form.formState.errors.slug.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
                <Label htmlFor="imageUrl" className="text-right">Image URL</Label>
-               <Input id="imageUrl" {...form.register('imageUrl')} className="col-span-3" placeholder="https://... (Optional)" disabled={isSaving} />
-                {form.watch('imageUrl') && (
+               <Input id="imageUrl" {...form.register('imageUrl')} className="col-span-3" placeholder="https://..." disabled={isSaving} />
+                {form.watch('imageUrl') && form.formState.errors.imageUrl?.type !== 'invalid_string' && (
                     <div className="col-start-2 col-span-3 mt-1">
                         <Image src={form.watch('imageUrl')!} alt="Image Preview" width={60} height={60} className="object-cover border rounded-sm w-16 h-16" />
                     </div>
                 )}
-               {form.formState.errors.imageUrl && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.imageUrl.message}</p>}
+               {form.formState.errors.imageUrl && <p className="col-span-4 text-sm text-destructive text-right">{form.formState.errors.imageUrl.message}</p>}
+             </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+               <Label htmlFor="dataAiHint" className="text-right">AI Hint</Label>
+               <Input id="dataAiHint" {...form.register('dataAiHint')} className="col-span-3" placeholder="e.g., clothing fashion" disabled={isSaving} />
+               {form.formState.errors.dataAiHint && <p className="col-span-4 text-sm text-destructive text-right">{form.formState.errors.dataAiHint.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
                <Label htmlFor="description" className="text-right">Description</Label>
                <Textarea id="description" {...form.register('description')} className="col-span-3" rows={2} placeholder="Optional short description" disabled={isSaving} />
-               {form.formState.errors.description && <p className="col-span-4 text-right text-sm text-destructive">{form.formState.errors.description.message}</p>}
+               {form.formState.errors.description && <p className="col-span-4 text-sm text-destructive text-right">{form.formState.errors.description.message}</p>}
              </div>
              <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="isActive" className="text-right">Status</Label>
@@ -494,7 +514,7 @@ function AdminCategoriesPageContent() {
        </Dialog>
     </div>
   );
-} 
+}
 
 function CategoriesTableSkeleton() {
    return (
@@ -527,7 +547,7 @@ function CategoriesTableSkeleton() {
       </CardContent>
     </Card>
   );
-} 
+}
 
 export default function AdminCategoriesPage() {
     return (

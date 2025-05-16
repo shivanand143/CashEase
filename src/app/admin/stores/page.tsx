@@ -118,26 +118,26 @@ const storeSchema = z.object({
 type StoreFormValues = z.infer<typeof storeSchema>;
 
 function AdminStoresPageContent() {
-  const [stores, setStores] = useState<Store[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [stores, setStores] = React.useState<Store[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMore, setHasMore] = React.useState(true);
+  const [loadingMore, setLoadingMore] = React.useState(false);
   const { toast } = useToast();
   const router = useRouter();
 
-  const [searchTermInput, setSearchTermInput] = useState('');
+  const [searchTermInput, setSearchTermInput] = React.useState('');
   const debouncedSearchTerm = useDebounce(searchTermInput, 500);
-  const [isSearching, setIsSearching] = useState(false);
+  const [isSearching, setIsSearching] = React.useState(false);
 
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingStore, setEditingStore] = useState<Store | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [deletingStoreId, setDeletingStoreId] = useState<string | null>(null);
-  const [updatingStoreId, setUpdatingStoreId] = useState<string | null>(null);
-  const [categoriesList, setCategoriesList] = useState<{ value: string; label: string }[]>([]);
-  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = React.useState(false);
+  const [editingStore, setEditingStore] = React.useState<Store | null>(null);
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [deletingStoreId, setDeletingStoreId] = React.useState<string | null>(null);
+  const [updatingStoreId, setUpdatingStoreId] = React.useState<string | null>(null);
+  const [categoriesList, setCategoriesList] = React.useState<{ value: string; label: string }[]>([]);
+  const [loadingCategories, setLoadingCategories] = React.useState(true);
 
 
   const form = useForm<StoreFormValues>({
@@ -170,9 +170,10 @@ function AdminStoresPageContent() {
     },
   });
 
-   useEffect(() => {
+   React.useEffect(() => {
     let isMounted = true;
     const fetchCategories = async () => {
+      if (!isMounted) return;
       if (!db || firebaseInitializationError) {
         if (isMounted) {
           setError(firebaseInitializationError || "Database not available for fetching categories.");
@@ -204,16 +205,18 @@ function AdminStoresPageContent() {
       }
     };
     fetchCategories();
-    return () => { isMounted = false };
+    return () => { isMounted = false; };
   }, [toast]);
 
 
-  const fetchStores = useCallback(async (
+  const fetchStores = React.useCallback(async (
     isLoadMoreOperation: boolean,
     currentSearchTerm: string,
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
   ) => {
     let isMounted = true;
+    if (!isMounted) return;
+
     if (!db || firebaseInitializationError) {
         if (isMounted) {
             setError(firebaseInitializationError || "Database connection not available.");
@@ -239,9 +242,9 @@ function AdminStoresPageContent() {
       let constraints: QueryConstraint[] = [];
 
       if (currentSearchTerm) {
+        constraints.push(orderBy('name')); // Order by name first for text search
         constraints.push(where('name', '>=', currentSearchTerm));
         constraints.push(where('name', '<=', currentSearchTerm + '\uf8ff'));
-        constraints.push(orderBy('name'));
       } else {
         constraints.push(orderBy('isFeatured', 'desc'));
         constraints.push(orderBy('createdAt', 'desc'));
@@ -313,23 +316,16 @@ function AdminStoresPageContent() {
             setIsSearching(false);
        }
     }
-     return () => { isMounted = false };
   }, [toast]);
 
   useEffect(() => {
-    let isMounted = true;
-    fetchStores(false, debouncedSearchTerm, null).then(() => {
-      if (isMounted) setLoading(false);
-    }).catch(() => {
-      if (isMounted) setLoading(false);
-    });
-    return () => { isMounted = false };
+    fetchStores(false, debouncedSearchTerm, null);
   }, [debouncedSearchTerm, fetchStores]);
 
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchStores(false, searchTermInput, null);
+    // fetchStores is called by useEffect due to debouncedSearchTerm change
   };
 
   const handleLoadMore = () => {
@@ -378,7 +374,7 @@ function AdminStoresPageContent() {
     if (!db || firebaseInitializationError) {
         if(isMounted) setError(firebaseInitializationError || "Database not available. Please try again later.");
         setIsSaving(false);
-        return;
+        return () => {isMounted = false;};
     }
     setIsSaving(true);
     setError(null);
@@ -426,7 +422,7 @@ function AdminStoresPageContent() {
     } finally {
       if (isMounted) setIsSaving(false);
     }
-     return () => { isMounted = false };
+     return () => { isMounted = false; };
   };
 
    const handleDeleteStore = async () => {
@@ -446,7 +442,7 @@ function AdminStoresPageContent() {
      } finally {
        if (isMounted) setDeletingStoreId(null);
      }
-      return () => { isMounted = false };
+      return () => { isMounted = false; };
    };
 
     const handleToggleField = async (storeToUpdate: Store, field: 'isActive' | 'isFeatured' | 'isTodaysDeal') => {
@@ -482,7 +478,7 @@ function AdminStoresPageContent() {
       } finally {
         if (isMounted) setUpdatingStoreId(null);
       }
-       return () => { isMounted = false };
+       return () => { isMounted = false; };
     };
 
 

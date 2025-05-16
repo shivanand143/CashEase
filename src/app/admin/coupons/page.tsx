@@ -68,7 +68,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialogTrigger, // Ensure this is imported
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { format, isValid } from 'date-fns';
@@ -138,7 +138,7 @@ function AdminCouponsPageContent() {
      const fetchStores = async () => {
        if (!db || firebaseInitializationError) {
          if (isMounted) setError(firebaseInitializationError || "Database not available for fetching stores.");
-         return;
+         return () => {isMounted = false;};
        }
        try {
          const storesCollection = collection(db, 'stores');
@@ -167,41 +167,44 @@ function AdminCouponsPageContent() {
     },
   });
 
-  const fetchCoupons = useCallback(async (loadMore = false) => {
+  const fetchCoupons = useCallback(async (
+    isLoadMoreOperation: boolean,
+    currentSearchTerm: string,
+    docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
+  ) => {
     let isMounted = true;
     if (!db || firebaseInitializationError) {
       if(isMounted) {
         setError(firebaseInitializationError || "Database connection not available.");
-        if(!loadMore) setLoading(false); else setLoadingMore(false);
+        if(!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
         setHasMore(false);
       }
-      return;
+      return () => {isMounted = false;};
     }
 
-    const isInitialOrNewSearch = !loadMore;
-    if (isInitialOrNewSearch) {
+    if (!isLoadMoreOperation) {
       setLoading(true); setLastVisible(null); setCoupons([]); setHasMore(true);
     } else {
       setLoadingMore(true);
     }
     setError(null);
-    setIsSearching(debouncedSearchTerm !== '');
+    setIsSearching(currentSearchTerm !== '');
 
     try {
       const couponsCollection = collection(db, 'coupons');
       let constraints: QueryConstraint[] = [];
 
-      if (debouncedSearchTerm) {
-        if (debouncedSearchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(debouncedSearchTerm)) {
-             constraints.push(where('storeId', '==', debouncedSearchTerm));
+      if (currentSearchTerm) {
+        if (currentSearchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(currentSearchTerm)) {
+             constraints.push(where('storeId', '==', currentSearchTerm));
         }
         constraints.push(orderBy('createdAt', 'desc'));
       } else {
         constraints.push(orderBy('createdAt', 'desc'));
       }
 
-      if (loadMore && lastVisible) {
-        constraints.push(startAfter(lastVisible));
+      if (isLoadMoreOperation && docToStartAfter) {
+        constraints.push(startAfter(docToStartAfter));
       }
       constraints.push(limit(COUPONS_PER_PAGE));
 
@@ -241,14 +244,14 @@ function AdminCouponsPageContent() {
 
        let couponsWithNames = await Promise.all(couponsDataPromises);
 
-      if (debouncedSearchTerm && !(debouncedSearchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(debouncedSearchTerm))) {
+      if (currentSearchTerm && !(currentSearchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(currentSearchTerm))) {
           couponsWithNames = couponsWithNames.filter(c =>
-              c.description.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-              (c.storeName && c.storeName !== 'Loading...' && c.storeName.toLowerCase().includes(debouncedSearchTerm.toLowerCase()))
+              c.description.toLowerCase().includes(currentSearchTerm.toLowerCase()) ||
+              (c.storeName && c.storeName !== 'Loading...' && c.storeName.toLowerCase().includes(currentSearchTerm.toLowerCase()))
           );
       }
       if(isMounted){
-        if (isInitialOrNewSearch) {
+        if (!isLoadMoreOperation) {
           setCoupons(couponsWithNames);
         } else {
           setCoupons(prev => [...prev, ...couponsWithNames]);
@@ -266,19 +269,24 @@ function AdminCouponsPageContent() {
       }
     } finally {
       if(isMounted){
-        if(!loadMore) setLoading(false); else setLoadingMore(false);
+        if(!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
         setIsSearching(false);
       }
     }
-    return () => {isMounted = false;}
-  }, [debouncedSearchTerm, lastVisible, toast]);
+    return () => {isMounted = false;};
+  }, [toast]);
 
   useEffect(() => {
-    fetchCoupons(false);
+    fetchCoupons(false, debouncedSearchTerm, null);
   }, [debouncedSearchTerm, fetchCoupons]);
 
+
   const handleSearch = (e: React.FormEvent) => e.preventDefault();
-  const handleLoadMore = () => !loadingMore && hasMore && fetchCoupons(true);
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMore) {
+        fetchCoupons(true, debouncedSearchTerm, lastVisible);
+    }
+  };
   const openAddDialog = () => router.push('/admin/coupons/new');
 
   const openEditDialog = (coupon: Coupon) => {
@@ -439,30 +447,28 @@ function AdminCouponsPageContent() {
                                 {updatingFieldId === coupon.id && <Loader2 className="h-4 w-4 animate-spin ml-2 inline-block" />}
                             </TableCell>
                            <TableCell>
-                            <AlertDialogTrigger asChild>
+                            <AlertDialog>
                              <DropdownMenu>
                                <DropdownMenuTrigger asChild> <Button variant="ghost" className="h-8 w-8 p-0"> <span className="sr-only">Open menu</span> <MoreHorizontal className="h-4 w-4" /> </Button> </DropdownMenuTrigger>
                                <DropdownMenuContent align="end">
                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                  <DropdownMenuItem onClick={() => openEditDialog(coupon)}> <Edit className="mr-2 h-4 w-4" /> Edit Coupon </DropdownMenuItem>
                                  <DropdownMenuSeparator />
-                                  <AlertDialog>
-                                      <AlertDialogTrigger asChild>
+                                  <AlertDialogTrigger asChild>
                                         <Button variant="ghost" className="w-full justify-start px-2 py-1.5 text-sm font-normal text-destructive hover:bg-destructive/10 focus:text-destructive focus:bg-destructive/10 h-auto relative flex cursor-default select-none items-center rounded-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50">
                                           <Trash2 className="mr-2 h-4 w-4"/> Delete Coupon
                                         </Button>
-                                      </AlertDialogTrigger>
+                                  </AlertDialogTrigger>
                                    <AlertDialogContent>
                                      <AlertDialogHeader> <AlertDialogTitle>Are you sure?</AlertDialogTitle> <AlertDialogDescription> This action cannot be undone. This will permanently delete the coupon/offer: "{coupon.description}". </AlertDialogDescription> </AlertDialogHeader>
                                      <AlertDialogFooter> <AlertDialogCancel onClick={() => { setDeletingCouponId(null); }}>Cancel</AlertDialogCancel> <AlertDialogAction onClick={() => handleDeleteCoupon(coupon.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90"> Delete </AlertDialogAction> </AlertDialogFooter>
                                    </AlertDialogContent>
-                                 </AlertDialog>
                                </DropdownMenuContent>
                              </DropdownMenu>
-                             </AlertDialogTrigger>
+                             </AlertDialog>
                            </TableCell>
                          </TableRow>
-                      )
+                      );
                    })}
                  </TableBody>
                </Table>
