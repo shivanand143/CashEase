@@ -58,13 +58,14 @@ export interface Click {
     id: string; // Firestore document ID (this will be the generated clickId)
     userId: string;
     storeId: string;
-    storeName?: string;
+    storeName?: string | null; // Denormalized
     couponId?: string | null;
     productId?: string | null;
-    productName?: string | null;
+    productName?: string | null; // Denormalized
     affiliateLink: string; // The final affiliate link clicked
     timestamp: Date | Timestamp;
-    userAgent?: string;
+    userAgent?: string | null; // Store user agent on client-side
+    clickId: string; // Ensure clickId is part of the data itself
 }
 
 export type CashbackType = 'percentage' | 'fixed';
@@ -74,7 +75,7 @@ export type PayoutStatus = 'pending' | 'approved' | 'processing' | 'paid' | 'rej
 export interface Store {
   id: string;
   name: string;
-  slug?: string;
+  slug?: string | null; // Made optional for flexibility
   logoUrl: string | null;
   heroImageUrl?: string | null;
   affiliateLink: string;
@@ -104,13 +105,14 @@ export interface Store {
 export interface Coupon {
   id: string;
   storeId: string;
-  store?: Store;
+  store?: Store; // Optional: for enriched data
   code: string | null;
   description: string;
   link: string | null;
   expiryDate: Date | Timestamp | null;
   isFeatured: boolean;
   isActive: boolean;
+  // isTodaysDeal?: boolean; // Removed from Coupon, moved to Store
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
@@ -143,9 +145,9 @@ export interface Banner {
 }
 
 export interface Product {
-  id: string;
+  id:string;
   storeId: string;
-  storeName?: string;
+  storeName?: string; // Denormalized for easier display in ProductCard if storeContext isn't available
   name: string;
   description?: string | null;
   imageUrl: string | null;
@@ -176,11 +178,12 @@ export interface PayoutRequest {
   processedAt?: Date | Timestamp | null;
   paymentMethod: PayoutMethod;
   paymentDetails: PayoutDetails;
-  transactionIds: string[]; // IDs of 'confirmed' transactions included
+  transactionIds: string[]; // IDs of 'confirmed' transactions included in this payout
   adminNotes?: string | null;
   failureReason?: string | null;
 }
 
+// Enriched types for frontend display
 export interface CouponWithStore extends Coupon {
   store?: Store;
 }
@@ -189,12 +192,14 @@ export interface ProductWithStore extends Product {
   store?: Store;
 }
 
-// Form values
+
+// Form values (ensure these are comprehensive for admin forms)
 export interface StoreFormValues extends Omit<Store, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface CouponFormValues extends Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'store'> {}
 export interface BannerFormValues extends Omit<Banner, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface CategoryFormValues extends Omit<Category, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface ProductFormValues extends Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'storeName'> {}
+
 // Form values for manual transaction entry by admin
 export interface TransactionFormValues extends Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'confirmationDate' | 'paidDate' | 'payoutId'> {
     transactionDate: Date; // Ensure it's Date for form

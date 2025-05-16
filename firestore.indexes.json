@@ -50,7 +50,7 @@
         { "fieldPath": "payoutId", "order": "ASCENDING" }
       ]
     },
-    {
+     {
       "collectionGroup": "transactions",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -84,7 +84,7 @@
         { "fieldPath": "name", "order": "ASCENDING" }
       ]
     },
-    {
+     {
       "collectionGroup": "stores",
       "queryScope": "COLLECTION_GROUP",
       "fields": [

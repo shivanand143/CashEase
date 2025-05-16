@@ -124,7 +124,7 @@ function AdminTransactionsPageContent() {
       storeName: '',
       orderId: '',
       clickId: '',
-      saleAmount: undefined, // Use undefined for react-hook-form number inputs
+      saleAmount: undefined, 
       cashbackAmount: undefined,
       status: 'pending',
       transactionDate: new Date(),
@@ -135,8 +135,8 @@ function AdminTransactionsPageContent() {
 
   const fetchTransactions = useCallback(async (
     isLoadMoreOperation = false,
-    currentSearchTerm = debouncedSearchTerm, // Use debounced directly
-    currentFilterStatus = filterStatus,      // Use filterStatus directly
+    currentSearchTerm = debouncedSearchTerm, 
+    currentFilterStatus = filterStatus,      
     docToStartAfter = lastVisible
   ) => {
     let isMounted = true;
@@ -155,6 +155,10 @@ function AdminTransactionsPageContent() {
       setLastVisible(null);
       setHasMore(true);
     } else {
+      if (!docToStartAfter && isLoadMoreOperation) {
+        if(isMounted) setLoadingMore(false);
+        return () => { isMounted = false; };
+      }
       setLoadingMore(true);
     }
     if(!isLoadMoreOperation) setPageError(null);
@@ -210,20 +214,19 @@ function AdminTransactionsPageContent() {
       }
     }
     return () => { isMounted = false; };
-  }, [toast, debouncedSearchTerm, filterStatus, lastVisible]); // Add stable dependencies
+  }, [toast, debouncedSearchTerm, filterStatus, lastVisible]); 
 
   useEffect(() => {
-    fetchTransactions(false); // Initial fetch uses hook's current state for searchTerm, filter, lastVisible
-  }, [fetchTransactions]); // Re-run when fetchTransactions changes (due to its own deps changing)
+    fetchTransactions(false); 
+  }, [fetchTransactions]); 
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    // fetchTransactions will be called by the useEffect due to debouncedSearchTerm change
   };
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      fetchTransactions(true); // fetchTransactions will use its current state for term, filter, lastVisible
+      fetchTransactions(true); 
     }
   };
 
@@ -260,7 +263,7 @@ function AdminTransactionsPageContent() {
      console.log(`ADMIN: Saving edit for Tx ID: ${editingTransactionId}. Original Status: ${originalStatus}, New Status: ${newStatus}, Cashback: ${cashbackAmount}`);
 
      try {
-        await runTransaction(db, async (transactionRunner) => { // Renamed 'transaction' to 'transactionRunner'
+        await runTransaction(db, async (transactionRunner) => { 
             const userSnap = await transactionRunner.get(userDocRef);
             if (!userSnap.exists()) {
                 throw new Error(`User profile for UID ${userId} not found.`);
@@ -274,62 +277,59 @@ function AdminTransactionsPageContent() {
             };
 
             let userBalanceUpdate: Partial<UserProfile> = { updatedAt: serverTimestamp() };
+            let currentPendingCashback = userProfile.pendingCashback || 0;
+            let currentCashbackBalance = userProfile.cashbackBalance || 0;
+            let currentLifetimeCashback = userProfile.lifetimeCashback || 0;
 
             if (newStatus === 'confirmed' && originalStatus === 'pending') {
                 console.log("ADMIN: Tx changing PENDING -> CONFIRMED");
                 transactionUpdateData.confirmationDate = serverTimestamp();
                 userBalanceUpdate.cashbackBalance = increment(cashbackAmount);
-                userBalanceUpdate.pendingCashback = increment(-cashbackAmount); // Decrement pending
+                userBalanceUpdate.pendingCashback = increment(-cashbackAmount); 
                 userBalanceUpdate.lifetimeCashback = increment(cashbackAmount);
-            } else if (newStatus === 'rejected' && originalStatus === 'pending') {
-                console.log("ADMIN: Tx changing PENDING -> REJECTED");
-                userBalanceUpdate.pendingCashback = increment(-cashbackAmount); // Decrement pending
-            } else if (newStatus === 'cancelled' && originalStatus === 'pending') {
-                console.log("ADMIN: Tx changing PENDING -> CANCELLED");
-                userBalanceUpdate.pendingCashback = increment(-cashbackAmount); // Decrement pending
+            } else if ((newStatus === 'rejected' || newStatus === 'cancelled') && originalStatus === 'pending') {
+                console.log(`ADMIN: Tx changing PENDING -> ${newStatus.toUpperCase()}`);
+                userBalanceUpdate.pendingCashback = increment(-cashbackAmount); 
             } else if (newStatus === 'pending' && originalStatus === 'confirmed') {
                 console.log("ADMIN: Tx changing CONFIRMED -> PENDING (Reverting)");
-                transactionUpdateData.confirmationDate = null;
+                transactionUpdateData.confirmationDate = null; // Or deleteField() if you want to remove it
                 userBalanceUpdate.cashbackBalance = increment(-cashbackAmount);
                 userBalanceUpdate.pendingCashback = increment(cashbackAmount);
                 userBalanceUpdate.lifetimeCashback = increment(-cashbackAmount);
-            } else if (newStatus === 'rejected' && originalStatus === 'confirmed') {
-                console.log("ADMIN: Tx changing CONFIRMED -> REJECTED");
+            } else if ((newStatus === 'rejected' || newStatus === 'cancelled') && originalStatus === 'confirmed') {
+                console.log(`ADMIN: Tx changing CONFIRMED -> ${newStatus.toUpperCase()}`);
                 userBalanceUpdate.cashbackBalance = increment(-cashbackAmount);
-                userBalanceUpdate.lifetimeCashback = increment(-cashbackAmount); // Also revert lifetime if it was confirmed
-            } else if (newStatus === 'cancelled' && originalStatus === 'confirmed') {
-                console.log("ADMIN: Tx changing CONFIRMED -> CANCELLED");
-                userBalanceUpdate.cashbackBalance = increment(-cashbackAmount);
-                userBalanceUpdate.lifetimeCashback = increment(-cashbackAmount);
+                userBalanceUpdate.lifetimeCashback = increment(-cashbackAmount); 
             }
-            // 'paid' status is handled by payout process. If manually set here, ensure no double counting.
-            // If changing FROM 'paid' back to 'confirmed' or 'pending', complex reversal logic might be needed (not covered here).
-
+            
             console.log("ADMIN: Transaction Update Data:", transactionUpdateData);
             console.log("ADMIN: User Balance Update Data:", userBalanceUpdate);
 
             transactionRunner.update(transactionDocRef, transactionUpdateData);
-            if(Object.keys(userBalanceUpdate).length > 1 || (userBalanceUpdate.pendingCashback !== undefined || userBalanceUpdate.cashbackBalance !== undefined)) {
-                // Ensure pendingCashback is not negative
-                if (userBalanceUpdate.pendingCashback !== undefined && typeof userBalanceUpdate.pendingCashback === 'object' && 'increment' in userBalanceUpdate.pendingCashback) {
-                    const currentPending = userProfile.pendingCashback || 0;
+            
+            if (userBalanceUpdate.pendingCashback && typeof userBalanceUpdate.pendingCashback === 'object' && 'increment' in userBalanceUpdate.pendingCashback) {
+                // @ts-ignore
+                if (currentPendingCashback + userBalanceUpdate.pendingCashback.integerValue < 0) {
                     // @ts-ignore
-                    if (currentPending + userBalanceUpdate.pendingCashback.integerValue < 0) {
-                         // @ts-ignore
-                        console.warn(`ADMIN: Attempting to make pendingCashback negative. Setting to 0. Current: ${currentPending}, Increment: ${userBalanceUpdate.pendingCashback.integerValue}`);
-                        userBalanceUpdate.pendingCashback = -currentPending; // This results in 0
-                    }
+                    userBalanceUpdate.pendingCashback = increment(-currentPendingCashback);
                 }
-                 // Ensure cashbackBalance is not negative
-                if (userBalanceUpdate.cashbackBalance !== undefined && typeof userBalanceUpdate.cashbackBalance === 'object' && 'increment' in userBalanceUpdate.cashbackBalance) {
-                    const currentBalance = userProfile.cashbackBalance || 0;
-                     // @ts-ignore
-                    if (currentBalance + userBalanceUpdate.cashbackBalance.integerValue < 0) {
-                        // @ts-ignore
-                        console.warn(`ADMIN: Attempting to make cashbackBalance negative. Setting to 0. Current: ${currentBalance}, Increment: ${userBalanceUpdate.cashbackBalance.integerValue}`);
-                        userBalanceUpdate.cashbackBalance = -currentBalance;
-                    }
+            }
+            if (userBalanceUpdate.cashbackBalance && typeof userBalanceUpdate.cashbackBalance === 'object' && 'increment' in userBalanceUpdate.cashbackBalance) {
+                // @ts-ignore
+                if (currentCashbackBalance + userBalanceUpdate.cashbackBalance.integerValue < 0) {
+                    // @ts-ignore
+                    userBalanceUpdate.cashbackBalance = increment(-currentCashbackBalance);
                 }
+            }
+             if (userBalanceUpdate.lifetimeCashback && typeof userBalanceUpdate.lifetimeCashback === 'object' && 'increment' in userBalanceUpdate.lifetimeCashback) {
+                // @ts-ignore
+                if (currentLifetimeCashback + userBalanceUpdate.lifetimeCashback.integerValue < 0) {
+                    // @ts-ignore
+                    userBalanceUpdate.lifetimeCashback = increment(-currentLifetimeCashback);
+                }
+            }
+
+            if(Object.keys(userBalanceUpdate).length > 1 || userBalanceUpdate.pendingCashback || userBalanceUpdate.cashbackBalance || userBalanceUpdate.lifetimeCashback) {
                 transactionRunner.update(userDocRef, userBalanceUpdate);
             }
         });
@@ -372,14 +372,13 @@ function AdminTransactionsPageContent() {
         if (!userSnap.exists()) {
             throw new Error(`User with ID "${data.userId}" not found. Cannot add transaction.`);
         }
-        const userProfile = userSnap.data() as UserProfile;
-
+        
         const newTransactionData: Omit<Transaction, 'id'> = {
             ...data,
             storeName: data.storeName || null,
             orderId: data.orderId || null,
             clickId: data.clickId || null,
-            transactionDate: Timestamp.fromDate(data.transactionDate), // Ensure it's a Firestore Timestamp
+            transactionDate: Timestamp.fromDate(data.transactionDate), 
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
             confirmationDate: data.status === 'confirmed' ? serverTimestamp() : null,
@@ -391,13 +390,15 @@ function AdminTransactionsPageContent() {
         const docRef = await addDoc(collection(db, 'transactions'), newTransactionData);
         console.log("ADMIN: New transaction document created with ID:", docRef.id);
 
-        // Update user's balance within a Firestore transaction
         await runTransaction(db, async (transactionRunner) => {
-            const freshUserSnap = await transactionRunner.get(userDocRef); // Re-fetch user inside transaction
+            const freshUserSnap = await transactionRunner.get(userDocRef); 
             if (!freshUserSnap.exists()) throw new Error("User not found during balance update.");
             const currentProfile = freshUserSnap.data() as UserProfile;
             
             const userBalanceUpdate: Partial<UserProfile> = { updatedAt: serverTimestamp() };
+            let currentPendingCashback = currentProfile.pendingCashback || 0;
+            let currentCashbackBalance = currentProfile.cashbackBalance || 0;
+            let currentLifetimeCashback = currentProfile.lifetimeCashback || 0;
 
             if (data.status === 'confirmed') {
                 console.log("ADMIN: New transaction is CONFIRMED. Updating cashbackBalance and lifetimeCashback.");
@@ -407,11 +408,27 @@ function AdminTransactionsPageContent() {
                 console.log("ADMIN: New transaction is PENDING. Updating pendingCashback.");
                 userBalanceUpdate.pendingCashback = increment(data.cashbackAmount);
             }
-            // For 'paid', 'rejected', 'cancelled' on manual add, typically no immediate balance change unless specific logic is desired.
-            // 'paid' usually means it was part of a payout, balance already handled.
-            // 'rejected'/'cancelled' means it didn't contribute.
+            
+            if (userBalanceUpdate.pendingCashback && typeof userBalanceUpdate.pendingCashback === 'object' && 'increment' in userBalanceUpdate.pendingCashback) {
+                // @ts-ignore
+                if (currentPendingCashback + userBalanceUpdate.pendingCashback.integerValue < 0) { // @ts-ignore
+                    userBalanceUpdate.pendingCashback = increment(-currentPendingCashback);
+                }
+            }
+            if (userBalanceUpdate.cashbackBalance && typeof userBalanceUpdate.cashbackBalance === 'object' && 'increment' in userBalanceUpdate.cashbackBalance) {
+                 // @ts-ignore
+                if (currentCashbackBalance + userBalanceUpdate.cashbackBalance.integerValue < 0) { // @ts-ignore
+                    userBalanceUpdate.cashbackBalance = increment(-currentCashbackBalance);
+                }
+            }
+            if (userBalanceUpdate.lifetimeCashback && typeof userBalanceUpdate.lifetimeCashback === 'object' && 'increment' in userBalanceUpdate.lifetimeCashback) {
+                 // @ts-ignore
+                if (currentLifetimeCashback + userBalanceUpdate.lifetimeCashback.integerValue < 0) { // @ts-ignore
+                    userBalanceUpdate.lifetimeCashback = increment(-currentLifetimeCashback);
+                }
+            }
 
-            if(Object.keys(userBalanceUpdate).length > 1) {
+            if(Object.keys(userBalanceUpdate).length > 1 || userBalanceUpdate.pendingCashback || userBalanceUpdate.cashbackBalance || userBalanceUpdate.lifetimeCashback) {
                 transactionRunner.update(userDocRef, userBalanceUpdate);
                 console.log("ADMIN: User balance updated in transaction for new transaction.");
             } else {
@@ -419,7 +436,6 @@ function AdminTransactionsPageContent() {
             }
         });
 
-        // Optimistically update local state
         setTransactions(prev => [{ ...newTransactionData, id: docRef.id, createdAt: new Date(), updatedAt: new Date(), transactionDate: data.transactionDate } as Transaction, ...prev].sort((a,b) => (b.transactionDate as Date).getTime() - (a.transactionDate as Date).getTime()));
         toast({ title: "Transaction Added", description: "New transaction recorded successfully." });
         setIsAddDialogOpen(false);

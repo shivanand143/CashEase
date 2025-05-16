@@ -14,20 +14,18 @@ import { formatCurrency } from '@/lib/utils';
 import ProtectedRoute from '@/components/guards/protected-route';
 
 function DashboardContent() {
-  const { user, userProfile, loading: authLoading, authError, fetchUserProfile } = useAuth(); // Added fetchUserProfile
+  const { user, userProfile, loading: authLoading, authError, fetchUserProfile } = useAuth(); 
   const router = useRouter();
   const [isRefreshing, setIsRefreshing] = React.useState(false);
 
 
   React.useEffect(() => {
-    // Refresh user profile data when component mounts or user changes,
-    // to ensure dashboard displays the most up-to-date balances.
     if (user && fetchUserProfile) {
         setIsRefreshing(true);
         fetchUserProfile(user.uid).finally(() => setIsRefreshing(false));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]); // fetchUserProfile is memoized, safe to not list if it's stable
+  }, [user]); 
 
 
   const isLoading = authLoading || isRefreshing || (!user && !authError);
@@ -53,7 +51,20 @@ function DashboardContent() {
   }
 
   if (!user || !userProfile) {
-    return null;
+    // This case should ideally be handled by ProtectedRoute redirecting to login
+    // If ProtectedRoute isn't working as expected, this is a fallback.
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Access Denied</AlertTitle>
+        <AlertDescription>
+          You must be logged in to view the dashboard.
+           <Button variant="link" className="p-0 h-auto ml-2" onClick={() => router.push('/login')}>
+               Go to Login
+           </Button>
+        </AlertDescription>
+      </Alert>
+    );
   }
 
   const stats = [

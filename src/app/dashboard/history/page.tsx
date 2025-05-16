@@ -70,54 +70,39 @@ function CashbackHistoryContent() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
-  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const lastVisibleRef = React.useRef<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const fetchTransactions = useCallback(async (isLoadMoreOperation = false, docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = lastVisible) => {
+  const fetchInitialTransactions = useCallback(async () => {
     let isMounted = true;
     if (!user) {
-      if(isMounted) {
-         if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
-      }
+      if(isMounted) setLoading(false);
       return () => { isMounted = false; };
     }
     if (firebaseInitializationError || !db) {
       if(isMounted) {
         setPageError(firebaseInitializationError || "Database connection not available.");
-        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+        setLoading(false);
         setHasMore(false);
       }
       return () => { isMounted = false; };
     }
 
-    if (!isLoadMoreOperation) {
-      setLoading(true);
-      setTransactions([]);
-      setLastVisible(null);
-      setHasMore(true);
-    } else {
-       if (!docToStartAfter) { // Don't load more if there's no cursor
-        if(isMounted) setLoadingMore(false);
-        return () => { isMounted = false; };
-      }
-      setLoadingMore(true);
-    }
-    if (!isLoadMoreOperation) setPageError(null);
+    setLoading(true);
+    setTransactions([]);
+    lastVisibleRef.current = null;
+    setHasMore(true);
+    setPageError(null);
 
     try {
       const transactionsCollection = collection(db, 'transactions');
-      const constraints = [
+      const q = query(
+        transactionsCollection,
         where('userId', '==', user.uid),
         orderBy('transactionDate', 'desc'),
         limit(TRANSACTIONS_PER_PAGE)
-      ];
-
-      if (isLoadMoreOperation && docToStartAfter) {
-        constraints.push(startAfter(docToStartAfter));
-      }
-
-      const q = query(transactionsCollection, ...constraints);
+      );
       const querySnapshot = await getDocs(q);
 
       const transactionsData = querySnapshot.docs.map(docSnap => {
@@ -133,11 +118,10 @@ function CashbackHistoryContent() {
         } as Transaction;
       });
       if(isMounted){
-        setTransactions(prev => isLoadMoreOperation ? [...prev, ...transactionsData] : transactionsData);
-        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+        setTransactions(transactionsData);
+        lastVisibleRef.current = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
         setHasMore(querySnapshot.docs.length === TRANSACTIONS_PER_PAGE);
       }
-
     } catch (err) {
       console.error("Error fetching transactions:", err);
       if(isMounted){
@@ -146,25 +130,75 @@ function CashbackHistoryContent() {
         setHasMore(false);
       }
     } finally {
-      if(isMounted){
-        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
-      }
+      if(isMounted) setLoading(false);
     }
     return () => { isMounted = false; };
-  }, [user, lastVisible]);
+  }, [user]);
+
+
+  const fetchMoreTransactions = useCallback(async () => {
+    let isMounted = true;
+    if (!user || !lastVisibleRef.current || !db || firebaseInitializationError) {
+      if(isMounted) setLoadingMore(false);
+      return () => {isMounted = false;};
+    }
+    setLoadingMore(true);
+    setPageError(null);
+
+    try {
+      const transactionsCollection = collection(db, 'transactions');
+      const q = query(
+        transactionsCollection,
+        where('userId', '==', user.uid),
+        orderBy('transactionDate', 'desc'),
+        startAfter(lastVisibleRef.current),
+        limit(TRANSACTIONS_PER_PAGE)
+      );
+      const querySnapshot = await getDocs(q);
+      const transactionsData = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          transactionDate: safeToDate(data.transactionDate) || new Date(0),
+          confirmationDate: safeToDate(data.confirmationDate),
+          paidDate: safeToDate(data.paidDate),
+          createdAt: safeToDate(data.createdAt) || new Date(0),
+          updatedAt: safeToDate(data.updatedAt) || new Date(0),
+        } as Transaction;
+      });
+       if(isMounted){
+        setTransactions(prev => [...prev, ...transactionsData]);
+        lastVisibleRef.current = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
+        setHasMore(querySnapshot.docs.length === TRANSACTIONS_PER_PAGE);
+      }
+    } catch (err) {
+      console.error("Error fetching more transactions:", err);
+      if(isMounted){
+        const errorMsg = err instanceof Error ? err.message : "Failed to load more transactions.";
+        setPageError(errorMsg);
+        setHasMore(false);
+      }
+    } finally {
+      if(isMounted) setLoadingMore(false);
+    }
+    return () => {isMounted = false;};
+  }, [user]);
 
 
   useEffect(() => {
-    if (user && !authLoading) {
-      fetchTransactions(false, null); // Initial fetch
-    } else if (!authLoading && !user) {
+    if (user) {
+      fetchInitialTransactions();
+    } else if (!authLoading) {
+      // If auth is done loading and still no user, redirect
       router.push('/login');
     }
-  }, [user, authLoading, fetchTransactions, router]);
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, authLoading, fetchInitialTransactions]);
 
   const handleLoadMore = () => {
-    if (!loadingMore && hasMore && lastVisible) {
-      fetchTransactions(true, lastVisible);
+    if (!loadingMore && hasMore) {
+      fetchMoreTransactions();
     }
   };
 
@@ -251,8 +285,8 @@ function CashbackHistoryContent() {
                             </span>
                         )}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground truncate max-w-[150px]" title={tx.notesToUser || tx.adminNotes || ''}>
-                            {tx.notesToUser || tx.adminNotes || '-'}
+                        <TableCell className="text-xs text-muted-foreground truncate max-w-[150px]" title={tx.notesToUser || ''}>
+                            {tx.notesToUser || '-'}
                         </TableCell>
                     </TableRow>
                     ))}
