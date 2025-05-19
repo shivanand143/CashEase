@@ -11,12 +11,12 @@ import Image from 'next/image';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { ProductCard } from '@/components/product-card';
+import ProductCard from '@/components/product-card'; // Updated to default import
 import { AlertCircle, ArrowLeft, ShoppingBag, Info, Loader2 } from 'lucide-react';
 import { safeToDate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
-const PRODUCTS_PER_PAGE = 18; // Number of products to show per page
+const PRODUCTS_PER_PAGE = 18;
 
 export default function StoreProductsPage() {
   const params = useParams();
@@ -27,11 +27,11 @@ export default function StoreProductsPage() {
   const [store, setStore] = React.useState<Store | null>(null);
   const [products, setProducts] = React.useState<Product[]>([]);
   const [loadingStore, setLoadingStore] = React.useState(true);
-  const [loadingProducts, setLoadingProducts] = React.useState(true); // For initial products load
+  const [loadingProducts, setLoadingProducts] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [lastVisibleProduct, setLastVisibleProduct] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMoreProducts, setHasMoreProducts] = React.useState(true);
-  const [loadingMoreProducts, setLoadingMoreProducts] = React.useState(false); // For "load more" specifically
+  const [loadingMoreProducts, setLoadingMoreProducts] = React.useState(false);
 
   const fetchStoreDetails = React.useCallback(async () => {
     let isMounted = true;
@@ -86,8 +86,8 @@ export default function StoreProductsPage() {
   ) => {
     let isMounted = true;
     if (!currentStoreId) {
-      if(isMounted) {
-          if (!loadMoreOperation) setLoadingProducts(false); else setLoadingMoreProducts(false);
+      if (isMounted) {
+        if (!loadMoreOperation) setLoadingProducts(false); else setLoadingMoreProducts(false);
       }
       return () => { isMounted = false; };
     }
@@ -102,15 +102,14 @@ export default function StoreProductsPage() {
     }
 
     if (!loadMoreOperation) {
-      setLoadingProducts(true); // Only set main loading for initial fetch
+      setLoadingProducts(true);
       setProducts([]);
       setLastVisibleProduct(null);
       setHasMoreProducts(true);
     } else {
       setLoadingMoreProducts(true);
     }
-    if(!loadMoreOperation) setPageError(null);
-
+    if (!loadMoreOperation) setPageError(null);
 
     try {
       const productsCollection = collection(db, 'products');
@@ -125,7 +124,7 @@ export default function StoreProductsPage() {
         constraints.push(startAfter(docToStartAfter));
       }
       constraints.push(limit(PRODUCTS_PER_PAGE));
-      
+
       const q = query(productsCollection, ...constraints);
       const productSnap = await getDocs(q);
 
@@ -135,18 +134,18 @@ export default function StoreProductsPage() {
         createdAt: safeToDate(d.data().createdAt as Timestamp | undefined),
         updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined),
       } as Product));
-      
+
       if (isMounted) {
-          setProducts(prev => loadMoreOperation ? [...prev, ...fetchedProducts] : fetchedProducts);
-          setLastVisibleProduct(productSnap.docs[productSnap.docs.length - 1] || null);
-          setHasMoreProducts(fetchedProducts.length === PRODUCTS_PER_PAGE);
+        setProducts(prev => loadMoreOperation ? [...prev, ...fetchedProducts] : fetchedProducts);
+        setLastVisibleProduct(productSnap.docs[productSnap.docs.length - 1] || null);
+        setHasMoreProducts(fetchedProducts.length === PRODUCTS_PER_PAGE);
       }
 
     } catch (err) {
       console.error(`Error fetching products for store ${currentStoreId}:`, err);
       if (isMounted) {
-          setPageError(err instanceof Error ? err.message : "Failed to load products.");
-          setHasMoreProducts(false);
+        setPageError(err instanceof Error ? err.message : "Failed to load products.");
+        setHasMoreProducts(false);
       }
     } finally {
       if (isMounted) {
@@ -154,23 +153,22 @@ export default function StoreProductsPage() {
       }
     }
     return () => { isMounted = false; };
-  }, [toast]); // Removed lastVisibleProduct from here
-
+  }, [toast]);
 
   React.useEffect(() => {
     let isMounted = true;
     if (storeId) {
-      fetchStoreDetails(); // This seems fine
-      fetchStoreProducts(storeId, false, null); // Initial product fetch
+      fetchStoreDetails();
+      fetchStoreProducts(storeId, false, null);
     } else {
       if (isMounted) {
         setPageError("Invalid store identifier.");
         setLoadingStore(false);
-        setLoadingProducts(false); // Ensure this is set
+        setLoadingProducts(false);
       }
     }
     return () => { isMounted = false; };
-  }, [storeId, fetchStoreDetails, fetchStoreProducts]); // Dependencies for initial load
+  }, [storeId, fetchStoreDetails, fetchStoreProducts]);
 
   React.useEffect(() => {
     if (pageError) {
@@ -178,21 +176,19 @@ export default function StoreProductsPage() {
     }
   }, [pageError, toast]);
 
-
   const handleLoadMoreProducts = () => {
-    if (!loadingMoreProducts && hasMoreProducts && storeId) {
+    if (!loadingMoreProducts && hasMoreProducts && storeId && lastVisibleProduct) {
       fetchStoreProducts(storeId, true, lastVisibleProduct);
     }
   };
 
   const overallInitialLoading = loadingStore || (loadingProducts && products.length === 0);
 
-
   if (overallInitialLoading && !pageError) {
     return <StoreProductsPageSkeleton />;
   }
 
-  if (pageError && !store && !loadingStore) { // If store itself failed to load and not currently trying
+  if (pageError && !store && !loadingStore) {
     return (
       <div className="container mx-auto max-w-4xl text-center py-12">
         <Alert variant="destructive">
@@ -207,7 +203,7 @@ export default function StoreProductsPage() {
     );
   }
 
-  if (!store && !loadingStore && !pageError) { // If loading done, no error, but no store
+  if (!store && !loadingStore && !pageError) {
     return (
       <div className="text-center py-16 text-muted-foreground">
         Store not found or is no longer available.
@@ -217,34 +213,33 @@ export default function StoreProductsPage() {
       </div>
     );
   }
-  
+
   return (
     <div className="space-y-8">
       {store && (
         <section className="relative rounded-lg overflow-hidden shadow-lg border mb-8">
-            {store.heroImageUrl ? (
-                <Image
-                    src={store.heroImageUrl}
-                    alt={`${store.name} Products Banner`}
-                    width={1200}
-                    height={300} 
-                    className="object-cover w-full h-48 md:h-56" 
-                    data-ai-hint={`${store.name} products promotional banner`}
-                    priority
-                    onError={(e) => ((e.target as HTMLImageElement).src = 'https://placehold.co/1200x300.png')}
-                />
-            ) : (
-                <div className="w-full h-48 md:h-56 bg-gradient-to-r from-primary/10 to-secondary/10 flex items-center justify-center">
-                    {/* Placeholder for store name if no hero image */}
-                    <h1 className="text-4xl font-bold text-white/70 drop-shadow-lg">{store.name}</h1>
-                </div>
-            )}
+          {store.heroImageUrl ? (
+            <Image
+              src={store.heroImageUrl}
+              alt={`${store.name} Products Banner`}
+              width={1200}
+              height={300}
+              className="object-cover w-full h-48 md:h-56"
+              data-ai-hint={`${store.name} products promotional banner`}
+              priority
+              onError={(e) => ((e.target as HTMLImageElement).src = 'https://placehold.co/1200x300.png')}
+            />
+          ) : (
+            <div className="w-full h-48 md:h-56 bg-gradient-to-r from-primary/10 to-secondary/10 flex items-center justify-center">
+              <h1 className="text-4xl font-bold text-white/70 drop-shadow-lg">{store.name}</h1>
+            </div>
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent flex flex-col justify-end p-6">
             <div className="flex items-center gap-4 mb-2">
-                {store.logoUrl && (
-                    <Image src={store.logoUrl} alt={`${store.name} Logo`} width={80} height={40} className="object-contain bg-white p-1 rounded-sm shadow" data-ai-hint={store.dataAiHint || `${store.name} logo`}  onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')}/>
-                )}
-                <h1 className="text-3xl md:text-4xl font-bold text-white drop-shadow-lg">{store.name} Products</h1>
+              {store.logoUrl && (
+                <Image src={store.logoUrl} alt={`${store.name} Logo`} width={80} height={40} className="object-contain bg-white p-1 rounded-sm shadow" data-ai-hint={store.dataAiHint || `${store.name} logo`} onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')} />
+              )}
+              <h1 className="text-3xl md:text-4xl font-bold text-white drop-shadow-lg">{store.name} Products</h1>
             </div>
             <p className="text-sm text-white/90 drop-shadow-md max-w-2xl line-clamp-2">{store.description}</p>
           </div>
@@ -259,7 +254,6 @@ export default function StoreProductsPage() {
         <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
           <ShoppingBag className="w-6 h-6 text-primary" /> Products from {store?.name || 'this Store'}
         </h2>
-        {/* Show skeleton for product list if main product loading is true AND no products yet AND no page-level error for products */}
         {loadingProducts && products.length === 0 && !pageError ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
             {Array.from({ length: 12 }).map((_, index) => <Skeleton key={`prod-skel-list-${index}`} className="h-64 rounded-lg" />)}
@@ -270,21 +264,19 @@ export default function StoreProductsPage() {
               <ProductCard key={product.id} product={product} storeContext={store} />
             ))}
           </div>
-        // If done loading products, no products exist, AND no error was set *specifically for products*
         ) : !loadingProducts && products.length === 0 && !pageError ? (
           <div className="text-center py-16 text-muted-foreground bg-muted/30 rounded-lg border">
             <Info className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
             <p className="text-lg">No products found for {store?.name || 'this store'} at the moment.</p>
             <p className="text-sm mt-1">Check back later or explore other stores.</p>
           </div>
-        // If there was a product-specific error (even if store loaded)
         ) : pageError && !loadingProducts ? (
-             <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Error Loading Products</AlertTitle>
-                <AlertDescription>{pageError}</AlertDescription>
-            </Alert>
-        ) : null }
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error Loading Products</AlertTitle>
+            <AlertDescription>{pageError}</AlertDescription>
+          </Alert>
+        ) : null}
       </section>
 
       {hasMoreProducts && !loadingProducts && products.length > 0 && (
@@ -302,9 +294,9 @@ export default function StoreProductsPage() {
 function StoreProductsPageSkeleton() {
   return (
     <div className="space-y-8">
-      <Skeleton className="h-48 md:h-56 w-full rounded-lg mb-8" /> {/* Hero Image */}
-      <Skeleton className="h-9 w-32 mb-4" /> {/* Back Button */}
-      <Skeleton className="h-8 w-1/3 mb-6" /> {/* Section Title */}
+      <Skeleton className="h-48 md:h-56 w-full rounded-lg mb-8" />
+      <Skeleton className="h-9 w-32 mb-4" />
+      <Skeleton className="h-8 w-1/3 mb-6" />
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
         {Array.from({ length: 12 }).map((_, index) => (
           <Skeleton key={`prod-skel-page-${index}`} className="h-64 rounded-lg" />
@@ -313,5 +305,3 @@ function StoreProductsPageSkeleton() {
     </div>
   );
 }
-
-    

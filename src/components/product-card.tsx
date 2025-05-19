@@ -9,11 +9,12 @@ import { Button } from '@/components/ui/button';
 import { ExternalLink, ShoppingCart, Loader2 } from 'lucide-react';
 import { formatCurrency, safeToDate } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
-import { trackClickClientSide } from '@/lib/actions/tracking'; // Updated import
-import type { TrackClickData } from '@/lib/actions/tracking'; // Import TrackClickData type
+import { trackClickClientSide } from '@/lib/actions/tracking';
+import type { TrackClickData } from '@/lib/actions/tracking';
 import { v4 as uuidv4 } from 'uuid';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
+import * as React from 'react';
 
 interface ProductCardProps {
   product: Product;
@@ -46,8 +47,7 @@ const appendClickIdToUrl = (url: string, clickId: string): string => {
   }
 };
 
-
-export function ProductCard({ product, storeContext }: ProductCardProps) {
+export default function ProductCard({ product, storeContext }: ProductCardProps) {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
@@ -76,7 +76,6 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
     const finalAffiliateLink = appendClickIdToUrl(affiliateLink, clickId);
     console.log("ProductCard: Generated Click ID:", clickId, "Final URL:", finalAffiliateLink);
 
-
     if (!user) {
         console.log("ProductCard: User not logged in. Storing redirect and navigating to login.");
         sessionStorage.setItem('loginRedirectUrl', finalAffiliateLink);
@@ -85,8 +84,7 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
         return;
     }
 
-    // Prepare data for client-side tracking
-    const clickData: Omit<TrackClickData, 'timestamp' | 'userAgent'> = { // Omit fields handled by trackClickClientSide
+    const clickData: Omit<TrackClickData, 'timestamp' | 'userAgent'> = {
         userId: user.uid,
         storeId: product.storeId,
         storeName: storeContext?.name || product.storeName || "Unknown Store",
@@ -100,7 +98,6 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
     console.log("ProductCard: Preparing to track click with data (client-side):", clickData);
 
     try {
-        // Call the client-side tracking function
         const trackResult = await trackClickClientSide(clickData);
         if (trackResult.success) {
             console.log(`ProductCard: Click tracked successfully (client-side) for Product ${product.id}, ClickID ${trackResult.clickId}`);
@@ -117,6 +114,24 @@ export function ProductCard({ product, storeContext }: ProductCardProps) {
     console.log("ProductCard: Opening affiliate link in new tab:", finalAffiliateLink);
     window.open(finalAffiliateLink, '_blank', 'noopener,noreferrer');
   };
+
+  if (!product) {
+    return (
+      <Card className="overflow-hidden h-full flex flex-col group border shadow-sm">
+        <Skeleton className="aspect-square w-full" />
+        <CardContent className="p-3 flex flex-col flex-grow justify-between">
+          <div>
+            <Skeleton className="h-5 w-3/4 mb-1" />
+            <Skeleton className="h-4 w-1/2 mb-1" />
+          </div>
+          <div className="mt-auto">
+            <Skeleton className="h-6 w-1/3 mb-3" />
+            <Skeleton className="h-8 w-full" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
 
   return (
