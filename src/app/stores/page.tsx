@@ -1,3 +1,4 @@
+
 // src/app/stores/page.tsx
 // This is the Server Component shell
 
