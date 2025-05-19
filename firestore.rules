@@ -14,79 +14,91 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Helper function to check if the user owns the resource
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    // Helper function to check if the user owns the resource or is an admin
+    function isOwnerOrAdmin(userId) {
+      return (isAuthenticated() && request.auth.uid == userId) || isAdmin();
     }
 
     // Users Collection
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
-      allow update: if 
-        (isOwner(userId) && 
-            request.resource.data.uid == resource.data.uid && // Cannot change UID
-            // Allow update of specific fields by owner
-            (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'payoutDetails', 'updatedAt', 'lastPayoutRequestAt']) ||
-            // Prevent user from changing their own role or disabled status
-            (!(request.resource.data.role != resource.data.role) && !(request.resource.data.isDisabled != resource.data.isDisabled)))
-        ) || isAdmin(); // Admins can update anything
-      allow delete: if false; // Prevent direct deletion
+      allow read: if isOwnerOrAdmin(userId);
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid; // User creates their own profile
+      // Users can update their own displayName, photoURL, payoutDetails. Admins can update role, isDisabled, and balances.
+      allow update: if (isOwnerOrAdmin(userId) &&
+                        request.resource.data.uid == resource.data.uid && // Can't change UID
+                        // Regular users cannot change their role, balances, or disabled status
+                        ( (isOwner(userId) && !(request.resource.data.role != resource.data.role ||
+                                                request.resource.data.cashbackBalance != resource.data.cashbackBalance ||
+                                                request.resource.data.pendingCashback != resource.data.pendingCashback ||
+                                                request.resource.data.lifetimeCashback != resource.data.lifetimeCashback ||
+                                                request.resource.data.referralCount != resource.data.referralCount ||
+                                                request.resource.data.referralBonusEarned != resource.data.referralBonusEarned ||
+                                                request.resource.data.isDisabled != resource.data.isDisabled)
+                        ) || isAdmin() ) // Admins can change anything
+                      );
+      allow delete: if false; // Prevent direct deletion, use isDisabled flag
     }
 
     // Stores Collection
     match /stores/{storeId} {
-      allow read: if resource.data.isActive == true || isAdmin();
+      allow read: if resource.data.isActive == true || isAdmin(); // Public read for active stores, admin can read all
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Products Collection
+    match /products/{productId} {
+      allow read: if resource.data.isActive == true || isAdmin(); // Public read for active products
       allow create, update, delete: if isAdmin();
     }
 
     // Coupons Collection
     match /coupons/{couponId} {
-      allow read: if resource.data.isActive == true || isAdmin();
+      allow read: if resource.data.isActive == true || isAdmin(); // Public read for active coupons
       allow create, update, delete: if isAdmin();
     }
 
     // Categories Collection
     match /categories/{categoryId} {
-      allow read: if resource.data.isActive == true || isAdmin();
+      allow read: if resource.data.isActive == true || isAdmin(); // Public read for active categories
       allow create, update, delete: if isAdmin();
     }
 
     // Banners Collection
     match /banners/{bannerId} {
-      allow read: if resource.data.isActive == true || isAdmin();
-      allow create, update, delete: if isAdmin();
-    }
-    
-    // Products Collection
-    match /products/{productId} {
-      allow read: if resource.data.isActive == true || isAdmin();
+      allow read: if resource.data.isActive == true || isAdmin(); // Public read for active banners
       allow create, update, delete: if isAdmin();
     }
 
     // Clicks Collection
     match /clicks/{clickId} {
-      allow create: if isAuthenticated() && 
+      // User creates their own click, ensuring clickId in data matches document ID
+      allow create: if isAuthenticated() &&
                        request.resource.data.userId == request.auth.uid &&
-                       request.resource.data.clickId == clickId; // Ensure doc ID matches field
-      allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow update, delete: if isAdmin(); 
+                       request.resource.data.clickId == clickId;
+      allow read: if isOwnerOrAdmin(resource.data.userId);
+      allow update, delete: if isAdmin(); // Admins for correction/deletion
     }
 
     // Transactions Collection
     match /transactions/{transactionId} {
-      allow read: if isOwner(resource.data.userId) || isAdmin();
-      // Creation & updates primarily by admin for accuracy
-      allow create: if isAdmin(); 
-      allow update: if isAdmin();
+      allow read: if isOwnerOrAdmin(resource.data.userId);
+      // Transactions should ideally be created by a trusted backend/admin
+      allow create: if isAdmin(); // Or by Cloud Functions with appropriate checks
+      allow update: if isAdmin(); // Admins can update status (confirm, reject, paid)
       allow delete: if isAdmin();
     }
 
     // PayoutRequests Collection
     match /payoutRequests/{requestId} {
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow update: if isAdmin(); // Only admins can update status, notes, etc.
+      allow read: if isOwnerOrAdmin(resource.data.userId);
+      // Only admins can update status, adminNotes, processedAt etc.
+      allow update: if isAdmin() &&
+                       // Prevent user from changing critical fields after creation if they somehow gain write access
+                       (request.resource.data.userId == resource.data.userId &&
+                        request.resource.data.amount == resource.data.amount &&
+                        request.resource.data.paymentMethod == resource.data.paymentMethod &&
+                        request.resource.data.paymentDetails == resource.data.paymentDetails);
       allow delete: if isAdmin();
     }
   }
