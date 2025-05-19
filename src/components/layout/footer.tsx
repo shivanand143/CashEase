@@ -10,13 +10,13 @@ export default function Footer() {
         <div className="space-y-4">
           <Link href="/" className="flex items-center space-x-2">
             <IndianRupee className="h-7 w-7 text-primary" />
-            <span className="font-bold text-xl text-foreground">CashEase</span>
+            <span className="font-bold text-xl text-foreground">MagicSaver</span>
           </Link>
           <p className="text-sm">
             Shop smarter, earn easier. Your #1 destination for cashback and coupons in India.
           </p>
           <p className="text-xs text-muted-foreground/80">
-            &copy; {new Date().getFullYear()} CashEase. All rights reserved.
+            &copy; {new Date().getFullYear()} MagicSaver. All rights reserved.
           </p>
         </div>
 

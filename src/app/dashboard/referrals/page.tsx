@@ -1,3 +1,4 @@
+
 // src/app/dashboard/referrals/page.tsx
 "use client";
 
@@ -54,8 +55,8 @@ function ReferralsPageContent() {
      if (navigator.share && referralLink) {
        try {
          await navigator.share({
-           title: 'Join CashEase & Earn Cashback!',
-           text: `Sign up for CashEase using my link and start earning cashback on your online shopping: ${referralLink}`,
+           title: 'Join MagicSaver & Earn Cashback!',
+           text: `Sign up for MagicSaver using my link and start earning cashback on your online shopping: ${referralLink}`,
            url: referralLink,
          });
          toast({ title: 'Link Shared', description: 'Referral link shared successfully.' });
@@ -170,7 +171,7 @@ function ReferralsPageContent() {
          <CardContent className="space-y-3 text-sm text-muted-foreground">
            <p>1. Share your unique referral link above.</p>
            <p>2. Your friend signs up using your link.</p>
-           <p>3. They make their first eligible purchase via CashEase.</p>
+           <p>3. They make their first eligible purchase via MagicSaver.</p>
            <p>4. Once their cashback is confirmed, you both receive a bonus!</p>
          </CardContent>
       </Card>

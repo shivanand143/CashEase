@@ -1,3 +1,4 @@
+
 // src/app/contact/page.tsx
 "use client";
 
@@ -158,7 +159,7 @@ export default function ContactPage() {
 
        {/* Additional Contact Info (Optional) */}
        <div className="text-center text-sm text-muted-foreground space-y-2">
-           <p>You can also reach us via email at: <a href="mailto:support@cashease.example.com" className="text-primary hover:underline">support@cashease.example.com</a></p>
+           <p>You can also reach us via email at: <a href="mailto:support@magicsaver.example.com" className="text-primary hover:underline">support@magicsaver.example.com</a></p>
            <p>For faster resolution, please check our <Link href="/faq" className="text-primary hover:underline">FAQ page</Link>.</p>
        </div>
 

@@ -14,7 +14,7 @@ const fontSans = FontSans({
 });
 
 export const metadata: Metadata = {
-  title: 'CashEase - Cashback & Coupons Rebuilt',
+  title: 'MagicSaver - Cashback & Coupons Rebuilt',
   description: 'Get cashback and find the best coupons for your online shopping.',
 };
 

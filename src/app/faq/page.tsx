@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from 'react';
@@ -10,13 +11,13 @@ import Link from 'next/link'; // Import Link
 const faqData = [
   {
     id: "q1",
-    question: "How does CashEase work?",
-    answer: "It's simple! 1. Find your favorite store on CashEase. 2. Click the 'Activate Cashback' link. 3. Shop on the retailer's site as usual. 4. Your cashback tracks automatically and gets added to your CashEase account after confirmation.",
+    question: "How does MagicSaver work?",
+    answer: "It's simple! 1. Find your favorite store on MagicSaver. 2. Click the 'Activate Cashback' link. 3. Shop on the retailer's site as usual. 4. Your cashback tracks automatically and gets added to your MagicSaver account after confirmation.",
   },
   {
     id: "q2",
-    question: "Is CashEase free to use?",
-    answer: "Yes, CashEase is completely free to join and use. We earn a commission from retailers for driving sales, and we share a majority of that commission with you as cashback.",
+    question: "Is MagicSaver free to use?",
+    answer: "Yes, MagicSaver is completely free to join and use. We earn a commission from retailers for driving sales, and we share a majority of that commission with you as cashback.",
   },
   {
     id: "q3",
@@ -40,8 +41,8 @@ const faqData = [
   },
    {
     id: "q7",
-    question: "Can I use other coupons with CashEase cashback?",
-    answer: "Using coupon codes not provided by CashEase might invalidate your cashback for that purchase. It's best to use coupons listed on our platform or check the store's specific terms on CashEase.",
+    question: "Can I use other coupons with MagicSaver cashback?",
+    answer: "Using coupon codes not provided by MagicSaver might invalidate your cashback for that purchase. It's best to use coupons listed on our platform or check the store's specific terms on MagicSaver.",
   },
 ];
 
@@ -53,7 +54,7 @@ export default function FaqPage() {
             <HelpCircle className="w-8 h-8 text-primary" /> Frequently Asked Questions
         </h1>
         <p className="text-lg text-muted-foreground mt-2">
-          Find answers to common questions about CashEase.
+          Find answers to common questions about MagicSaver.
         </p>
       </div>
 

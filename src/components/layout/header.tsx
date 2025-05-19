@@ -31,6 +31,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Separator } from "@/components/ui/separator";
 import { Input } from '@/components/ui/input';
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
+
 
 export default function Header() {
   const { user, userProfile, loading, signOut } = useAuth();
@@ -40,7 +42,7 @@ export default function Header() {
   const router = useRouter();
 
   const getInitials = (name?: string | null) => {
-    if (!name) return 'CE'; // CashEase initials
+    if (!name) return 'MS'; // MagicSaver initials
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
 
@@ -75,6 +77,7 @@ export default function Header() {
   const handleSheetLinkClick = () => {
       setIsSheetOpen(false); // Close sheet when a link inside is clicked
   }
+  const titleId = "sheet-title-id";
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -90,12 +93,15 @@ export default function Header() {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-full max-w-xs p-0 flex flex-col">
+              <VisuallyHidden>
+                  <SheetTitle id={titleId}>Main Navigation Menu</SheetTitle>
+              </VisuallyHidden>
               <SheetHeader className="p-4 border-b flex flex-row items-center justify-between">
                  {/* Add title for accessibility */}
                  <SheetTitle className="sr-only">Main Menu</SheetTitle>
                 <Link href="/" className="flex items-center space-x-2" onClick={handleSheetLinkClick}>
                   <IndianRupee className="h-6 w-6 text-primary" />
-                  <span className="font-bold text-lg">CashEase</span>
+                  <span className="font-bold text-lg">MagicSaver</span>
                 </Link>
                 <SheetClose asChild>
                   <Button variant="ghost" size="icon">
@@ -202,7 +208,7 @@ export default function Header() {
           {/* Logo */}
           <Link href="/" className="flex items-center space-x-2 mr-4">
             <IndianRupee className="h-6 w-6 text-primary" />
-            <span className="font-bold text-xl hidden sm:inline-block">CashEase</span>
+            <span className="font-bold text-xl hidden sm:inline-block">MagicSaver</span>
           </Link>
         </div>
 

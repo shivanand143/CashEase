@@ -1,3 +1,4 @@
+
 "use client";
 
 import React from 'react';
@@ -11,43 +12,43 @@ const steps = [
   {
     icon: Search,
     title: "1. Find Your Store or Deal",
-    description: "Search for your favorite online store (like Amazon, Myntra, Flipkart) or browse through thousands of deals and coupons listed on CashEase.",
-    image: "https://picsum.photos/seed/hiw-find/400/250",
+    description: "Search for your favorite online store (like Amazon, Myntra, Flipkart) or browse through thousands of deals and coupons listed on MagicSaver.",
+    image: "https://placehold.co/400x250.png",
     aiHint: "searching online store on computer illustration",
   },
   {
     icon: MousePointerClick,
-    title: "2. Click Out via CashEase",
+    title: "2. Click Out via MagicSaver",
     description: "Once you find a store or deal you like, simply click the 'Activate Cashback' or 'Get Deal' button. This click is crucial for tracking your potential cashback.",
-    image: "https://picsum.photos/seed/hiw-click/400/250",
+    image: "https://placehold.co/400x250.png",
     aiHint: "clicking button on website illustration",
   },
   {
     icon: ShoppingBag,
     title: "3. Shop As Usual",
     description: "You'll land on the retailer's site (e.g., Amazon.in). Shop normally, add items to your cart, and complete your purchase directly on their website.",
-    image: "https://picsum.photos/seed/hiw-shop/400/250",
+    image: "https://placehold.co/400x250.png",
     aiHint: "online shopping cart checkout illustration",
   },
   {
     icon: IndianRupee, // Keep IndianRupee for earnings, but update text
     title: "4. Cashback Tracking Initiated",
-    description: "Your click through CashEase is recorded. Based on this click and information we receive (or you provide), your potential cashback will appear as 'Pending' within 72 hours.", // Updated description
-    image: "https://picsum.photos/seed/hiw-track/400/250",
+    description: "Your click through MagicSaver is recorded. Based on this click and information we receive (or you provide), your potential cashback will appear as 'Pending' within 72 hours.", // Updated description
+    image: "https://placehold.co/400x250.png",
     aiHint: "tracking earnings graph chart illustration",
   },
    {
     icon: CheckCircle, // Use CheckCircle for confirmation
     title: "5. Cashback Confirmed",
     description: "After the retailer's return period (usually 30-90 days), we verify your purchase. Once confirmed, your cashback status changes from 'Pending' to 'Confirmed'.",
-    image: "https://picsum.photos/seed/hiw-confirm/400/250",
+    image: "https://placehold.co/400x250.png",
     aiHint: "approved confirmed checkmark illustration",
   },
   {
     icon: Banknote,
     title: "6. Withdraw Your Earnings",
     description: "Once you have ₹250 or more in 'Confirmed' cashback, you can withdraw it to your bank account via NEFT/UPI or redeem it as Amazon/Flipkart gift cards.",
-    image: "https://picsum.photos/seed/hiw-withdraw/400/250",
+    image: "https://placehold.co/400x250.png",
     aiHint: "withdrawing money bank transfer illustration",
   },
 ];
@@ -56,7 +57,7 @@ export default function HowItWorksPage() {
   return (
     <div className="space-y-12">
       <section className="text-center">
-        <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4">How CashEase Works</h1>
+        <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4">How MagicSaver Works</h1>
         <p className="text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto">
           Earning cashback on your online shopping is simple! Follow these easy steps to start saving.
         </p>
@@ -95,7 +96,7 @@ export default function HowItWorksPage() {
          <p className="text-muted-foreground mb-6 max-w-xl mx-auto">Join thousands of shoppers earning real cashback on every purchase.</p>
         <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
            <Button size="lg" asChild>
-             <Link href="/signup">Join CashEase for Free</Link>
+             <Link href="/signup">Join MagicSaver for Free</Link>
            </Button>
             <Button size="lg" variant="outline" asChild>
              <Link href="/stores">Browse Stores Now</Link>

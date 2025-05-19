@@ -25,7 +25,7 @@ function DashboardContent() {
         fetchUserProfile(user.uid).finally(() => setIsRefreshing(false));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]); 
+  }, []); // Fetch on initial mount after user is available
 
 
   const isLoading = authLoading || isRefreshing || (!user && !authError);
@@ -105,11 +105,11 @@ function DashboardContent() {
          <Card className="shadow-sm">
              <CardHeader>
                  <CardTitle>Welcome back, {userProfile.displayName || 'User'}!</CardTitle>
-                 <CardDescription>Here's a quick overview of your CashEase account.</CardDescription>
+                 <CardDescription>Here's a quick overview of your MagicSaver account.</CardDescription>
              </CardHeader>
              <CardContent className="space-y-4">
                  <p className="text-sm text-muted-foreground">
-                     Keep shopping through CashEase to earn more rewards. Don't forget to check out the latest deals!
+                     Keep shopping through MagicSaver to earn more rewards. Don't forget to check out the latest deals!
                  </p>
                  <div className="flex flex-wrap gap-2">
                     <Button asChild size="sm">

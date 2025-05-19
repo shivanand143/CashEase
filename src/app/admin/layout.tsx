@@ -81,7 +81,7 @@ export default function AdminLayout({
                  <Link href="/admin" className="flex items-center gap-2 flex-grow">
                    <IndianRupee className="w-6 h-6 text-primary" />
                    <span className="font-semibold text-lg sidebar-expanded:inline-block hidden">
-                     CashEase Admin
+                     MagicSaver Admin
                    </span>
                  </Link>
                </SidebarHeader>

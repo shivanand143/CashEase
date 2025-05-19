@@ -18,32 +18,32 @@ const categoriesData: Omit<Category, 'id' | 'createdAt' | 'updatedAt'>[] = [
 ];
 
 const storesData: Omit<Store, 'id' | 'createdAt' | 'updatedAt'>[] = [
-    { name: 'Amazon', slug: "amazon", logoUrl: 'https://placehold.co/120x60/000000/ffffff.png?text=Amazon', heroImageUrl: 'https://placehold.co/1200x300/000000/ffffff.png?text=Amazon+Deals', dataAiHint: 'amazon logo', affiliateLink: 'https://www.amazon.in/?tag=cashease-21', cashbackRate: 'Up to 7%', cashbackRateValue: 7, cashbackType: 'percentage', description: 'Wide range of products.', categories: ['electronics', 'fashion', 'home-kitchen'], isFeatured: true, isActive: true, isTodaysDeal: true, terms: 'Cashback varies by category. Not valid on gift cards.' },
-    { name: 'Flipkart', slug: "flipkart", logoUrl: 'https://placehold.co/120x60/007bff/ffffff.png?text=Flipkart', heroImageUrl: 'https://placehold.co/1200x300/007bff/ffffff.png?text=Flipkart+Offers', dataAiHint: 'flipkart logo', affiliateLink: 'https://www.flipkart.com/?affid=cashease', cashbackRate: 'Up to 6.5%', cashbackRateValue: 6.5, cashbackType: 'percentage', description: 'India\'s leading online store.', categories: ['electronics', 'fashion', 'home-kitchen'], isFeatured: true, isActive: true, isTodaysDeal: false, terms: 'Cashback rates differ for new/existing users.' },
-    { name: 'Myntra', slug: "myntra", logoUrl: 'https://placehold.co/120x60/e83e8c/ffffff.png?text=Myntra', heroImageUrl: 'https://placehold.co/1200x300/e83e8c/ffffff.png?text=Myntra+Fashion', dataAiHint: 'myntra fashion logo', affiliateLink: 'https://www.myntra.com/?ref=cashease', cashbackRate: 'Flat 8%', cashbackRateValue: 8, cashbackType: 'percentage', description: 'Top fashion destination.', categories: ['fashion', 'beauty'], isFeatured: true, isActive: true, isTodaysDeal: true },
+    { name: 'Amazon', slug: "amazon", logoUrl: 'https://placehold.co/120x60/000000/ffffff.png?text=Amazon', heroImageUrl: 'https://placehold.co/1200x300/000000/ffffff.png?text=Amazon+Deals', dataAiHint: 'amazon logo', affiliateLink: 'https://www.amazon.in/?tag=magicsaver-21', cashbackRate: 'Up to 7%', cashbackRateValue: 7, cashbackType: 'percentage', description: 'Wide range of products.', categories: ['electronics', 'fashion', 'home-kitchen'], isFeatured: true, isActive: true, isTodaysDeal: true, terms: 'Cashback varies by category. Not valid on gift cards.' },
+    { name: 'Flipkart', slug: "flipkart", logoUrl: 'https://placehold.co/120x60/007bff/ffffff.png?text=Flipkart', heroImageUrl: 'https://placehold.co/1200x300/007bff/ffffff.png?text=Flipkart+Offers', dataAiHint: 'flipkart logo', affiliateLink: 'https://www.flipkart.com/?affid=magicsaver', cashbackRate: 'Up to 6.5%', cashbackRateValue: 6.5, cashbackType: 'percentage', description: 'India\'s leading online store.', categories: ['electronics', 'fashion', 'home-kitchen'], isFeatured: true, isActive: true, isTodaysDeal: false, terms: 'Cashback rates differ for new/existing users.' },
+    { name: 'Myntra', slug: "myntra", logoUrl: 'https://placehold.co/120x60/e83e8c/ffffff.png?text=Myntra', heroImageUrl: 'https://placehold.co/1200x300/e83e8c/ffffff.png?text=Myntra+Fashion', dataAiHint: 'myntra fashion logo', affiliateLink: 'https://www.myntra.com/?ref=magicsaver', cashbackRate: 'Flat 8%', cashbackRateValue: 8, cashbackType: 'percentage', description: 'Top fashion destination.', categories: ['fashion', 'beauty'], isFeatured: true, isActive: true, isTodaysDeal: true },
 ];
 
 const couponsData: Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'store'>[] = [
   { storeId: 'amazon', code: 'AMZDEAL10', description: 'Extra 10% off select Amazon Fashion.', link: null, expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), isFeatured: true, isActive: true },
-  { storeId: 'flipkart', code: null, description: 'Flipkart Electronics Sale - Up to 80% Off', link: 'https://www.flipkart.com/electronics-sale?affid=cashease', expiryDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), isFeatured: true, isActive: true },
+  { storeId: 'flipkart', code: null, description: 'Flipkart Electronics Sale - Up to 80% Off', link: 'https://www.flipkart.com/electronics-sale?affid=magicsaver', expiryDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), isFeatured: true, isActive: true },
   { storeId: 'myntra', code: 'MYNTRA200', description: '₹200 off on orders above ₹1999.', link: null, expiryDate: null, isFeatured: false, isActive: true },
 ];
 
 const bannersData: Omit<Banner, 'id' | 'createdAt' | 'updatedAt'>[] = [
-  { title: 'Mega Electronics Sale', subtitle: 'Up to 50% off + Extra 5% Cashback via CashEase', imageUrl: 'https://placehold.co/1200x400/28a745/ffffff.png?text=Electronics+Spectacular', dataAiHint: 'electronics sale', link: '/category/electronics', altText: 'Electronics Sale Banner', order: 1, isActive: true },
+  { title: 'Mega Electronics Sale', subtitle: 'Up to 50% off + Extra 5% Cashback via MagicSaver', imageUrl: 'https://placehold.co/1200x400/28a745/ffffff.png?text=Electronics+Spectacular', dataAiHint: 'electronics sale', link: '/category/electronics', altText: 'Electronics Sale Banner', order: 1, isActive: true },
   { title: 'Fashion Frenzy Fest', subtitle: 'Get 60-80% off on top fashion brands this season', imageUrl: 'https://placehold.co/1200x400/007bff/ffffff.png?text=Fashion+Frenzy', dataAiHint: 'fashion clothing sale', link: '/category/fashion', altText: 'Fashion Sale Banner', order: 2, isActive: true },
 ];
 
 const productsData: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'storeName'>[] = [
-  { storeId: 'amazon', name: 'Echo Dot (5th Gen) - Smart Speaker', description: 'Latest smart speaker with Alexa and improved sound quality.', imageUrl: 'https://placehold.co/300x300/000000/ffffff.png?text=Echo+5', dataAiHint: 'smart speaker', affiliateLink: 'https://www.amazon.in/dp/B09B8X2SQL?tag=cashease-21', price: 4499, priceDisplay: '₹4,499', category: 'electronics', brand: 'Amazon', isActive: true, isFeatured: true, isTodaysPick: true },
-  { storeId: 'flipkart', name: 'Samsung Galaxy F54 5G (128GB)', description: 'Powerful 5G smartphone with 108MP camera and long battery life.', imageUrl: 'https://placehold.co/300x300/007bff/ffffff.png?text=Galaxy+F54', dataAiHint: 'samsung phone', affiliateLink: 'https://www.flipkart.com/samsung-galaxy-f54-5g/p/itm3f62bd8d719c7?pid=MOBGDR4BYTRG5JFA&affid=cashease', price: 22999, priceDisplay: '₹22,999', category: 'electronics', brand: 'Samsung', isActive: true, isFeatured: true, isTodaysPick: true },
-  { storeId: 'myntra', name: 'PUMA Men Casual Shoes - Smash Vulc', description: 'Stylish and comfortable sneakers for everyday wear, white.', imageUrl: 'https://placehold.co/300x300/e83e8c/ffffff.png?text=Puma+Shoes', dataAiHint: 'puma sneakers shoes', affiliateLink: 'https://www.myntra.com/casual-shoes/puma/puma-men-smash-vulc-casual-shoes/1038100/buy?ref=cashease', price: 2499, priceDisplay: '₹2,499', category: 'fashion', brand: 'Puma', isActive: true, isFeatured: false, isTodaysPick: false },
+  { storeId: 'amazon', name: 'Echo Dot (5th Gen) - Smart Speaker', description: 'Latest smart speaker with Alexa and improved sound quality.', imageUrl: 'https://placehold.co/300x300/000000/ffffff.png?text=Echo+5', dataAiHint: 'smart speaker', affiliateLink: 'https://www.amazon.in/dp/B09B8X2SQL?tag=magicsaver-21', price: 4499, priceDisplay: '₹4,499', category: 'electronics', brand: 'Amazon', isActive: true, isFeatured: true, isTodaysPick: true },
+  { storeId: 'flipkart', name: 'Samsung Galaxy F54 5G (128GB)', description: 'Powerful 5G smartphone with 108MP camera and long battery life.', imageUrl: 'https://placehold.co/300x300/007bff/ffffff.png?text=Galaxy+F54', dataAiHint: 'samsung phone', affiliateLink: 'https://www.flipkart.com/samsung-galaxy-f54-5g/p/itm3f62bd8d719c7?pid=MOBGDR4BYTRG5JFA&affid=magicsaver', price: 22999, priceDisplay: '₹22,999', category: 'electronics', brand: 'Samsung', isActive: true, isFeatured: true, isTodaysPick: true },
+  { storeId: 'myntra', name: 'PUMA Men Casual Shoes - Smash Vulc', description: 'Stylish and comfortable sneakers for everyday wear, white.', imageUrl: 'https://placehold.co/300x300/e83e8c/ffffff.png?text=Puma+Shoes', dataAiHint: 'puma sneakers shoes', affiliateLink: 'https://www.myntra.com/casual-shoes/puma/puma-men-smash-vulc-casual-shoes/1038100/buy?ref=magicsaver', price: 2499, priceDisplay: '₹2,499', category: 'fashion', brand: 'Puma', isActive: true, isFeatured: false, isTodaysPick: false },
 ];
 
 
 const clicksData: Omit<Click, 'id' | 'timestamp'>[] = [
-    { userId: EXAMPLE_USER_ID, storeId: 'amazon', storeName: 'Amazon', affiliateLink: 'https://www.amazon.in/?tag=cashease-21&subid=click1', clickId: 'click1', productId: 'amazon-product-echo', productName: 'Echo Dot (5th Gen)', userAgent: 'SeedScript/1.0' },
-    { userId: EXAMPLE_USER_ID, storeId: 'myntra', storeName: 'Myntra', affiliateLink: 'https://www.myntra.com/?ref=cashease&subid=click2', clickId: 'click2', couponId: 'myntra-coupon-flat200', userAgent: 'SeedScript/1.0' },
+    { userId: EXAMPLE_USER_ID, storeId: 'amazon', storeName: 'Amazon', affiliateLink: 'https://www.amazon.in/?tag=magicsaver-21&subid=click1', clickId: 'click1', productId: 'amazon-product-echo', productName: 'Echo Dot (5th Gen)', userAgent: 'SeedScript/1.0' },
+    { userId: EXAMPLE_USER_ID, storeId: 'myntra', storeName: 'Myntra', affiliateLink: 'https://www.myntra.com/?ref=magicsaver&subid=click2', clickId: 'click2', couponId: 'myntra-coupon-flat200', userAgent: 'SeedScript/1.0' },
 ];
 
 const transactionsData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'confirmationDate' | 'paidDate' | 'payoutId'>[] = [
@@ -202,8 +202,8 @@ export async function seedDatabase() {
 
     const profileData: Partial<UserProfile> = {
       uid: uid,
-      email: role === 'admin' ? `admin_${uid.substring(0,5)}@cashease.example.com` : `user_${uid.substring(0,5)}@cashease.example.com`,
-      displayName: role === 'admin' ? 'CashEase Admin' : 'Test User',
+      email: role === 'admin' ? `admin_${uid.substring(0,5)}@magicsaver.example.com` : `user_${uid.substring(0,5)}@magicsaver.example.com`,
+      displayName: role === 'admin' ? 'MagicSaver Admin' : 'Test User',
       role: role,
       cashbackBalance: isExampleUserBalances ? userInitialConfirmed : 0,
       pendingCashback: isExampleUserBalances ? userInitialPending : 0,
@@ -213,6 +213,9 @@ export async function seedDatabase() {
       referralBonusEarned: 0,
       isDisabled: false,
       updatedAt: serverTimestamp(),
+      payoutDetails: null, // Ensure payoutDetails is explicitly null for new users
+      referredBy: null, // Ensure referredBy is explicitly null for new users
+      lastPayoutRequestAt: null, // Ensure lastPayoutRequestAt is explicitly null
     };
 
     if (!userDocSnap.exists()) {
@@ -229,6 +232,11 @@ export async function seedDatabase() {
           updates.cashbackBalance = (existingData.cashbackBalance || 0) + userInitialConfirmed;
           updates.lifetimeCashback = (existingData.lifetimeCashback || 0) + userInitialLifetime;
       }
+       // Ensure payoutDetails is null if not explicitly set or if it was undefined
+      if (existingData.payoutDetails === undefined) updates.payoutDetails = null;
+      if (existingData.referredBy === undefined) updates.referredBy = null;
+      if (existingData.lastPayoutRequestAt === undefined) updates.lastPayoutRequestAt = null;
+
       if (Object.keys(updates).length > 1) { // more than just updatedAt
         batch.update(userRef, updates);
         writeCount++;

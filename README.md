@@ -1,7 +1,7 @@
 
-# CashEase - Cashback & Coupons (Rebuild)
+# MagicSaver - Cashback & Coupons (Rebuild)
 
-This is a Next.js application built with Firebase, ShadCN UI, and TypeScript. It aims to replicate core functionalities of a cashback and coupon platform like CashKaro.
+This is a Next.js application built with Firebase, ShadCN UI, and TypeScript. It aims to replicate core functionalities of a cashback and coupon platform.
 
 ## Getting Started
 
@@ -103,3 +103,4 @@ This is a Next.js application built with Firebase, ShadCN UI, and TypeScript. It
 *   **Firebase Indexing:** Firestore requires specific indexes for complex queries. If you encounter query errors, check the Firebase console for index creation suggestions or update `firestore.indexes.json` and deploy.
 *   **Environment Variables:** Keep your Firebase API keys and configuration in `.env.local` and never commit this file to version control.
 *   **Admin Setup:** Initial admin user setup relies on the `NEXT_PUBLIC_INITIAL_ADMIN_UID` environment variable. For production, implement a more secure role management system (e.g., using Cloud Functions).
+

@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // Ensure useEffect is imported if used elsewhere
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
@@ -82,7 +82,7 @@ export default function SignupPage() {
 
       toast({
         title: 'Signup Successful',
-        description: 'Welcome to CashEase! Redirecting...',
+        description: 'Welcome to MagicSaver! Redirecting...',
       });
       router.push('/dashboard'); // Redirect to dashboard
 
@@ -147,7 +147,7 @@ export default function SignupPage() {
       <Card className="w-full max-w-md shadow-lg border border-border rounded-lg">
         <CardHeader className="space-y-1 text-center p-6">
           <CardTitle className="text-2xl md:text-3xl font-bold">Create your Account</CardTitle>
-          <CardDescription>Join CashEase for free and start earning cashback!</CardDescription>
+          <CardDescription>Join MagicSaver for free and start earning cashback!</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 p-6">
           {error && (

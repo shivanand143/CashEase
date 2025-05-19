@@ -1,7 +1,6 @@
 
 // src/app/page.tsx
 "use client";
-
 import * as React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -9,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import Image from 'next/image';
-import { Input } from '@/components/ui/input';
+import { Input } from '@/components/ui/input'; // Added this import
 import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info, AlertCircle, Loader2, Package, Star } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { collection, getDocs, query, where, limit, orderBy, QueryConstraint, DocumentData, getDoc, doc, Timestamp } from 'firebase/firestore';
@@ -63,6 +62,8 @@ async function fetchData<T>(collectionName: string, constraints: QueryConstraint
         console.log(`HOMEPAGE: Successfully fetched ${data.length} items for ${collectionName}.`);
     } catch (err) {
         console.error(`HOMEPAGE: Error fetching ${collectionName}:`, err);
+        // Rethrow or handle specific error types if needed for section-specific error states
+        throw err;
     }
     return data;
 }
@@ -119,6 +120,7 @@ async function fetchItemsWithStoreData<T extends Coupon | Product>(
         console.log(`HOMEPAGE: Successfully enriched ${enrichedItems.length} items for ${itemType}.`);
     } catch (err) {
         console.error(`HOMEPAGE: Error in fetchItemsWithStoreData for ${itemType}:`, err);
+        throw err; // Re-throw to be caught by the main loadAllData
     }
     return enrichedItems;
 }
@@ -146,9 +148,6 @@ export default function HomePage() {
     let isMounted = true;
     const loadAllData = async () => {
       console.log("HOMEPAGE: loadAllData started.");
-      console.log("HOMEPAGE: Firebase Init Error:", firebaseInitializationError);
-      console.log("HOMEPAGE: DB object:", db);
-
       if (firebaseInitializationError) {
         if (isMounted) {
             setPageErrorSections(prev => [...prev, `Failed to connect to the database: ${firebaseInitializationError}`]);
@@ -166,65 +165,42 @@ export default function HomePage() {
         return;
       }
 
-      setLoadingBanners(true); setLoadingFeaturedStores(true); setLoadingTopCoupons(true); setLoadingCategories(true); setLoadingTodaysPicksProducts(true);
-      setPageErrorSections([]);
-      
-      const errors: string[] = [];
+      const sectionLoaders = [
+        { name: "banners", loader: setLoadingBanners, fetchFn: () => fetchData<Banner>('banners', [where('isActive', '==', true)], [{ field: 'order', direction: 'asc' }], 5) },
+        { name: "featured stores", loader: setLoadingFeaturedStores, fetchFn: () => fetchData<Store>('stores', [where('isActive', '==', true), where('isFeatured', '==', true)], [{ field: 'name', direction: 'asc' }], 12) },
+        { name: "top coupons", loader: setLoadingTopCoupons, fetchFn: () => fetchItemsWithStoreData('coupons', [where('isActive', '==', true), where('isFeatured', '==', true)], [{ field: 'createdAt', direction: 'desc' }], 6) },
+        { name: "categories", loader: setLoadingCategories, fetchFn: () => fetchData<Category>('categories', [where('isActive', '==', true)], [{ field: 'order', direction: 'asc' }, { field: 'name', direction: 'asc' }], 12) },
+        { name: "today's picks products", loader: setLoadingTodaysPicksProducts, fetchFn: () => fetchItemsWithStoreData('products', [where('isActive', '==', true), where('isTodaysPick', '==', true)], [{ field: 'updatedAt', direction: 'desc' }], 6) },
+      ];
 
-      const bannerFetchPromise = fetchData<Banner>(
-        'banners', [where('isActive', '==', true)], [{field: 'order', direction: 'asc'}], 5
-      ).catch(err => { console.error("HOMEPAGE: Banner fetch failed:", err); errors.push("banners"); return []; });
+      const currentErrors: string[] = [];
 
-      const featuredStoreFetchPromise = fetchData<Store>(
-        'stores', [where('isActive', '==', true), where('isFeatured', '==', true)], [{field: 'name', direction: 'asc'}], 12
-      ).catch(err => { console.error("HOMEPAGE: Featured Store fetch failed:", err); errors.push("featured stores"); return []; });
-
-      const topCouponFetchPromise = fetchItemsWithStoreData(
-        'coupons', [where('isActive', '==', true), where('isFeatured', '==', true)], [{field: 'createdAt', direction: 'desc'}], 6
-      ).catch(err => { console.error("HOMEPAGE: Top Coupon fetch failed:", err); errors.push("top coupons"); return []; });
-
-      const categoryFetchPromise = fetchData<Category>(
-           'categories', [where('isActive', '==', true)],
-           [{field: 'order', direction: 'asc'}, {field: 'name', direction: 'asc'}], 12
-       ).catch(err => { console.error("HOMEPAGE: Category fetch failed:", err); errors.push("categories"); return []; });
-
-      const todaysPicksProductsFetchPromise = fetchItemsWithStoreData(
-          'products', [where('isActive', '==', true), where('isTodaysPick', '==', true)],
-          [{ field: 'updatedAt', direction: 'desc' }], // Ensuring we order by updatedAt
-          6
-      ).catch(err => { console.error("HOMEPAGE: Today's Picks Products fetch failed:", err); errors.push("today's picks products"); return []; });
-
-
-      console.log("HOMEPAGE: Awaiting all data fetch promises...");
-      const [bannerData, featuredStoreData, topCouponData, categoryData, todaysPicksData] = await Promise.all([
-          bannerFetchPromise, featuredStoreFetchPromise, topCouponFetchPromise, categoryFetchPromise, todaysPicksProductsFetchPromise
-      ]);
-      console.log("HOMEPAGE: All data fetch promises resolved.");
-
-      if (isMounted) {
-        console.log("HOMEPAGE: Component is mounted, setting state.");
-        setBanners(bannerData);
-        console.log("HOMEPAGE: Banners data:", bannerData);
-        setFeaturedStores(featuredStoreData);
-        console.log("HOMEPAGE: Featured Stores data:", featuredStoreData);
-        setTopCoupons(topCouponData);
-        console.log("HOMEPAGE: Top Coupons data:", topCouponData);
-        setCategories(categoryData);
-        console.log("HOMEPAGE: Categories data:", categoryData);
-        setTodaysPicksProducts(todaysPicksData);
-        console.log("HOMEPAGE: Today's Picks Products data:", todaysPicksData);
-
-        if (errors.length > 0) {
-           console.error("HOMEPAGE: Errors occurred during data fetching:", errors);
-           setPageErrorSections(errors);
+      for (const section of sectionLoaders) {
+        if (!isMounted) break;
+        section.loader(true);
+        try {
+          const data = await section.fetchFn();
+          if (isMounted) {
+            if (section.name === "banners") setBanners(data as Banner[]);
+            else if (section.name === "featured stores") setFeaturedStores(data as Store[]);
+            else if (section.name === "top coupons") setTopCoupons(data as CouponWithStore[]);
+            else if (section.name === "categories") setCategories(data as Category[]);
+            else if (section.name === "today's picks products") setTodaysPicksProducts(data as ProductWithStore[]);
+          }
+        } catch (err) {
+          console.error(`HOMEPAGE: ${section.name} fetch failed:`, err);
+          currentErrors.push(section.name);
+        } finally {
+          if (isMounted) section.loader(false);
         }
-      } else {
-        console.log("HOMEPAGE: Component unmounted before state could be set.");
       }
-      if (isMounted) {
-        setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingCategories(false); setLoadingTodaysPicksProducts(false);
-        console.log("HOMEPAGE: All loading states set to false.");
+
+      if (isMounted && currentErrors.length > 0) {
+        console.error("HOMEPAGE: Errors occurred during data fetching:", currentErrors);
+        setPageErrorSections(prev => [...prev, ...currentErrors]);
       }
+      
+      console.log("HOMEPAGE: All data fetch operations attempted.");
     };
 
     loadAllData();
@@ -239,7 +215,7 @@ export default function HomePage() {
     if (pageErrorSections.length > 0) {
       toast({
         variant: "destructive",
-        title: "Error Loading Some Data",
+        title: "Error Loading Some Data Sections",
         description: `Failed to load: ${pageErrorSections.join(', ')}. Some content may be missing.`,
         duration: 7000,
       });
@@ -271,7 +247,7 @@ export default function HomePage() {
        <section className="relative text-center py-12 md:py-16 lg:py-20 bg-gradient-to-br from-primary/10 via-background to-secondary/10 rounded-lg shadow-sm overflow-hidden border border-border/50">
            <div className="container relative z-10 px-4 md:px-6">
              <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-4 text-foreground">
-               Shop Smarter, Earn <span className="text-primary">CashEase</span> Back!
+               Shop Smarter, Earn <span className="text-primary">MagicSaver</span> Back!
              </h1>
              <p className="text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto mb-8">
                Get real cashback and find the best coupons for 1500+ online stores in India. Join free today!
@@ -313,7 +289,7 @@ export default function HomePage() {
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Data Loading Issues</AlertTitle>
             <AlertDescription>
-              Failed to load essential homepage data: {pageErrorSections.join(', ')}. The site might not function correctly. Please try refreshing the page or contact support if the problem persists.
+              Failed to load essential homepage data sections: {pageErrorSections.join(', ')}. The site might not function correctly. Please try refreshing the page or contact support if the problem persists.
             </AlertDescription>
           </Alert>
        )}
@@ -375,7 +351,7 @@ export default function HomePage() {
        </section>
 
       <section className="py-12 text-center bg-muted/30 rounded-lg border">
-        <h2 className="text-3xl font-bold mb-4">How CashEase Works</h2>
+        <h2 className="text-3xl font-bold mb-4">How MagicSaver Works</h2>
         <p className="text-muted-foreground mb-8 max-w-xl mx-auto">Earn cashback in 3 simple steps!</p>
         <div className="grid md:grid-cols-3 gap-6 md:gap-8">
            <div className="flex flex-col items-center space-y-2 p-4">
@@ -383,7 +359,7 @@ export default function HomePage() {
                    <Search className="w-8 h-8"/>
                </div>
                <h3 className="text-lg font-semibold">1. Find Store</h3>
-               <p className="text-sm text-muted-foreground">Search & click out via CashEase</p>
+               <p className="text-sm text-muted-foreground">Search & click out via MagicSaver</p>
            </div>
            <div className="flex flex-col items-center space-y-2 p-4">
                <div className="flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 border-2 border-primary text-primary mb-3">
@@ -411,9 +387,8 @@ export default function HomePage() {
             <h2 className="text-3xl font-bold flex items-center gap-2">
                 <Star className="text-primary w-7 h-7"/> Today's Picks
             </h2>
-            {/* Optional "View All Products" or "View All Deals" Link */}
              <Button variant="outline" size="sm" asChild>
-                <Link href="/coupons" className="flex items-center gap-1"> {/* Or a dedicated /deals page */}
+                <Link href="/coupons" className="flex items-center gap-1">
                     View All Deals <ArrowRight className="w-4 h-4" />
                 </Link>
             </Button>
@@ -431,7 +406,7 @@ export default function HomePage() {
                   ))}
               </div>
           ) : !pageErrorSections.includes("today's picks products") ? (
-              <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No products marked as "Today's Picks" right now. Check back soon!</p>
+              <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border">No products marked as "Today's Picks" right now. Check back soon!</div>
           ) : null}
        </section>
 
@@ -479,7 +454,7 @@ export default function HomePage() {
                  ))}
                </div>
            ) : !pageErrorSections.includes("categories") ? (
-               <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No categories found.</p>
+               <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border">No categories found.</div>
            ): null}
        </section>
 
@@ -504,7 +479,7 @@ export default function HomePage() {
             {featuredStores.map((store) => ( <StoreCard key={store.id} store={store} /> ))}
           </div>
         ) : !pageErrorSections.includes("featured stores") ? (
-          <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No featured stores available right now.</p>
+          <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border">No featured stores available right now.</div>
         ) : null}
       </section>
 
@@ -529,7 +504,7 @@ export default function HomePage() {
             {topCoupons.map((coupon) => ( <CouponCard key={coupon.id} coupon={coupon} /> ))}
           </div>
         ) : !pageErrorSections.includes("top coupons") ? (
-          <p className="text-muted-foreground text-center py-8 bg-muted/50 rounded-lg border">No top coupons available at the moment.</p>
+          <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border">No top coupons available at the moment.</div>
         ): null}
       </section>
 
@@ -564,4 +539,3 @@ export default function HomePage() {
     </div>
   );
 }
-
