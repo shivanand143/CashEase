@@ -1,10 +1,9 @@
-
 "use client";
 
 import * as React from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // Added useEffect
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation'; // Added useSearchParams
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -38,11 +37,13 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams(); // Initialize useSearchParams
   const { toast } = useToast();
-  const { signInWithGoogle, loading: authLoading } = useAuth(); // Get authLoading from useAuth
+  const { user, signInWithGoogle, loading: authLoading } = useAuth(); // Get user and authLoading from useAuth
   const [loadingEmail, setLoadingEmail] = useState(false);
   const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [redirectMessage, setRedirectMessage] = useState<string | null>(null);
 
   const {
     register,
@@ -51,6 +52,25 @@ export default function LoginPage() {
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
   });
+
+  useEffect(() => {
+    const message = searchParams?.get('message');
+    if (message) {
+      setRedirectMessage(decodeURIComponent(message));
+    }
+    // If user is already logged in and tries to access login page, redirect to dashboard
+    if (user && !authLoading) {
+        const redirectUrl = sessionStorage.getItem('loginRedirectUrl') || '/dashboard';
+        if (redirectUrl.startsWith('/')) { // Ensure it's an internal redirect
+          router.push(redirectUrl);
+          sessionStorage.removeItem('loginRedirectUrl');
+          sessionStorage.removeItem('loginRedirectSource');
+        } else {
+          router.push('/dashboard'); // Fallback if redirectUrl is invalid
+        }
+    }
+  }, [searchParams, user, authLoading, router]);
+
 
   const onSubmit = async (data: LoginFormValues) => {
     if (!auth) {
@@ -66,8 +86,7 @@ export default function LoginPage() {
         title: 'Login Successful',
         description: 'Welcome back!',
       });
-      // Redirection is handled by useAuth's onAuthStateChanged or getRedirectResult
-      // router.push('/dashboard'); // Keep commented if useAuth handles it
+      // Redirection is handled by useEffect or useAuth's onAuthStateChanged
     } catch (err: unknown) {
        console.error("Login failed:", err);
        let errorMessage = "An unexpected error occurred. Please try again.";
@@ -91,7 +110,7 @@ export default function LoginPage() {
                 errorMessage = 'Network error. Please check your internet connection.';
                 break;
             default:
-                errorMessage = `Login failed (${err.code}). Please try again.`;
+                errorMessage = `Login failed (${err.code || 'unknown'}). Please try again.`;
          }
        } else if (err instanceof Error) {
            errorMessage = err.message;
@@ -112,16 +131,18 @@ export default function LoginPage() {
       setError(null);
       try {
           await signInWithGoogle();
-          // Redirect is handled by useAuth hook
+          // Redirect is handled by useAuth hook after successful sign-in and profile setup
       } catch (err: any) {
-          console.error("Google Sign-In failed (from login page):", err);
           // Error is usually handled and toasted within signInWithGoogle
+          // but if it bubbles up, ensure loading state is reset
+          console.error("Google Sign-In failed (from login page):", err);
       } finally {
-          setLoadingGoogle(false);
+          // setLoadingGoogle(false); // This might be set too early if redirect is happening
+          // Let onAuthStateChanged or error handler in signInWithGoogle manage final loading state
       }
    };
 
-  const isLoading = loadingEmail || loadingGoogle || authLoading; // Include authLoading
+  const isLoading = loadingEmail || loadingGoogle || authLoading;
 
   return (
     <div className="flex justify-center items-center min-h-[calc(100vh-12rem)] px-4 py-8">
@@ -131,6 +152,13 @@ export default function LoginPage() {
           <CardDescription>Enter your email and password or use Google</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 p-6">
+           {redirectMessage && (
+             <Alert variant="default" className="border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/30 dark:text-blue-300 [&>svg]:text-blue-700 dark:[&>svg]:text-blue-300">
+               <AlertCircle className="h-4 w-4" />
+               <AlertTitle>Please Login</AlertTitle>
+               <AlertDescription>{redirectMessage}</AlertDescription>
+             </Alert>
+           )}
            {error && (
              <Alert variant="destructive">
                <AlertCircle className="h-4 w-4" />
@@ -184,7 +212,7 @@ export default function LoginPage() {
              </div>
            </div>
            <Button variant="outline" className="w-full h-10" onClick={handleGoogleSignIn} disabled={isLoading}>
-             {loadingGoogle ? 'Signing in...' : <> <ChromeIcon className="mr-2 h-4 w-4" /> Continue with Google </>}
+             {loadingGoogle || authLoading ? 'Signing in...' : <> <ChromeIcon className="mr-2 h-4 w-4" /> Continue with Google </>}
            </Button>
 
         </CardContent>

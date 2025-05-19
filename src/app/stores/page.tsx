@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from 'react';
@@ -22,13 +21,39 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import StoreCard from '@/components/store-card';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, Loader2, Search, Store as StoreIcon } from 'lucide-react';
+import { AlertCircle, Loader2, Search, Store as StoreIconLucide } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useDebounce } from '@/hooks/use-debounce';
 import { safeToDate } from '@/lib/utils';
 
 const STORES_PER_PAGE = 24;
+
+function StoresPageSkeleton() {
+  const STORES_PER_PAGE_SKELETON = 12;
+  return (
+    <div className="space-y-8">
+      <div className="text-center space-y-2">
+        <StoreIconLucide className="w-12 h-12 text-primary mx-auto" />
+        <h1 className="text-3xl md:text-4xl font-bold">All Stores</h1>
+        <p className="text-lg text-muted-foreground max-w-2xl mx-auto">Loading stores...</p>
+      </div>
+      <Card className="max-w-xl mx-auto shadow-sm border">
+        <CardHeader className="pb-4 pt-4">
+          <Skeleton className="h-6 w-1/3" />
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Skeleton className="h-10 w-full" />
+        </CardContent>
+      </Card>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
+        {Array.from({ length: STORES_PER_PAGE_SKELETON }).map((_, index) => (
+          <Skeleton key={`store-skel-client-${index}`} className="h-48 rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function StoresPage() {
   const [stores, setStores] = React.useState<Store[]>([]);
@@ -136,14 +161,12 @@ export default function StoresPage() {
         setIsSearching(false);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast]);
 
 
   React.useEffect(() => {
     fetchStores(false, debouncedSearchTerm, null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearchTerm]); // fetchStores will not be added to deps
+  }, [debouncedSearchTerm, fetchStores]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,42 +174,20 @@ export default function StoresPage() {
   };
 
   const handleLoadMore = () => {
-    if (!loadingMore && hasMore) {
+    if (!loadingMore && hasMore && lastVisible) { // Ensure lastVisible is not null
       fetchStores(true, debouncedSearchTerm, lastVisible);
     }
   };
 
   if (loading && stores.length === 0 && !error) {
-    const STORES_PER_PAGE_SKELETON = 12;
-    return (
-        <div className="space-y-8">
-            <div className="text-center space-y-2">
-                <StoreIcon className="w-12 h-12 text-primary mx-auto" />
-                <h1 className="text-3xl md:text-4xl font-bold">All Stores</h1>
-                <p className="text-lg text-muted-foreground max-w-2xl mx-auto">Loading stores...</p>
-            </div>
-            <Card className="max-w-xl mx-auto shadow-sm border">
-            <CardHeader className="pb-4 pt-4">
-                <Skeleton className="h-6 w-1/3" />
-            </CardHeader>
-            <CardContent className="pb-4">
-                <Skeleton className="h-10 w-full" />
-            </CardContent>
-            </Card>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
-            {Array.from({ length: STORES_PER_PAGE_SKELETON }).map((_, index) => (
-                <Skeleton key={`store-skel-client-${index}`} className="h-48 rounded-lg" />
-            ))}
-            </div>
-        </div>
-    );
+    return <StoresPageSkeleton />;
   }
 
   return (
     <div className="space-y-8">
       <section className="text-center">
         <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-2 flex items-center justify-center gap-3">
-          <StoreIcon className="w-10 h-10 text-primary" /> All Stores
+          <StoreIconLucide className="w-10 h-10 text-primary" /> All Stores
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
           Browse all our partner stores. Click on any store to see available coupons, deals, and cashback offers.

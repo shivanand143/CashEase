@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from 'react';
@@ -31,9 +30,35 @@ interface CouponWithStore extends Coupon {
   store?: Store;
 }
 
+function SearchPageSkeleton() {
+  return (
+    <div className="space-y-8">
+      <Skeleton className="h-10 w-3/4 md:w-1/2" /> {/* Title */}
+      <div className="space-y-10">
+        <section>
+          <Skeleton className="h-8 w-1/3 mb-4" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <Skeleton key={`store-skel-${index}`} className="h-48 rounded-lg" />
+            ))}
+          </div>
+        </section>
+        <section>
+          <Skeleton className="h-8 w-1/3 mb-4" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <Skeleton key={`coupon-skel-${index}`} className="h-40 rounded-lg" />
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 export default function SearchPage() {
   const searchParams = useSearchParams();
-  const queryParam = searchParams.get('q');
+  const queryParam = searchParams?.get('q'); // Safely access get
   const { toast } = useToast();
 
   const [searchTerm, setSearchTerm] = React.useState(queryParam || '');
@@ -44,19 +69,23 @@ export default function SearchPage() {
   const [executedSearch, setExecutedSearch] = React.useState(queryParam || '');
 
   React.useEffect(() => {
-    setSearchTerm(queryParam || '');
-  }, [queryParam]);
+    // Update searchTerm if queryParam from URL changes
+    const newQueryParam = searchParams?.get('q');
+    setSearchTerm(newQueryParam || '');
+    setExecutedSearch(newQueryParam || ''); // Also update executedSearch to reflect current search
+  }, [searchParams]);
 
   React.useEffect(() => {
     let isMounted = true;
     const performSearch = async (term: string) => {
       if (!isMounted) return;
-      if (!term) {
-        if(isMounted) {
-            setStores([]);
-            setCoupons([]);
-            setLoading(false);
-            setExecutedSearch('');
+      if (!term.trim()) { // Check if term is empty or just whitespace
+        if (isMounted) {
+          setStores([]);
+          setCoupons([]);
+          setLoading(false);
+          setExecutedSearch(''); // Clear executed search if term is empty
+          setPageError(null); // Clear any previous errors
         }
         return;
       }
@@ -65,7 +94,7 @@ export default function SearchPage() {
       setPageError(null);
       setStores([]);
       setCoupons([]);
-      setExecutedSearch(term);
+      // setExecutedSearch(term); // Moved to the effect above that listens to searchParams
 
       if (firebaseInitializationError) {
           if(isMounted) setPageError(`Database initialization failed: ${firebaseInitializationError}`);
@@ -83,16 +112,18 @@ export default function SearchPage() {
       try {
         // Search Stores
         const storesCollection = collection(db, 'stores');
+        // Firestore SDK doesn't directly support case-insensitive 'contains' queries.
+        // A common workaround is to query for a range and then filter client-side.
+        // Or, use a third-party search service like Algolia for better search capabilities.
+        // This query fetches stores whose names start with the search term (case-sensitive).
         const storeNameConstraints: QueryConstraint[] = [
           where('isActive', '==', true),
           orderBy('name'),
-          // Firestore text search is limited. For partial matches, it's often better to filter client-side
-          // or use a dedicated search service like Algolia for more complex queries.
-          // This query gets stores starting with the term.
           where('name', '>=', term),
-          where('name', '<=', term + '\uf8ff'),
+          where('name', '<=', term + '\uf8ff'), // '\uf8ff' is a high-Unicode character
           limit(SEARCH_LIMIT)
         ];
+
         const storeQuery = query(storesCollection, ...storeNameConstraints);
         const storeSnap = await getDocs(storeQuery);
         let fetchedStores = storeSnap.docs.map(d => ({
@@ -100,11 +131,12 @@ export default function SearchPage() {
             createdAt: safeToDate(d.data().createdAt as Timestamp | undefined),
             updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined),
         } as Store));
-        // Further client-side filtering for better relevance if needed (e.g., contains)
+
+        // Client-side filter for better "contains" behavior (case-insensitive)
         fetchedStores = fetchedStores.filter(s => s.name.toLowerCase().includes(lowerTerm));
         if(isMounted) setStores(fetchedStores);
 
-        // Search Coupons
+        // Search Coupons (by description)
         const couponsCollection = collection(db, 'coupons');
         const couponDescConstraints: QueryConstraint[] = [
           where('isActive', '==', true),
@@ -121,19 +153,18 @@ export default function SearchPage() {
             createdAt: safeToDate(d.data().createdAt as Timestamp | undefined),
             updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined),
         } as Coupon));
-        // Further client-side filtering for better relevance
+
         fetchedCouponsRaw = fetchedCouponsRaw.filter(c => c.description.toLowerCase().includes(lowerTerm));
 
         const enrichedCoupons: CouponWithStore[] = [];
         if (fetchedCouponsRaw.length > 0) {
            const storeCache = new Map<string, Store>();
-           // Pre-populate cache with already fetched stores if their IDs appear in coupon storeIds
-           fetchedStores.forEach(s => storeCache.set(s.id, s));
+           fetchedStores.forEach(s => storeCache.set(s.id, s)); // Pre-populate cache
 
            const couponPromises = fetchedCouponsRaw.map(async (coupon) => {
              if (!coupon.storeId) return coupon;
              let storeData = storeCache.get(coupon.storeId);
-             if (!storeData && db) { // Fetch if not in cache
+             if (!storeData && db) {
                try {
                  const storeDocRef = doc(db, 'stores', coupon.storeId);
                  const storeDocSnap = await getDoc(storeDocRef);
@@ -144,7 +175,7 @@ export default function SearchPage() {
                         createdAt: safeToDate(rawStoreData.createdAt as Timestamp | undefined),
                         updatedAt: safeToDate(rawStoreData.updatedAt as Timestamp | undefined),
                    } as Store;
-                   storeCache.set(coupon.storeId, storeData); // Add to cache
+                   storeCache.set(coupon.storeId, storeData);
                  }
                } catch (storeErr) {
                  console.error(`Error fetching store ${coupon.storeId} for coupon ${coupon.id}:`, storeErr);
@@ -166,8 +197,7 @@ export default function SearchPage() {
 
     performSearch(searchTerm);
     return () => { isMounted = false; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm]); // Rerun search when searchTerm (from URL) changes
+  }, [searchTerm]); // Rerun search when searchTerm (from URL via the other useEffect) changes
 
   React.useEffect(() => {
     if (pageError) {
@@ -182,31 +212,7 @@ export default function SearchPage() {
   const hasResults = stores.length > 0 || coupons.length > 0;
 
   if (loading && executedSearch) {
-    return (
-        <div className="space-y-8">
-            <h1 className="text-3xl md:text-4xl font-bold flex items-center gap-2">
-                <SearchIconLucide className="w-8 h-8 text-primary animate-pulse" /> Searching for "{executedSearch}"...
-            </h1>
-            <div className="space-y-10">
-                <section>
-                <Skeleton className="h-8 w-1/3 mb-4" />
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
-                    {Array.from({ length: 6 }).map((_, index) => (
-                    <Skeleton key={`store-skel-${index}`} className="h-48 rounded-lg" />
-                    ))}
-                </div>
-                </section>
-                <section>
-                <Skeleton className="h-8 w-1/3 mb-4" />
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-                    {Array.from({ length: 3 }).map((_, index) => (
-                    <Skeleton key={`coupon-skel-${index}`} className="h-40 rounded-lg" />
-                    ))}
-                </div>
-                </section>
-            </div>
-        </div>
-    );
+    return <SearchPageSkeleton />;
   }
 
   return (
@@ -236,6 +242,7 @@ export default function SearchPage() {
         </div>
       )}
 
+
       {stores.length > 0 && (
         <section>
           <h2 className="text-2xl font-semibold mb-4 border-b pb-2 flex items-center gap-2">
@@ -264,4 +271,3 @@ export default function SearchPage() {
     </div>
   );
 }
-

@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from 'react';
@@ -23,19 +22,19 @@ const faqData = [
   },
   {
     question: "How do I earn cashback?",
-    answer: "1. Sign up/Log in to MagicSaver. 2. Browse for your favorite store or offer. 3. Click on the 'Activate Cashback' or 'Get Code' button. 4. You'll be redirected to the retailer's site. Shop as you normally would. 5. Your cashback will be tracked and added to your MagicSaver account, usually within 72 hours."
+    answer: "1. Sign up/Log in to MagicSaver. 2. Browse for your favorite store or offer. 3. Click on the 'Activate Cashback' or 'Get Code' button. 4. You'll be redirected to the retailer's site. Shop as you normally would. 5. Your cashback will be tracked and added to your MagicSaver account, usually within 72 hours as 'Pending'."
   },
   {
     question: "How long does it take for cashback to get confirmed?",
-    answer: "Cashback initially appears as 'Pending'. It gets confirmed after the retailer's return/cancellation period is over, which usually takes 30-90 days. Once confirmed, you can withdraw it."
+    answer: "Cashback initially appears as 'Pending'. It gets confirmed after the retailer's return/cancellation period is over, which usually takes 30-90 days. Once confirmed, it moves to your 'Available Balance' and you can withdraw it."
   },
   {
     question: "What is the minimum amount I need to withdraw cashback?",
-    answer: "You need a minimum of ₹250 in 'Confirmed' cashback to request a payout to your bank account or as gift cards."
+    answer: "You need a minimum of ₹250 in 'Confirmed' (Available) cashback to request a payout to your bank account or as gift cards."
   },
   {
-    question: "What if my cashback is not tracked?",
-    answer: "If your cashback isn't tracked within 72 hours, please file a 'Missing Cashback Claim' through your dashboard. Ensure you've followed all terms and conditions, like not using other coupon sites or ad-blockers."
+    question: "What if my cashback is not tracked after a click?",
+    answer: "If your click was successful but a purchase/cashback isn't tracked within 72 hours as 'Pending', please first ensure you followed all guidelines (e.g., no ad-blockers, cart empty before clicking from MagicSaver). Then, you can contact support with your purchase details to file a 'Missing Cashback Claim'."
   },
   {
     question: "Can I use coupons along with cashback offers?",
@@ -57,7 +56,7 @@ export default function FaqPage() {
       <Accordion type="single" collapsible className="w-full border rounded-lg shadow-sm bg-card">
         {faqData.map((item, index) => (
           <AccordionItem key={index} value={`item-${index + 1}`} className="border-b last:border-b-0">
-            <AccordionTrigger className="p-4 text-left hover:bg-muted/50">
+            <AccordionTrigger className="p-4 text-left hover:bg-muted/50 text-base font-semibold">
               {item.question}
             </AccordionTrigger>
             <AccordionContent className="p-4 pt-0 text-muted-foreground">

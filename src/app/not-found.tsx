@@ -1,11 +1,15 @@
+"use client"; // Mark as client component
 
-"use client";
-
+import * as React from 'react'; // Import React
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Frown } from 'lucide-react'
 
-export default function NotFound() {
+// This page is already simple enough that a separate client content file isn't strictly necessary
+// unless useSearchParams or other client hooks were being used.
+// For consistency with the reversion, we'll ensure it's a client component.
+
+export default function NotFoundPage() { // Renamed from NotFound to NotFoundPage for clarity
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-20rem)] text-center px-4">
       <Frown className="w-24 h-24 text-muted-foreground mb-6" />
