@@ -1,541 +1,68 @@
-
 // src/app/page.tsx
-"use client";
+// This is the Server Component shell
+
 import * as React from 'react';
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
-import Autoplay from "embla-carousel-autoplay";
-import Image from 'next/image';
-import { Input } from '@/components/ui/input'; // Added this import
-import { Search, Tag, ShoppingBag, ArrowRight, IndianRupee, HandCoins, BadgePercent, Zap, Building2, Gift, TrendingUp, ExternalLink, ScrollText, Info, AlertCircle, Loader2, Package, Star } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-import { collection, getDocs, query, where, limit, orderBy, QueryConstraint, DocumentData, getDoc, doc, Timestamp } from 'firebase/firestore';
-import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Store, Coupon, Banner, Category, Product } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import StoreCard from '@/components/store-card';
-import CouponCard from '@/components/coupon-card';
-import { useRouter } from 'next/navigation';
-import { safeToDate, formatCurrency } from '@/lib/utils';
-import { ProductCard } from '@/components/product-card';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { Card, CardContent, CardHeader } from '@/components/ui/card'; // Removed CardDescription as it wasn't used
+import HomeClientContent from './home-client-content'; // Import the new client component
 
-interface CouponWithStore extends Coupon {
-  store?: Store;
-}
-
-interface ProductWithStore extends Product {
-  store?: Store;
-}
-
-async function fetchData<T>(collectionName: string, constraints: QueryConstraint[] = [], orderFields: { field: string, direction: 'asc' | 'desc' }[] = [], fetchLimit?: number): Promise<T[]> {
-    console.log(`HOMEPAGE: Fetching ${collectionName}...`);
-    let data: T[] = [];
-    if (!db || firebaseInitializationError) {
-        console.warn(`HOMEPAGE: Firestore DB not initialized or error during init when fetching ${collectionName}. Firebase Init Error: ${firebaseInitializationError}, DB object: ${db}`);
-        return [];
-    }
-    try {
-        const dataRef = collection(db, collectionName);
-        let qConstraints = [...constraints];
-        orderFields.forEach(order => qConstraints.push(orderBy(order.field, order.direction)));
-        if (fetchLimit) {
-            qConstraints.push(limit(fetchLimit));
-        }
-
-        const q = query(dataRef, ...qConstraints);
-        const querySnapshot = await getDocs(q);
-        data = querySnapshot.docs.map(docSnap => {
-            const docData = docSnap.data();
-            const convertedData = Object.keys(docData).reduce((acc, key) => {
-                if (docData[key] instanceof Timestamp) {
-                    (acc as any)[key] = safeToDate(docData[key]);
-                } else {
-                    (acc as any)[key] = docData[key];
-                }
-                return acc;
-            }, {} as any);
-            return { id: docSnap.id, ...convertedData } as T;
-        });
-        console.log(`HOMEPAGE: Successfully fetched ${data.length} items for ${collectionName}.`);
-    } catch (err) {
-        console.error(`HOMEPAGE: Error fetching ${collectionName}:`, err);
-        // Rethrow or handle specific error types if needed for section-specific error states
-        throw err;
-    }
-    return data;
-}
-
-async function fetchItemsWithStoreData<T extends Coupon | Product>(
-    itemType: 'coupons' | 'products',
-    constraints: QueryConstraint[],
-    orderFields: { field: string, direction: 'asc' | 'desc' }[] = [],
-    fetchLimit?: number
-): Promise<(T & { store?: Store })[]> {
-    console.log(`HOMEPAGE: Fetching items with store data for ${itemType}...`);
-    let items: T[] = [];
-    let enrichedItems: (T & { store?: Store })[] = [];
-    if (!db || firebaseInitializationError) {
-        console.warn(`HOMEPAGE: Firestore DB not initialized for fetchItemsWithStoreData for ${itemType}. Firebase Init Error: ${firebaseInitializationError}, DB object: ${db}`);
-        return [];
-    }
-    try {
-        items = await fetchData<T>(itemType, constraints, orderFields, fetchLimit);
-        if (items.length > 0) {
-            const storeCache = new Map<string, Store>();
-            const itemPromises = items.map(async (item) => {
-                if (!item.storeId) return item;
-                if (storeCache.has(item.storeId)) {
-                    return { ...item, store: storeCache.get(item.storeId)! };
-                }
-                if (!db) {
-                    console.warn(`HOMEPAGE: DB not available for store fetch in fetchItemsWithStoreData for ${itemType}`);
-                    return item;
-                }
-                try {
-                    const storeDocRef = doc(db, 'stores', item.storeId);
-                    const storeSnap = await getDoc(storeDocRef);
-                    if (storeSnap.exists()) {
-                        const storeDataRaw = storeSnap.data();
-                        const storeData = {
-                            id: storeSnap.id,
-                            ...storeDataRaw,
-                            createdAt: safeToDate(storeDataRaw.createdAt as Timestamp | undefined),
-                            updatedAt: safeToDate(storeDataRaw.updatedAt as Timestamp | undefined),
-                        } as Store;
-                        storeCache.set(item.storeId, storeData);
-                        return { ...item, store: storeData };
-                    }
-                    console.warn(`HOMEPAGE: Store with ID ${item.storeId} not found for ${itemType} ${item.id}`);
-                    return item;
-                } catch (storeError) {
-                    console.error(`HOMEPAGE: Error fetching store ${item.storeId} for ${itemType} ${item.id}:`, storeError);
-                    return item;
-                }
-            });
-            enrichedItems = await Promise.all(itemPromises);
-        }
-        console.log(`HOMEPAGE: Successfully enriched ${enrichedItems.length} items for ${itemType}.`);
-    } catch (err) {
-        console.error(`HOMEPAGE: Error in fetchItemsWithStoreData for ${itemType}:`, err);
-        throw err; // Re-throw to be caught by the main loadAllData
-    }
-    return enrichedItems;
-}
-
-
-export default function HomePage() {
-  const { toast } = useToast();
-  const router = useRouter();
-  const [banners, setBanners] = React.useState<Banner[]>([]);
-  const [featuredStores, setFeaturedStores] = React.useState<Store[]>([]);
-  const [topCoupons, setTopCoupons] = React.useState<CouponWithStore[]>([]);
-  const [categories, setCategories] = React.useState<Category[]>([]);
-  const [todaysPicksProducts, setTodaysPicksProducts] = React.useState<ProductWithStore[]>([]);
-
-  const [loadingBanners, setLoadingBanners] = React.useState(true);
-  const [loadingFeaturedStores, setLoadingFeaturedStores] = React.useState(true);
-  const [loadingTopCoupons, setLoadingTopCoupons] = React.useState(true);
-  const [loadingCategories, setLoadingCategories] = React.useState(true);
-  const [loadingTodaysPicksProducts, setLoadingTodaysPicksProducts] = React.useState(true);
-  const [pageErrorSections, setPageErrorSections] = React.useState<string[]>([]);
-  const [searchTerm, setSearchTerm] = React.useState('');
-
-
-  React.useEffect(() => {
-    let isMounted = true;
-    const loadAllData = async () => {
-      console.log("HOMEPAGE: loadAllData started.");
-      if (firebaseInitializationError) {
-        if (isMounted) {
-            setPageErrorSections(prev => [...prev, `Failed to connect to the database: ${firebaseInitializationError}`]);
-            setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingCategories(false); setLoadingTodaysPicksProducts(false);
-        }
-        console.error("HOMEPAGE: Firebase initialization error, aborting data load.");
-        return;
-      }
-      if (!db) {
-        if(isMounted) {
-            setPageErrorSections(prev => [...prev, "Database not available. Please try again later."]);
-            setLoadingBanners(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingCategories(false); setLoadingTodaysPicksProducts(false);
-        }
-        console.error("HOMEPAGE: DB not available, aborting data load.");
-        return;
-      }
-
-      const sectionLoaders = [
-        { name: "banners", loader: setLoadingBanners, fetchFn: () => fetchData<Banner>('banners', [where('isActive', '==', true)], [{ field: 'order', direction: 'asc' }], 5) },
-        { name: "featured stores", loader: setLoadingFeaturedStores, fetchFn: () => fetchData<Store>('stores', [where('isActive', '==', true), where('isFeatured', '==', true)], [{ field: 'name', direction: 'asc' }], 12) },
-        { name: "top coupons", loader: setLoadingTopCoupons, fetchFn: () => fetchItemsWithStoreData('coupons', [where('isActive', '==', true), where('isFeatured', '==', true)], [{ field: 'createdAt', direction: 'desc' }], 6) },
-        { name: "categories", loader: setLoadingCategories, fetchFn: () => fetchData<Category>('categories', [where('isActive', '==', true)], [{ field: 'order', direction: 'asc' }, { field: 'name', direction: 'asc' }], 12) },
-        { name: "today's picks products", loader: setLoadingTodaysPicksProducts, fetchFn: () => fetchItemsWithStoreData('products', [where('isActive', '==', true), where('isTodaysPick', '==', true)], [{ field: 'updatedAt', direction: 'desc' }], 6) },
-      ];
-
-      const currentErrors: string[] = [];
-
-      for (const section of sectionLoaders) {
-        if (!isMounted) break;
-        section.loader(true);
-        try {
-          const data = await section.fetchFn();
-          if (isMounted) {
-            if (section.name === "banners") setBanners(data as Banner[]);
-            else if (section.name === "featured stores") setFeaturedStores(data as Store[]);
-            else if (section.name === "top coupons") setTopCoupons(data as CouponWithStore[]);
-            else if (section.name === "categories") setCategories(data as Category[]);
-            else if (section.name === "today's picks products") setTodaysPicksProducts(data as ProductWithStore[]);
-          }
-        } catch (err) {
-          console.error(`HOMEPAGE: ${section.name} fetch failed:`, err);
-          currentErrors.push(section.name);
-        } finally {
-          if (isMounted) section.loader(false);
-        }
-      }
-
-      if (isMounted && currentErrors.length > 0) {
-        console.error("HOMEPAGE: Errors occurred during data fetching:", currentErrors);
-        setPageErrorSections(prev => [...prev, ...currentErrors]);
-      }
-      
-      console.log("HOMEPAGE: All data fetch operations attempted.");
-    };
-
-    loadAllData();
-    return () => { 
-      isMounted = false; 
-      console.log("HOMEPAGE: Component unmounted, cleanup function called.");
-    };
-  }, []);
-
-
-  React.useEffect(() => {
-    if (pageErrorSections.length > 0) {
-      toast({
-        variant: "destructive",
-        title: "Error Loading Some Data Sections",
-        description: `Failed to load: ${pageErrorSections.join(', ')}. Some content may be missing.`,
-        duration: 7000,
-      });
-    }
-  }, [pageErrorSections, toast]);
-
-  const handleSearchSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!searchTerm.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Search Error",
-        description: "Please enter a store or offer name to search.",
-      });
-      return;
-    }
-    router.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`);
-  };
-
-  const plugin = React.useRef(
-    Autoplay({ delay: 4000, stopOnInteraction: true })
-  );
-
-  const isAnySectionLoading = loadingBanners || loadingFeaturedStores || loadingTopCoupons || loadingCategories || loadingTodaysPicksProducts;
-  const anyDataPresent = banners.length > 0 || featuredStores.length > 0 || topCoupons.length > 0 || categories.length > 0 || todaysPicksProducts.length > 0;
-
+// HomePageSkeleton remains the same or can be simplified if preferred
+function HomePageSkeleton() {
   return (
     <div className="container mx-auto px-4 py-8 space-y-12 md:space-y-16 lg:space-y-20">
-       <section className="relative text-center py-12 md:py-16 lg:py-20 bg-gradient-to-br from-primary/10 via-background to-secondary/10 rounded-lg shadow-sm overflow-hidden border border-border/50">
-           <div className="container relative z-10 px-4 md:px-6">
-             <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-4 text-foreground">
-               Shop Smarter, Earn <span className="text-primary">MagicSaver</span> Back!
-             </h1>
-             <p className="text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto mb-8">
-               Get real cashback and find the best coupons for 1500+ online stores in India. Join free today!
-             </p>
-             <Card className="max-w-2xl mx-auto shadow-md border mb-8">
-                <CardContent className="p-2 sm:p-3">
-                     <form onSubmit={handleSearchSubmit} className="flex gap-2 items-center">
-                       <Search className="ml-2 h-5 w-5 text-muted-foreground hidden sm:block" />
-                       <Input
-                         type="search"
-                         name="search"
-                         placeholder="Search for stores, brands or products..."
-                         className="flex-grow h-12 text-base border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none pl-2 sm:pl-0"
-                         aria-label="Search stores and offers"
-                         value={searchTerm}
-                         onChange={(e) => setSearchTerm(e.target.value)}
-                       />
-                       <Button type="submit" className="h-10 px-4 sm:px-6 text-sm sm:text-base">Search</Button>
-                     </form>
-                </CardContent>
-             </Card>
-             <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
-               <Button size="lg" asChild className="w-full sm:w-auto shadow-md hover:shadow-lg transition-shadow duration-300">
-                 <Link href="/signup" className="flex items-center justify-center gap-2">
-                   <HandCoins className="h-5 w-5" /> Join Free & Start Earning
-                 </Link>
-               </Button>
-               <Button size="lg" variant="outline" asChild className="w-full sm:w-auto">
-                 <Link href="/stores" className="flex items-center justify-center gap-2">
-                   <ShoppingBag className="h-5 w-5" /> Browse All Stores
-                 </Link>
-               </Button>
-             </div>
-           </div>
-       </section>
+      {/* Hero Section Skeleton */}
+      <section className="text-center py-12 md:py-16 lg:py-20">
+        <Skeleton className="h-12 w-3/4 mx-auto mb-4" />
+        <Skeleton className="h-6 w-1/2 mx-auto mb-8" />
+        <Card className="max-w-2xl mx-auto">
+          <CardContent className="p-2 sm:p-3">
+            <Skeleton className="h-12 w-full" />
+          </CardContent>
+        </Card>
+        <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mt-8">
+          <Skeleton className="h-12 w-48" />
+          <Skeleton className="h-12 w-40" />
+        </div>
+      </section>
 
-        {pageErrorSections.length > 0 && !isAnySectionLoading && !anyDataPresent && (
-          <Alert variant="destructive" className="mt-8">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Data Loading Issues</AlertTitle>
-            <AlertDescription>
-              Failed to load essential homepage data sections: {pageErrorSections.join(', ')}. The site might not function correctly. Please try refreshing the page or contact support if the problem persists.
-            </AlertDescription>
-          </Alert>
-       )}
-
-       {/* Banners Section */}
-       <section>
-         <h2 className="text-3xl font-bold text-center mb-6 md:mb-8 flex items-center justify-center gap-2">
-           <TrendingUp className="text-primary w-7 h-7"/> Today's Top Offers
-         </h2>
-         {loadingBanners ? (
-           <Skeleton className="h-48 md:h-64 lg:h-80 w-full rounded-lg" />
-         ) : banners.length > 0 ? (
-           <Carousel
-             plugins={[plugin.current]}
-             className="w-full"
-             onMouseEnter={plugin.current.stop}
-             onMouseLeave={plugin.current.reset}
-             opts={{
-               align: "start",
-               loop: banners.length > 1,
-             }}
-           >
-             <CarouselContent>
-               {banners.map((banner, index) => (
-                 <CarouselItem key={banner.id || index}>
-                   <Link href={banner.link || '#'} target={banner.link ? "_blank" : undefined} rel="noopener noreferrer" className="block relative aspect-[2/1] md:aspect-[3/1] lg:aspect-[10/3] overflow-hidden rounded-lg shadow-md group border border-border/30">
-                     <Image
-                       src={banner.imageUrl || 'https://placehold.co/1200x400.png'}
-                       alt={banner.altText || 'Promotional Banner'}
-                       fill
-                       sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 1200px"
-                       className="object-cover transition-transform duration-300 group-hover:scale-105"
-                       priority={index === 0}
-                       data-ai-hint={banner.dataAiHint || 'promotional banner sale offer'}
-                       onError={(e) => ((e.target as HTMLImageElement).src = 'https://placehold.co/1200x400.png')}
-                     />
-                     {(banner.title || banner.subtitle) && (
-                       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent p-4 md:p-6 flex flex-col justify-end">
-                         {banner.title && <h3 className="text-white text-xl md:text-2xl lg:text-3xl font-bold mb-1 drop-shadow-lg">{banner.title}</h3>}
-                         {banner.subtitle && <p className="text-white text-sm md:text-base lg:text-lg opacity-90 drop-shadow-md max-w-xl">{banner.subtitle}</p>}
-                       </div>
-                     )}
-                   </Link>
-                 </CarouselItem>
-               ))}
-             </CarouselContent>
-             {banners.length > 1 && (
-               <>
-                 <CarouselPrevious className="absolute left-2 md:left-4 top-1/2 -translate-y-1/2 z-10 bg-background/80 hover:bg-background border-border shadow-md disabled:opacity-50" />
-                 <CarouselNext className="absolute right-2 md:right-4 top-1/2 -translate-y-1/2 z-10 bg-background/80 hover:bg-background border-border shadow-md disabled:opacity-50" />
-               </>
-             )}
-           </Carousel>
-         ) : !pageErrorSections.includes("banners") ? (
-             <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border">
-                No special top offers featured right now. Check back soon!
-             </div>
-          ) : null }
-       </section>
-
-      <section className="py-12 text-center bg-muted/30 rounded-lg border">
-        <h2 className="text-3xl font-bold mb-4">How MagicSaver Works</h2>
-        <p className="text-muted-foreground mb-8 max-w-xl mx-auto">Earn cashback in 3 simple steps!</p>
+      {/* How it Works Skeleton */}
+      <section className="py-12 text-center">
+        <Skeleton className="h-10 w-1/2 mx-auto mb-4" />
+        <Skeleton className="h-5 w-3/4 mx-auto mb-8" />
         <div className="grid md:grid-cols-3 gap-6 md:gap-8">
-           <div className="flex flex-col items-center space-y-2 p-4">
-               <div className="flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 border-2 border-primary text-primary mb-3">
-                   <Search className="w-8 h-8"/>
-               </div>
-               <h3 className="text-lg font-semibold">1. Find Store</h3>
-               <p className="text-sm text-muted-foreground">Search & click out via MagicSaver</p>
-           </div>
-           <div className="flex flex-col items-center space-y-2 p-4">
-               <div className="flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 border-2 border-primary text-primary mb-3">
-                  <ShoppingBag className="w-8 h-8"/>
-               </div>
-               <h3 className="text-lg font-semibold">2. Shop</h3>
-               <p className="text-sm text-muted-foreground">Buy as usual on the retailer's site</p>
-           </div>
-            <div className="flex flex-col items-center space-y-2 p-4">
-               <div className="flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 border-2 border-primary text-primary mb-3">
-                   <IndianRupee className="w-8 h-8"/>
-               </div>
-               <h3 className="text-lg font-semibold">3. Earn</h3>
-               <p className="text-sm text-muted-foreground">Get cashback in your account!</p>
-           </div>
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex flex-col items-center space-y-2 p-4">
+              <Skeleton className="h-16 w-16 rounded-full mb-3" />
+              <Skeleton className="h-6 w-3/4" />
+              <Skeleton className="h-4 w-full" />
+            </div>
+          ))}
         </div>
-         <Button variant="link" asChild className="mt-6">
-             <Link href="/how-it-works">Learn More <ArrowRight className="ml-1 w-4 h-4"/></Link>
-         </Button>
+        <Skeleton className="h-10 w-32 mt-6 mx-auto" />
       </section>
 
-       {/* Today's Picks (Products) Section */}
-       <section>
-         <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-            <h2 className="text-3xl font-bold flex items-center gap-2">
-                <Star className="text-primary w-7 h-7"/> Today's Picks
-            </h2>
-             <Button variant="outline" size="sm" asChild>
-                <Link href="/coupons" className="flex items-center gap-1">
-                    View All Deals <ArrowRight className="w-4 h-4" />
-                </Link>
-            </Button>
-         </div>
-          {loadingTodaysPicksProducts ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-                  {Array.from({ length: 6 }).map((_, index) => (
-                      <Skeleton key={`todayspick-skel-page-${index}`} className="h-72 rounded-lg" />
-                  ))}
-              </div>
-          ) : todaysPicksProducts.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-                  {todaysPicksProducts.map((product) => (
-                      <ProductCard key={product.id} product={product} storeContext={product.store} />
-                  ))}
-              </div>
-          ) : !pageErrorSections.includes("today's picks products") ? (
-              <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border">No products marked as "Today's Picks" right now. Check back soon!</div>
-          ) : null}
-       </section>
-
-       {/* Popular Categories Section */}
-        <section>
-           <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-               <h2 className="text-3xl font-bold flex items-center gap-2">
-                 <Building2 className="text-primary w-7 h-7" /> Popular Categories
-               </h2>
-               <Button variant="outline" size="sm" asChild>
-                 <Link href="/categories" className="flex items-center gap-1">
-                   View All Categories <ArrowRight className="w-4 h-4" />
-                 </Link>
-               </Button>
-           </div>
-           {loadingCategories ? (
-               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-                 {Array.from({ length: 12 }).map((_, index) => ( <Skeleton key={`cat-skel-${index}`} className="h-32 rounded-lg" /> ))}
-               </div>
-           ) : categories.length > 0 ? (
-               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-                 {categories.map((category) => (
-                   <Link key={category.id} href={`/category/${category.slug}`} legacyBehavior>
-                     <a className="block group">
-                       <Card className="text-center hover:shadow-md transition-shadow duration-300 h-full flex flex-col items-center justify-center p-4 border rounded-lg bg-card hover:border-primary/50">
-                         {category.imageUrl ? (
-                           <Image
-                             src={category.imageUrl}
-                             alt={`${category.name} category`}
-                             width={60}
-                             height={60}
-                             className="object-contain mb-3 h-16 w-16 rounded-md"
-                             data-ai-hint={category.dataAiHint || `${category.name} icon illustration`}
-                             onError={(e) => ((e.target as HTMLImageElement).src = 'https://placehold.co/60x60.png')}
-                           />
-                         ) : (
-                           <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-3 border">
-                             <Building2 className="w-8 h-8 text-muted-foreground" />
-                           </div>
-                         )}
-                         <p className="font-medium text-sm text-foreground">{category.name}</p>
-                       </Card>
-                     </a>
-                   </Link>
-                 ))}
-               </div>
-           ) : !pageErrorSections.includes("categories") ? (
-               <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border">No categories found.</div>
-           ): null}
-       </section>
-
-      {/* Featured Stores Section */}
-      <section>
-        <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-          <h2 className="text-3xl font-bold flex items-center gap-2">
-            <ShoppingBag className="text-primary w-7 h-7" /> Featured Stores
-          </h2>
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/stores" className="flex items-center gap-1">
-              View All Stores <ArrowRight className="w-4 h-4" />
-            </Link>
-          </Button>
-        </div>
-        {loadingFeaturedStores ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
-            {Array.from({ length: 12 }).map((_, index) => ( <Skeleton key={`store-skel-${index}`} className="h-48 rounded-lg" /> ))}
+      {/* Sections Skeletons (e.g., Today's Picks, Featured Stores, etc.) */}
+      {['Today\'s Picks', 'Featured Stores', 'Top Coupons', 'Popular Categories'].map((title) => (
+        <section key={title}>
+          <div className="flex justify-between items-center mb-6 md:mb-8">
+            <Skeleton className="h-10 w-1/3" />
+            <Skeleton className="h-9 w-28" />
           </div>
-        ) : featuredStores.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
-            {featuredStores.map((store) => ( <StoreCard key={store.id} store={store} /> ))}
+          <div className={`grid ${title === 'Top Coupons' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6'} gap-4 md:gap-6`}>
+            {Array.from({ length: title === 'Top Coupons' ? 3 : 6 }).map((_, index) => (
+              <Skeleton key={`${title}-skel-${index}`} className={title === 'Top Coupons' ? "h-40 rounded-lg" : "h-48 rounded-lg"} />
+            ))}
           </div>
-        ) : !pageErrorSections.includes("featured stores") ? (
-          <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border">No featured stores available right now.</div>
-        ) : null}
-      </section>
-
-      {/* Top Coupons Section */}
-      <section>
-        <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-          <h2 className="text-3xl font-bold flex items-center gap-2">
-            <Tag className="text-primary w-7 h-7" /> Top Coupons & Offers
-          </h2>
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/coupons" className="flex items-center gap-1">
-              View All Coupons <ArrowRight className="w-4 h-4" />
-            </Link>
-          </Button>
-        </div>
-        {loadingTopCoupons ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-            {Array.from({ length: 6 }).map((_, index) => ( <Skeleton key={`coupon-skel-${index}`} className="h-40 rounded-lg" /> ))}
-          </div>
-        ) : topCoupons.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-            {topCoupons.map((coupon) => ( <CouponCard key={coupon.id} coupon={coupon} /> ))}
-          </div>
-        ) : !pageErrorSections.includes("top coupons") ? (
-          <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border">No top coupons available at the moment.</div>
-        ): null}
-      </section>
-
-       <section className="grid md:grid-cols-2 gap-8">
-           <Card className="shadow-sm bg-gradient-to-tr from-amber-50 to-yellow-100 border-amber-300">
-               <CardHeader>
-                   <CardTitle className="flex items-center gap-2 text-amber-800"><Zap className="text-amber-600 w-6 h-6" />Maximize Your Savings</CardTitle>
-               </CardHeader>
-               <CardContent>
-                   <p className="text-amber-800/90 mb-4 text-sm">
-                       Check out our curated list of hot deals, bank offers, and limited-time promotions updated daily.
-                   </p>
-                   <Button asChild size="sm" className="bg-amber-600 hover:bg-amber-700 text-white">
-                       <Link href="/coupons">Explore All Deals</Link>
-                   </Button>
-               </CardContent>
-           </Card>
-            <Card className="shadow-sm bg-gradient-to-tr from-green-50 to-emerald-100 border-green-300">
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-green-800"><Gift className="text-green-600 w-6 h-6" /> Refer & Earn More!</CardTitle>
-                </CardHeader>
-                <CardContent>
-                     <p className="text-green-800/90 mb-4 text-sm">
-                       Share your unique referral link. When your friend signs up and makes their first qualifying purchase, you both get rewarded!
-                   </p>
-                   <Button asChild size="sm" className="bg-green-600 hover:bg-green-700 text-white">
-                       <Link href="/dashboard/referrals">Get Your Referral Link</Link>
-                   </Button>
-                </CardContent>
-            </Card>
-       </section>
+        </section>
+      ))}
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <React.Suspense fallback={<HomePageSkeleton />}>
+      <HomeClientContent />
+    </React.Suspense>
   );
 }

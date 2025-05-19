@@ -1,19 +1,26 @@
+// src/app/not-found.tsx
+// This is now a Server Component shell.
+// The original NotFound content is moved to NotFoundClientContent.
 
-import Link from 'next/link'
-import { Button } from '@/components/ui/button'
-import { Frown } from 'lucide-react'
+import * as React from 'react';
+import NotFoundClientContent from './not-found-client-content';
+import { Skeleton } from '@/components/ui/skeleton';
 
-export default function NotFound() {
+function NotFoundSkeleton() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-20rem)] text-center px-4">
-      <Frown className="w-24 h-24 text-muted-foreground mb-6" />
-      <h1 className="text-4xl font-bold mb-2">404 - Page Not Found</h1>
-      <p className="text-lg text-muted-foreground mb-8">
-        Oops! The page you are looking for does not exist or has been moved.
-      </p>
-      <Button asChild>
-        <Link href="/">Go back to Homepage</Link>
-      </Button>
+      <Skeleton className="w-24 h-24 rounded-full mb-6" /> {/* Icon placeholder */}
+      <Skeleton className="h-10 w-3/4 md:w-1/2 mb-2" /> {/* Title */}
+      <Skeleton className="h-5 w-full md:w-3/4 lg:w-1/2 mb-8" /> {/* Message */}
+      <Skeleton className="h-10 w-36" /> {/* Button */}
     </div>
-  )
+  );
+}
+
+export default function NotFoundPage() {
+  return (
+    <React.Suspense fallback={<NotFoundSkeleton />}>
+      <NotFoundClientContent />
+    </React.Suspense>
+  );
 }
