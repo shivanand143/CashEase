@@ -9,7 +9,19 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { formatCurrency } from '@/lib/utils';
-import { IndianRupee, History, Send, Gift, Settings, ShoppingBag, Tag, User, AlertCircle, ArrowRight } from 'lucide-react';
+import {
+    IndianRupee,
+    History,
+    Send,
+    Gift,
+    Settings,
+    ShoppingBag,
+    Tag,
+    User,
+    AlertCircle,
+    ArrowRight,
+    MousePointerClick // Added MousePointerClick
+} from 'lucide-react';
 import ProtectedRoute from '@/components/guards/protected-route';
 import { useRouter } from 'next/navigation'; // Import useRouter
 
@@ -49,7 +61,7 @@ function DashboardPageSkeleton() {
           <Skeleton className="h-6 w-1/2 mb-2" />
           <Skeleton className="h-4 w-3/4" />
         </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2">
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, index) => (
             <Skeleton key={`quicklink-skel-${index}`} className="h-12 w-full rounded-md" />
           ))}
@@ -64,16 +76,20 @@ export default function DashboardPage() {
   const router = useRouter(); // Initialize useRouter
 
   React.useEffect(() => {
+    console.log("DashboardPage: AuthLoading:", authLoading, "User:", !!user, "UserProfile:", !!userProfile);
     if (!authLoading && !user) {
+      console.log("DashboardPage: No user and not loading, redirecting to login.");
       router.push('/login?message=Please login to access your dashboard.');
     }
   }, [user, authLoading, router]);
 
-  if (authLoading || (!user && !authError)) { // Show skeleton if auth is loading OR if user is null but no authError yet (might be initial redirect check)
-    return <ProtectedRoute><DashboardPageSkeleton /></ProtectedRoute>; // Wrap skeleton for consistent layout during loading
+  if (authLoading || (!user && !authError)) {
+    console.log("DashboardPage: Showing skeleton or initial loading screen.");
+    return <ProtectedRoute><DashboardPageSkeleton /></ProtectedRoute>;
   }
 
   if (authError) {
+    console.error("DashboardPage: Auth error:", authError);
     return (
       <ProtectedRoute>
         <Alert variant="destructive">
@@ -85,7 +101,8 @@ export default function DashboardPage() {
     );
   }
 
-  if (!userProfile) { // If auth is done, user exists, but no profile (should ideally not happen with robust useAuth)
+  if (!userProfile) {
+    console.log("DashboardPage: User authenticated but no profile found.");
     return (
       <ProtectedRoute>
         <Alert variant="destructive">
@@ -98,6 +115,7 @@ export default function DashboardPage() {
     );
   }
 
+  console.log("DashboardPage: Rendering dashboard for user:", userProfile.displayName || user.email);
   const summaryStats = [
     { title: "Available Balance", value: formatCurrency(userProfile.cashbackBalance), icon: IndianRupee, description: "Cashback ready for payout." },
     { title: "Pending Cashback", value: formatCurrency(userProfile.pendingCashback), icon: History, description: "Cashback awaiting confirmation." },
