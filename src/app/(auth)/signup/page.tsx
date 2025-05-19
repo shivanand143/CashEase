@@ -2,13 +2,13 @@
 "use client";
 
 import * as React from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { createUserWithEmailAndPassword, updateProfile, User } from 'firebase/auth';
+import { createUserWithEmailAndPassword, updateProfile as updateFirebaseAuthProfile, User as FirebaseAuthUserType } from 'firebase/auth'; // Renamed User to avoid conflict
 import { FirebaseError } from 'firebase/app';
 
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/lib/firebase/config';
+import { auth as firebaseAuthService } from '@/lib/firebase/config'; // Use aliased import
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, UserPlus } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
@@ -41,7 +41,7 @@ export default function SignupPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const { signInWithGoogle, createOrUpdateUserProfile, loading: authLoading } = useAuth();
+  const { user, signInWithGoogle, createOrUpdateUserProfile, loading: authLoadingHook } = useAuth(); // Renamed authLoading
   const [loadingEmail, setLoadingEmail] = useState(false);
   const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,8 +54,23 @@ export default function SignupPage() {
     resolver: zodResolver(signupSchema),
   });
 
+  useEffect(() => {
+    if (user && !authLoadingHook) {
+        console.log("SIGNUP PAGE: User already logged in, redirecting...");
+        const redirectUrl = sessionStorage.getItem('loginRedirectUrl') || '/dashboard';
+        if (redirectUrl.startsWith('/')) {
+          router.push(redirectUrl);
+          sessionStorage.removeItem('loginRedirectUrl');
+          sessionStorage.removeItem('loginRedirectSource');
+        } else {
+          router.push('/dashboard'); // Fallback
+        }
+    }
+  }, [user, authLoadingHook, router]);
+
   const onSubmit = async (data: SignupFormValues) => {
-    if (!auth) {
+    console.log("SIGNUP PAGE: Email/password signup attempt for:", data.email);
+    if (!firebaseAuthService) { // Check aliased import
         setError("Authentication service is not available.");
         toast({ variant: "destructive", title: 'Error', description: "Authentication service failed." });
         return;
@@ -63,26 +78,34 @@ export default function SignupPage() {
     setLoadingEmail(true);
     setError(null);
     const referralCodeFromUrl = searchParams.get('ref');
-    console.log("Manual signup attempt. Referral code from URL:", referralCodeFromUrl);
+    console.log("SIGNUP PAGE: Manual signup attempt. Referral code from URL:", referralCodeFromUrl);
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
-      const user = userCredential.user;
-      console.log("User created in Firebase Auth:", user.uid);
+      const userCredential = await createUserWithEmailAndPassword(firebaseAuthService, data.email, data.password); // Use aliased import
+      const authUser = userCredential.user;
+      console.log("SIGNUP PAGE: Firebase Auth user created:", authUser.uid);
 
-      await updateProfile(user, { displayName: data.displayName });
-      console.log("Firebase Auth profile updated with display name:", data.displayName);
+      await updateFirebaseAuthProfile(authUser, { displayName: data.displayName }); // Use aliased import for updateProfile
+      console.log("SIGNUP PAGE: Firebase Auth profile updated with display name:", data.displayName);
 
-      await createOrUpdateUserProfile(user as User, referralCodeFromUrl);
-
+      // createOrUpdateUserProfile will be called by onAuthStateChanged in useAuth
+      // We pass the referral code so it can be picked up by useAuth
+      if (referralCodeFromUrl && typeof window !== 'undefined') {
+          sessionStorage.setItem('pendingReferralCode', referralCodeFromUrl);
+          console.log("SIGNUP PAGE: Stored pendingReferralCode for onAuthStateChanged:", referralCodeFromUrl);
+      }
+      
+      console.log("SIGNUP PAGE: Email/password signup successful. User profile creation/update will be handled by useAuth.");
       toast({
         title: 'Signup Successful',
         description: 'Welcome to MagicSaver! Redirecting...',
       });
-      router.push('/dashboard');
+      // Redirection is now handled by useAuth's onAuthStateChanged or getRedirectResult logic.
+      // router.push('/dashboard'); // This will be handled by useAuth hook
+      if (typeof window !== 'undefined') sessionStorage.setItem('loginRedirectSource', 'signupPage');
 
     } catch (err: unknown) {
-      console.error("Signup failed:", err);
+      console.error("SIGNUP PAGE: Email/password signup failed:", err);
       let errorMessage = "An unexpected error occurred. Please try again.";
       if (err instanceof FirebaseError) {
         switch (err.code) {
@@ -99,7 +122,7 @@ export default function SignupPage() {
               errorMessage = 'Email/password accounts are not enabled. Please contact support.';
               break;
            case 'auth/network-request-failed':
-                errorMessage = 'Network error. Please check your internet connection.';
+                errorMessage = 'Network error. Please check your internet connection and try again.';
                 break;
           default:
             errorMessage = `Signup error (${err.code}). Please try again.`;
@@ -119,18 +142,24 @@ export default function SignupPage() {
   };
 
   const handleGoogleSignIn = async () => {
-     setLoadingGoogle(true);
+     console.log("SIGNUP PAGE: Google Sign-In initiated.");
+     setLoadingGoogle(true); // Set loading state for Google button
      setError(null);
      try {
-         await signInWithGoogle();
+        if (typeof window !== 'undefined') sessionStorage.setItem('loginRedirectSource', 'signupPage');
+        await signInWithGoogle();
+        // Redirection is handled by useAuth hook (getRedirectResult & onAuthStateChanged)
+        console.log("SIGNUP PAGE: Google Sign-In process started via useAuth. Awaiting redirect.");
      } catch (err: any) {
-         console.error("Google Sign-In failed (from signup page):", err);
+         console.error("SIGNUP PAGE: Google Sign-In initiation failed (error from signup page):", err);
      } finally {
-         setLoadingGoogle(false);
+         // For signInWithRedirect, loading state might need to persist until redirect happens
+         // or be managed by the global authLoadingHook from useAuth.
+         // setLoadingGoogle(false);
      }
   };
 
-  const isLoading = loadingEmail || loadingGoogle || authLoading;
+  const isLoading = loadingEmail || loadingGoogle || authLoadingHook;
 
   return (
     <div className="flex justify-center items-center min-h-[calc(100vh-12rem)] px-4 py-8">
@@ -206,7 +235,7 @@ export default function SignupPage() {
              </div>
            </div>
            <Button variant="outline" className="w-full h-10" onClick={handleGoogleSignIn} disabled={isLoading}>
-             {loadingGoogle ? 'Signing in...' : <> <ChromeIcon className="mr-2 h-4 w-4" /> Continue with Google </>}
+             {loadingGoogle || authLoadingHook ? 'Signing in with Google...' : <> <ChromeIcon className="mr-2 h-4 w-4" /> Continue with Google </>}
            </Button>
 
         </CardContent>

@@ -1,9 +1,10 @@
+
 "use client";
 
 import * as React from 'react';
-import { useState, useEffect } from 'react'; // Added useEffect
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation'; // Added useSearchParams
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -22,7 +23,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/lib/firebase/config';
+import { auth as firebaseAuthService } from '@/lib/firebase/config'; // Use firebaseAuthService alias
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, LogIn } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
@@ -37,9 +38,9 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams(); // Initialize useSearchParams
+  const searchParams = useSearchParams();
   const { toast } = useToast();
-  const { user, signInWithGoogle, loading: authLoading } = useAuth(); // Get user and authLoading from useAuth
+  const { user, signInWithGoogle, loading: authLoadingHook } = useAuth(); // Renamed authLoading to authLoadingHook
   const [loadingEmail, setLoadingEmail] = useState(false);
   const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,22 +59,23 @@ export default function LoginPage() {
     if (message) {
       setRedirectMessage(decodeURIComponent(message));
     }
-    // If user is already logged in and tries to access login page, redirect to dashboard
-    if (user && !authLoading) {
+    if (user && !authLoadingHook) {
+        console.log("LOGIN PAGE: User already logged in, redirecting...");
         const redirectUrl = sessionStorage.getItem('loginRedirectUrl') || '/dashboard';
-        if (redirectUrl.startsWith('/')) { // Ensure it's an internal redirect
+        if (redirectUrl.startsWith('/')) {
           router.push(redirectUrl);
           sessionStorage.removeItem('loginRedirectUrl');
           sessionStorage.removeItem('loginRedirectSource');
         } else {
-          router.push('/dashboard'); // Fallback if redirectUrl is invalid
+          router.push('/dashboard'); // Fallback
         }
     }
-  }, [searchParams, user, authLoading, router]);
+  }, [searchParams, user, authLoadingHook, router]);
 
 
   const onSubmit = async (data: LoginFormValues) => {
-    if (!auth) {
+    console.log("LOGIN PAGE: Email/password login attempt for:", data.email);
+    if (!firebaseAuthService) { // Check aliased import
         setError("Authentication service is not available.");
         toast({ variant: "destructive", title: 'Error', description: "Authentication service failed." });
         return;
@@ -81,14 +83,17 @@ export default function LoginPage() {
     setLoadingEmail(true);
     setError(null);
     try {
-      await signInWithEmailAndPassword(auth, data.email, data.password);
+      await signInWithEmailAndPassword(firebaseAuthService, data.email, data.password); // Use aliased import
+      console.log("LOGIN PAGE: Email/password login successful for:", data.email);
       toast({
         title: 'Login Successful',
-        description: 'Welcome back!',
+        description: 'Welcome back! Redirecting...',
       });
-      // Redirection is handled by useEffect or useAuth's onAuthStateChanged
+      // Redirection is handled by useAuth's onAuthStateChanged or getRedirectResult now.
+      // For email/pass, onAuthStateChanged will pick it up.
+      if (typeof window !== 'undefined') sessionStorage.setItem('loginRedirectSource', 'loginPage');
     } catch (err: unknown) {
-       console.error("Login failed:", err);
+       console.error("LOGIN PAGE: Email/password login failed:", err);
        let errorMessage = "An unexpected error occurred. Please try again.";
        if (err instanceof FirebaseError) {
          switch (err.code) {
@@ -101,13 +106,13 @@ export default function LoginPage() {
              errorMessage = 'Please enter a valid email address.';
              break;
            case 'auth/too-many-requests':
-             errorMessage = 'Too many login attempts. Please try again later.';
+             errorMessage = 'Too many login attempts. Please try again later or reset your password.';
              break;
            case 'auth/user-disabled':
                errorMessage = 'Your account has been disabled. Please contact support.';
                break;
             case 'auth/network-request-failed':
-                errorMessage = 'Network error. Please check your internet connection.';
+                errorMessage = 'Network error. Please check your internet connection and try again.';
                 break;
             default:
                 errorMessage = `Login failed (${err.code || 'unknown'}). Please try again.`;
@@ -127,22 +132,31 @@ export default function LoginPage() {
   };
 
    const handleGoogleSignIn = async () => {
-      setLoadingGoogle(true);
+      console.log("LOGIN PAGE: Google Sign-In initiated.");
+      setLoadingGoogle(true); // Set loading state for Google button
       setError(null);
       try {
+          if (typeof window !== 'undefined') sessionStorage.setItem('loginRedirectSource', 'loginPage');
           await signInWithGoogle();
-          // Redirect is handled by useAuth hook after successful sign-in and profile setup
+          // Redirection is handled by useAuth hook (getRedirectResult & onAuthStateChanged)
+          console.log("LOGIN PAGE: Google Sign-In process started via useAuth. Awaiting redirect.");
       } catch (err: any) {
-          // Error is usually handled and toasted within signInWithGoogle
-          // but if it bubbles up, ensure loading state is reset
-          console.error("Google Sign-In failed (from login page):", err);
+          // Errors during *initiation* of signInWithGoogle (e.g., popup blocked before redirect)
+          // are typically handled within useAuth itself.
+          // If an error still bubbles up here, it's likely an unexpected scenario.
+          console.error("LOGIN PAGE: Google Sign-In initiation failed (error from login page):", err);
+          // Toast for this specific error if not handled by useAuth
+          // setError(err.message || "Failed to start Google Sign-In.");
+          // toast({ variant: "destructive", title: "Google Sign-In Error", description: err.message || "Could not start Google Sign-In."});
       } finally {
-          // setLoadingGoogle(false); // This might be set too early if redirect is happening
-          // Let onAuthStateChanged or error handler in signInWithGoogle manage final loading state
+          // For signInWithRedirect, loading state might need to persist until redirect happens
+          // or be managed by the global authLoadingHook from useAuth.
+          // setLoadingGoogle(false); // Potentially remove if redirect makes this state irrelevant.
       }
    };
 
-  const isLoading = loadingEmail || loadingGoogle || authLoading;
+  // isLoading now combines local email/Google loading AND global auth loading from the hook
+  const isLoading = loadingEmail || loadingGoogle || authLoadingHook;
 
   return (
     <div className="flex justify-center items-center min-h-[calc(100vh-12rem)] px-4 py-8">
@@ -184,6 +198,7 @@ export default function LoginPage() {
             <div className="space-y-2">
                <div className="flex items-center justify-between">
                  <Label htmlFor="password">Password</Label>
+                 {/* Optional: Add Forgot Password link here */}
                </div>
               <Input
                 id="password"
@@ -212,7 +227,7 @@ export default function LoginPage() {
              </div>
            </div>
            <Button variant="outline" className="w-full h-10" onClick={handleGoogleSignIn} disabled={isLoading}>
-             {loadingGoogle || authLoading ? 'Signing in...' : <> <ChromeIcon className="mr-2 h-4 w-4" /> Continue with Google </>}
+             {loadingGoogle || authLoadingHook ? 'Signing in with Google...' : <> <ChromeIcon className="mr-2 h-4 w-4" /> Continue with Google </>}
            </Button>
 
         </CardContent>
