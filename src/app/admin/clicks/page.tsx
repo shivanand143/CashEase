@@ -16,8 +16,8 @@ import {
   DocumentData,
   QueryDocumentSnapshot,
   Timestamp,
-  doc, // Added getDoc
-  getDoc   // Added getDoc
+  doc,
+  getDoc
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { Click, Store, UserProfile } from '@/lib/types';
@@ -39,7 +39,7 @@ import { AlertCircle, Loader2, Search, ExternalLink, MousePointerClick } from 'l
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import AdminGuard from '@/components/guards/admin-guard';
-import { format, isValid } from 'date-fns';
+import { format } from 'date-fns';
 import { useDebounce } from '@/hooks/use-debounce';
 import { safeToDate } from '@/lib/utils';
 
@@ -105,8 +105,12 @@ export default function AdminClicksPage() {
     if (!db || firebaseInitializationError || rawClicks.length === 0) return rawClicks;
 
     const userIdsToFetch = [...new Set(rawClicks.map(c => c.userId).filter(id => id && !userCache[id]))];
-    // Fetch store names if not denormalized on the Click object
-    const storeIdsToFetch = [...new Set(rawClicks.map(c => c.storeId).filter(id => id && !storeCache[id] && !c.storeName))];
+
+    // Corrected logic for storeIdsToFetch
+    const relevantClicksForStoreFetch = rawClicks.filter(
+      click => click.storeId && !storeCache[click.storeId] && !click.storeName
+    );
+    const storeIdsToFetch = [...new Set(relevantClicksForStoreFetch.map(click => click.storeId!))];
 
     try {
       if (userIdsToFetch.length > 0) {
@@ -116,8 +120,8 @@ export default function AdminClicksPage() {
           if (chunk.length === 0) continue;
           const usersQuery = query(collection(db, 'users'), where('__name__', 'in', chunk));
           const userSnaps = await getDocs(usersQuery);
-          userSnaps.forEach(docSnap => { // Changed from doc to docSnap
-            const data = docSnap.data(); // Changed from doc to docSnap
+          userSnaps.forEach(docSnap => {
+            const data = docSnap.data();
             newUsers[docSnap.id] = { displayName: data.displayName || null, email: data.email || null };
           });
         }
@@ -173,8 +177,9 @@ export default function AdminClicksPage() {
       setLastVisible(null);
       setHasMore(true);
     } else {
-      if (!docToStartAfter && loadMoreOperation) {
-        if(isMounted) setLoadingMore(false); return () => {isMounted = false;};
+      if (!docToStartAfter && loadMoreOperation) { // Check if docToStartAfter is null when trying to load more
+        if(isMounted) setLoadingMore(false);
+        return () => {isMounted = false;};
       }
       setLoadingMore(true);
     }
@@ -189,7 +194,6 @@ export default function AdminClicksPage() {
         if (filterType === 'userId') constraints.push(where('userId', '==', debouncedSearchTerm));
         else if (filterType === 'storeId') constraints.push(where('storeId', '==', debouncedSearchTerm));
         else if (filterType === 'clickId') {
-             // For clickId, ideally fetch by doc ID directly if clickId is the doc ID
              const clickDocRef = doc(db, 'clicks', debouncedSearchTerm);
              const clickDocSnap = await getDoc(clickDocRef);
              if (clickDocSnap.exists() && isMounted) {
@@ -213,6 +217,8 @@ export default function AdminClicksPage() {
                  setIsSearching(false);
                  return () => {isMounted = false;};
              }
+             // Explicitly return here to avoid further query execution if clickId is used
+             return () => {isMounted = false;};
         }
       }
       
@@ -270,12 +276,17 @@ export default function AdminClicksPage() {
   }, [debouncedSearchTerm, filterType, toast, fetchClickDetails]);
 
   useEffect(() => {
-    fetchClicks(false, null);
-  }, [fetchClicks]); // fetchClicks is stable due to useCallback and its dependencies
+    const cleanup = fetchClicks(false, null);
+    return () => {
+      if (typeof cleanup === 'function') {
+        cleanup();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm]); 
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // fetchClicks will be re-triggered by the change in debouncedSearchTerm
   };
 
   const handleLoadMore = () => {
@@ -380,7 +391,7 @@ export default function AdminClicksPage() {
                         <TableCell className="font-medium truncate max-w-[150px]" title={click.storeName || click.storeId}>{click.storeName || click.storeId}</TableCell>
                         <TableCell className="truncate max-w-[200px]" title={click.productId ? `Product: ${click.productName || click.productId}` : click.couponId ? `Coupon ID: ${click.couponId}` : 'Store Link'}>
                           {click.productId ? `Product: ${click.productName || click.productId}` :
-                           click.couponId ? `Coupon: ${click.couponId}` : // Changed 'Coupon ID' to 'Coupon' for consistency
+                           click.couponId ? `Coupon: ${click.couponId}` : 
                            'Store Link'}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
@@ -416,5 +427,4 @@ export default function AdminClicksPage() {
     </AdminGuard>
   );
 }
-
     
