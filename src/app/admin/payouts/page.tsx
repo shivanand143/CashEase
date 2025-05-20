@@ -19,7 +19,7 @@ import {
   QueryDocumentSnapshot,
   Timestamp,
   runTransaction,
-  getDoc, // Ensure getDoc is imported for fetching single documents
+  getDoc, 
   writeBatch
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
@@ -38,6 +38,7 @@ import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label'; // Added Label import
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertCircle, Loader2, Search, CheckCircle, XCircle, Hourglass, Send, Info } from 'lucide-react';
@@ -45,7 +46,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { formatCurrency, safeToDate } from '@/lib/utils';
 import AdminGuard from '@/components/guards/admin-guard';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose, DialogTrigger } from '@/components/ui/dialog';
 import { useDebounce } from '@/hooks/use-debounce';
 
 const PAYOUTS_PER_PAGE = 15;
@@ -58,11 +59,11 @@ interface PayoutRequestWithUser extends PayoutRequest {
 const getStatusVariant = (status: PayoutStatus): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
     case 'approved': return 'default';
-    case 'paid': return 'secondary'; // More distinct variant for 'paid'
+    case 'paid': return 'secondary'; 
     case 'pending': return 'outline';
     case 'rejected':
     case 'failed': return 'destructive';
-    case 'processing': return 'default'; // Using default for processing too, or could be another color
+    case 'processing': return 'default'; 
     default: return 'outline';
   }
 };
@@ -83,7 +84,7 @@ const getStatusIcon = (status: PayoutStatus) => {
 function AdminPayoutsPageContent() {
   const [payouts, setPayouts] = useState<PayoutRequestWithUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null); // Renamed from error to pageError
   const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -99,63 +100,74 @@ function AdminPayoutsPageContent() {
   const [adminNotes, setAdminNotes] = useState('');
   const [failureReason, setFailureReason] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
    const fetchUserDataForPayouts = useCallback(async (payoutRequests: PayoutRequest[]): Promise<PayoutRequestWithUser[]> => {
         let isMounted = true;
         if (!payoutRequests || payoutRequests.length === 0 || !db || firebaseInitializationError) {
-            if (isMounted && firebaseInitializationError) setError(prev => prev + (firebaseInitializationError || "DB error in fetchUserData. "));
+            if (isMounted && firebaseInitializationError) setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchUserData. "));
             return payoutRequests;
         }
 
         const userIds = [...new Set(payoutRequests.map(p => p.userId))];
-        const userProfiles: Record<string, UserProfile> = {};
+        const userProfiles: Record<string, Pick<UserProfile, 'displayName' | 'email'>> = {};
 
         try {
-            // Batch user profile fetches if possible, or iterate
             for (const userId of userIds) {
-                 if (!userId) continue; // Skip if userId is invalid
+                 if (!userId) continue; 
                 const userRef = doc(db, 'users', userId);
                 const userSnap = await getDoc(userRef);
                  if (userSnap.exists()) {
-                    const userData = userSnap.data() as UserProfile;
-                    userProfiles[userId] = userData;
+                    const userData = userSnap.data();
+                    userProfiles[userId] = {displayName: userData.displayName || null, email: userData.email || null};
                  } else {
                     console.warn(`User profile not found for ID: ${userId}`);
+                    userProfiles[userId] = {displayName: 'Unknown User', email: 'N/A'};
                  }
             }
         } catch (userFetchError) {
             console.error("Error fetching user data for payouts:", userFetchError);
-            if (isMounted) setError(prev => prev + "Error fetching user details for some payouts. ");
+            if (isMounted) setPageError(prev => (prev ? prev + "; " : "") + "Error fetching user details for some payouts. ");
         }
-        return () => {isMounted = false; payoutRequests.map(payout => ({
+        if (!isMounted) return payoutRequests; // Return early if unmounted
+        
+        return payoutRequests.map(payout => ({
             ...payout,
             userDisplayName: userProfiles[payout.userId]?.displayName || 'Unknown User',
             userEmail: userProfiles[payout.userId]?.email || 'N/A',
-        }))};
-   // eslint-disable-next-line react-hooks/exhaustive-deps
+        }));
    }, []);
 
 
-  const fetchPayouts = useCallback(async (loadMore = false) => {
+  const fetchPayouts = useCallback(async (loadMoreOperation = false) => {
     let isMounted = true;
+    const docToStartAfter = lastVisible; // Capture lastVisible at the start of the call
+
     if (!db || firebaseInitializationError) {
       if (isMounted) {
-        setError(firebaseInitializationError || "Database connection not available.");
-        if (!loadMore) setLoading(false); else setLoadingMore(false);
+        setPageError(firebaseInitializationError || "Database connection not available.");
+        if(!loadMoreOperation) setLoading(false); else setLoadingMore(false);
         setHasMore(false);
       }
       return () => { isMounted = false; };
     }
 
-    if (!loadMore) {
+    if (!loadMoreOperation) {
+      console.log("AdminPayouts: Initial fetch triggered.");
       setLoading(true);
-      setLastVisible(null);
-      setPayouts([]); // Clear previous results for new search/filter
+      setPayouts([]); 
+      setLastVisible(null); 
       setHasMore(true);
     } else {
+      console.log("AdminPayouts: Load more triggered.");
+      if (!docToStartAfter && loadMoreOperation) { 
+        if(isMounted) setLoadingMore(false);
+        console.log("AdminPayouts: Load more aborted, no last visible doc.");
+        return () => {isMounted = false;};
+      }
       setLoadingMore(true);
     }
-    if(!loadMore) setError(null);
+    if(!loadMoreOperation) setPageError(null);
     setIsSearching(debouncedSearchTerm !== '');
 
     try {
@@ -165,18 +177,19 @@ function AdminPayoutsPageContent() {
       if (filterStatus !== 'all') {
         constraints.push(where('status', '==', filterStatus));
       }
-      if (debouncedSearchTerm) { // Assuming search by userId
+      if (debouncedSearchTerm) { 
         constraints.push(where('userId', '==', debouncedSearchTerm));
       }
 
       constraints.push(orderBy('requestedAt', 'desc'));
-      if (loadMore && lastVisible) {
-        constraints.push(startAfter(lastVisible));
+      if (loadMoreOperation && docToStartAfter) {
+        constraints.push(startAfter(docToStartAfter));
       }
       constraints.push(limit(PAYOUTS_PER_PAGE));
 
       const q = query(payoutsCollection, ...constraints);
       const querySnapshot = await getDocs(q);
+      console.log(`AdminPayouts: Fetched ${querySnapshot.size} payout documents.`);
 
       const rawPayoutsData = querySnapshot.docs.map(docSnap => ({
         id: docSnap.id,
@@ -187,36 +200,38 @@ function AdminPayoutsPageContent() {
 
       const payoutsWithUserData = await fetchUserDataForPayouts(rawPayoutsData);
       
-      if(isMounted) {
-        setPayouts(prev => loadMore ? [...prev, ...payoutsWithUserData] : payoutsWithUserData);
+      if(isMounted){
+        setPayouts(prev => loadMoreOperation ? [...prev, ...payoutsWithUserData] : payoutsWithUserData);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(querySnapshot.docs.length === PAYOUTS_PER_PAGE);
+        console.log("AdminPayouts: Payouts state updated. Has more:", querySnapshot.docs.length === PAYOUTS_PER_PAGE);
       }
 
     } catch (err) {
       console.error("Error fetching payout requests:", err);
       if (isMounted) {
-        setError(err instanceof Error ? err.message : "Failed to fetch payouts");
+        setPageError(err instanceof Error ? err.message : "Failed to fetch payouts");
         toast({ variant: "destructive", title: "Fetch Error", description: String(err) });
         setHasMore(false);
       }
     } finally {
       if (isMounted) {
-        if (!loadMore) setLoading(false); else setLoadingMore(false);
+        if (!loadMoreOperation) setLoading(false); else setLoadingMore(false);
         setIsSearching(false);
+        console.log("AdminPayouts: Fetch operation finished. Loading set to false.");
       }
     }
     return () => { isMounted = false; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterStatus, debouncedSearchTerm, toast, fetchUserDataForPayouts]); // Removed lastVisible from here, managed internally
+  }, [filterStatus, debouncedSearchTerm, toast, fetchUserDataForPayouts, lastVisible]); 
 
   useEffect(() => {
+    console.log("AdminPayouts: useEffect for initial fetch. Filter:", filterStatus, "Search:", debouncedSearchTerm);
     fetchPayouts(false);
-  }, [fetchPayouts]);
+  }, [filterStatus, debouncedSearchTerm, fetchPayouts]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchPayouts(false);
+    // Fetching is triggered by debouncedSearchTerm change in useEffect
   };
 
   const handleLoadMore = () => {
@@ -230,17 +245,18 @@ function AdminPayoutsPageContent() {
     setUpdateStatus(payout.status);
     setAdminNotes(payout.adminNotes || '');
     setFailureReason(payout.failureReason || '');
+    setIsDialogOpen(true);
   };
 
   const handleUpdatePayout = async () => {
     if (!selectedPayout || !selectedPayout.id || !db) return;
     setIsUpdating(true);
-    setError(null);
+    setPageError(null);
 
     const payoutRef = doc(db, 'payoutRequests', selectedPayout.id);
     const userRef = doc(db, 'users', selectedPayout.userId);
     const originalStatus = selectedPayout.status;
-    const newPayoutStatus = updateStatus; // Use the state variable for the new status
+    const newPayoutStatus = updateStatus; 
 
     try {
        await runTransaction(db, async (transaction) => {
@@ -262,42 +278,53 @@ function AdminPayoutsPageContent() {
            };
            transaction.update(payoutRef, payoutUpdateData);
 
-           // User profile updates
-           const userUpdateData: Partial<UserProfile> = { updatedAt: serverTimestamp() };
+           const userProfileUpdates: Record<string, any> = { updatedAt: serverTimestamp() };
 
-           // If payout is rejected or failed, and was pending/approved, return amount to user's pendingCashback
-           // This assumes the amount was moved from cashbackBalance to a 'held' state or similar logic
-           // For this implementation, if it's rejected from 'pending', it simply means the request is voided.
-           // If it was 'approved' and then 'rejected'/'failed', cashback needs to be returned.
-           if ((newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') &&
-               (originalStatus === 'pending' || originalStatus === 'approved' || originalStatus === 'processing')) {
-                // The amount for payout requests is derived from user's 'confirmed' transactions.
-                // If rejected/failed, these transactions are no longer part of this payout.
-                // The user's `cashbackBalance` should effectively reflect this by NOT being reduced
-                // if the payout doesn't complete. The transactions themselves might need status reversion.
-                // For this simplified flow: if payout fails, we're just marking it.
-                // Complex balance rollbacks require careful transaction status management.
-                console.log(`Payout ${selectedPayout.id} ${newPayoutStatus}. User cashbackBalance was already reduced at request time. No further balance change needed.`);
+           // Logic for balance adjustments based on status transitions
+           if (newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') {
+                // If moving from a state where balance was already reduced (e.g., 'approved' or 'processing'),
+                // or if it was 'pending' and never reduced, we need to ensure the user's balance is correct.
+                // For simplicity, if a payout fails/is rejected, the money effectively was not sent.
+                // If the balance was reduced upon request, it needs to be credited back.
+                // If the current logic is that cashbackBalance is only reduced when Payout Status is 'paid',
+                // then no rollback is needed here for 'cashbackBalance'.
+                // However, if 'pending' or 'approved' status implied some hold on funds, that needs to be released.
+                // Assuming for now that 'cashbackBalance' in UserProfile is the definitive source and is reduced ONLY when a payout is *successfully* marked 'paid'.
+                // If Payout was 'pending' and gets 'rejected' or 'failed', no balance change on user side as money was never "moved".
+                // If Payout was 'approved' and then 'rejected' or 'failed', it means the user's confirmed transactions linked to this
+                // payout are no longer being paid out. The corresponding transactions' status should ideally be reverted from 'awaiting_payout' (or similar)
+                // back to 'confirmed' so they can be part of a future payout.
+                // This also means the user's `cashbackBalance` (which should reflect sum of 'confirmed' non-paid-out transactions)
+                // might need recalculation or those transactions need status update.
+                // For this implementation, we'll assume transaction status updates handle balance implications.
+                console.log(`Payout ${selectedPayout.id} ${newPayoutStatus}. User balance was likely not reduced yet if original status was pending/approved. Transaction statuses might need reversion.`);
            }
 
-            // Update transactions linked to this payout if status becomes 'paid'
             if (newPayoutStatus === 'paid' && payoutData.transactionIds && payoutData.transactionIds.length > 0) {
-                const batch = writeBatch(db); // Use a batch for updating multiple transactions
+                const batch = writeBatch(db); 
                 payoutData.transactionIds.forEach(txId => {
                     const txRef = doc(db, 'transactions', txId);
-                    batch.update(txRef, { status: 'paid' as CashbackStatus, paidDate: serverTimestamp() });
+                    batch.update(txRef, { status: 'paid' as CashbackStatus, paidDate: serverTimestamp(), updatedAt: serverTimestamp() });
                 });
-                await batch.commit(); // Commit transaction updates
+                await batch.commit(); 
                 console.log(`Updated ${payoutData.transactionIds.length} transactions to 'paid' for payout ${selectedPayout.id}`);
+            } else if ((newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') && payoutData.transactionIds && payoutData.transactionIds.length > 0 && (originalStatus === 'approved' || originalStatus === 'processing')) {
+                // If moving from approved/processing to rejected/failed, revert linked transactions' status back to 'confirmed'
+                // so they can be picked up in a future payout.
+                const batch = writeBatch(db);
+                payoutData.transactionIds.forEach(txId => {
+                    const txRef = doc(db, 'transactions', txId);
+                    // Revert status, clear payoutId, potentially clear other fields set during approval.
+                    batch.update(txRef, { status: 'confirmed' as CashbackStatus, payoutId: null, paidDate: null, updatedAt: serverTimestamp() });
+                });
+                await batch.commit();
+                console.log(`Reverted ${payoutData.transactionIds.length} transactions to 'confirmed' for payout ${selectedPayout.id} due to ${newPayoutStatus} status.`);
             }
 
 
-            if (Object.keys(userUpdateData).length > 1 || (Object.keys(userUpdateData).length === 1 && !userUpdateData.updatedAt) ) {
-                transaction.update(userRef, userUpdateData);
-            } else if (!userDocSnap.data()?.updatedAt) { // Ensure updatedAt is always set
-                 transaction.update(userRef, {updatedAt: serverTimestamp()});
+            if (Object.keys(userProfileUpdates).length > 1 ) { // only update if more than just updatedAt
+                transaction.update(userRef, userProfileUpdates);
             }
-
        });
 
       setPayouts(prev =>
@@ -309,11 +336,12 @@ function AdminPayoutsPageContent() {
       );
 
       toast({ title: "Payout Updated", description: `Status set to ${newPayoutStatus}.` });
-      setSelectedPayout(null);
+      setIsDialogOpen(false);
+      setSelectedPayout(null); // Close dialog
 
     } catch (err) {
       console.error("Error updating payout request:", err);
-      setError(err instanceof Error ? err.message : "Failed to update payout.");
+      setPageError(err instanceof Error ? err.message : "Failed to update payout.");
       toast({ variant: "destructive", title: "Update Failed", description: err instanceof Error ? err.message : "Could not save changes." });
     } finally {
       setIsUpdating(false);
@@ -321,19 +349,20 @@ function AdminPayoutsPageContent() {
   };
 
 
-  if (loading && payouts.length === 0 && !error) {
-    return <PayoutsTableSkeleton />;
+  if (loading && payouts.length === 0 && !pageError) {
+    return <AdminGuard><PayoutsTableSkeleton /></AdminGuard>;
   }
 
   return (
+    <AdminGuard>
     <div className="space-y-6">
       <h1 className="text-3xl font-bold">Payout Requests</h1>
 
-      {error && !loading && (
+      {pageError && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{pageError}</AlertDescription>
         </Alert>
       )}
 
@@ -381,59 +410,59 @@ function AdminPayoutsPageContent() {
           <CardDescription>Review and process user payout requests.</CardDescription>
         </CardHeader>
         <CardContent>
-           {loading && payouts.length === 0 && !error ? (
+           {loading && payouts.length === 0 ? (
              <PayoutsTableSkeleton />
-           ) : !loading && payouts.length === 0 && !error ? (
+           ) : !loading && payouts.length === 0 && !pageError ? (
              <p className="text-center text-muted-foreground py-8">
                 {debouncedSearchTerm || filterStatus !== 'all' ? 'No payout requests found matching your criteria.' : 'No payout requests found.'}
              </p>
            ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Method</TableHead>
-                  <TableHead>Details</TableHead>
-                  <TableHead>Requested At</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {payouts.map((payout) => (
-                  <TableRow key={payout.id}>
-                    <TableCell>
-                       <div className="font-medium">{payout.userDisplayName || payout.userId}</div>
-                       <div className="text-xs text-muted-foreground">{payout.userEmail || 'N/A'}</div>
-                       <div className="text-[10px] font-mono text-muted-foreground/70">ID: {payout.userId}</div>
-                    </TableCell>
-                    <TableCell className="font-semibold">{formatCurrency(payout.amount)}</TableCell>
-                    <TableCell className="capitalize">{payout.paymentMethod.replace('_', ' ')}</TableCell>
-                    <TableCell className="text-xs truncate max-w-[150px]">{payout.paymentDetails.detail}</TableCell>
-                    <TableCell>{payout.requestedAt ? format(new Date(payout.requestedAt), 'PPp') : 'N/A'}</TableCell>
-                    <TableCell>
-                      <Badge variant={getStatusVariant(payout.status)} className="flex items-center gap-1 w-fit">
-                        {getStatusIcon(payout.status)}
-                        {payout.status}
-                      </Badge>
-                      {payout.processedAt && (
-                         <span className="block text-[10px] text-muted-foreground mt-1">
-                             Proc: {format(new Date(payout.processedAt), 'Pp')}
-                         </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                       <DialogTrigger asChild>
+             <div className="overflow-x-auto">
+                <Table>
+                <TableHeader>
+                    <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Method</TableHead>
+                    <TableHead>Details</TableHead>
+                    <TableHead>Requested At</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {payouts.map((payout) => (
+                    <TableRow key={payout.id}>
+                        <TableCell>
+                        <div className="font-medium">{payout.userDisplayName || payout.userId}</div>
+                        <div className="text-xs text-muted-foreground">{payout.userEmail || 'N/A'}</div>
+                        <div className="text-[10px] font-mono text-muted-foreground/70">ID: {payout.userId}</div>
+                        </TableCell>
+                        <TableCell className="font-semibold">{formatCurrency(payout.amount)}</TableCell>
+                        <TableCell className="capitalize">{payout.paymentMethod.replace('_', ' ')}</TableCell>
+                        <TableCell className="text-xs truncate max-w-[150px]">{payout.paymentDetails.detail}</TableCell>
+                        <TableCell>{payout.requestedAt ? format(new Date(payout.requestedAt), 'PPp') : 'N/A'}</TableCell>
+                        <TableCell>
+                        <Badge variant={getStatusVariant(payout.status)} className="flex items-center gap-1 w-fit text-xs">
+                            {getStatusIcon(payout.status)}
+                            {payout.status}
+                        </Badge>
+                        {payout.processedAt && (
+                            <span className="block text-[10px] text-muted-foreground mt-1">
+                                Proc: {format(new Date(payout.processedAt), 'Pp')}
+                            </span>
+                        )}
+                        </TableCell>
+                        <TableCell>
                             <Button size="sm" variant="outline" onClick={() => openUpdateDialog(payout)}>
                                 Manage
                             </Button>
-                       </DialogTrigger>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                        </TableCell>
+                    </TableRow>
+                    ))}
+                </TableBody>
+                </Table>
+             </div>
           )}
            {hasMore && !loading && payouts.length > 0 && (
             <div className="mt-4 text-center">
@@ -447,7 +476,7 @@ function AdminPayoutsPageContent() {
         </CardContent>
       </Card>
 
-       <Dialog open={!!selectedPayout} onOpenChange={(isOpen) => !isOpen && setSelectedPayout(null)}>
+       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
          <DialogContent>
            <DialogHeader>
              <DialogTitle>Manage Payout Request</DialogTitle>
@@ -510,6 +539,7 @@ function AdminPayoutsPageContent() {
        </Dialog>
 
     </div>
+    </AdminGuard>
   );
 }
 
@@ -521,6 +551,7 @@ function PayoutsTableSkeleton() {
          <Skeleton className="h-4 w-1/2"/>
       </CardHeader>
       <CardContent>
+        <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -539,6 +570,7 @@ function PayoutsTableSkeleton() {
             ))}
           </TableBody>
         </Table>
+        </div>
       </CardContent>
     </Card>
   );
@@ -546,8 +578,6 @@ function PayoutsTableSkeleton() {
 
 export default function AdminPayoutsPage() {
     return (
-      <AdminGuard>
         <AdminPayoutsPageContent />
-      </AdminGuard>
     );
 }
