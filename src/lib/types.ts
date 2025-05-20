@@ -32,7 +32,7 @@ export interface PayoutDetails {
   detail: string;
 }
 
-export type CashbackStatus = 'pending' | 'confirmed' | 'rejected' | 'cancelled' | 'paid';
+export type CashbackStatus = 'pending' | 'confirmed' | 'rejected' | 'cancelled' | 'awaiting_payout' | 'paid';
 
 export interface Transaction {
   id: string; // Firestore document ID
@@ -91,7 +91,7 @@ export interface Store {
   cashbackType: CashbackType;
   description: string;
   detailedDescription?: string | null;
-  categories: string[];
+  categories: string[]; // Array of category slugs/IDs
   rating?: number | null;
   ratingCount?: number | null;
   cashbackTrackingTime?: string | null;
@@ -103,7 +103,7 @@ export interface Store {
   terms?: string | null;
   isFeatured: boolean;
   isActive: boolean;
-  isTodaysDeal?: boolean;
+  isTodaysDeal?: boolean; // Store can be a "Today's Deal" feature
   dataAiHint?: string | null;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
@@ -112,7 +112,7 @@ export interface Store {
 export interface Coupon {
   id: string;
   storeId: string;
-  store?: Store;
+  store?: Store; // Optional: for enriched coupon data
   code: string | null;
   description: string;
   link: string | null;
@@ -153,14 +153,14 @@ export interface Banner {
 export interface Product {
   id:string;
   storeId: string;
-  storeName?: string;
+  storeName?: string; // Denormalized
   name: string;
   description?: string | null;
   imageUrl: string | null;
   affiliateLink: string;
   price?: number | null;
   priceDisplay?: string | null;
-  category?: string | null;
+  category?: string | null; // Category ID/slug
   brand?: string | null;
   sku?: string | null;
   rating?: number | null;
@@ -169,7 +169,7 @@ export interface Product {
   specifications?: Record<string, string>;
   isActive: boolean;
   isFeatured?: boolean;
-  isTodaysPick?: boolean;
+  isTodaysPick?: boolean; // Product can be a "Today's Pick"
   dataAiHint?: string | null;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
@@ -184,7 +184,7 @@ export interface PayoutRequest {
   processedAt?: Date | Timestamp | null;
   paymentMethod: PayoutMethod;
   paymentDetails: PayoutDetails;
-  transactionIds: string[];
+  transactionIds: string[]; // IDs of transactions covered by this payout
   adminNotes?: string | null;
   failureReason?: string | null;
 }
@@ -198,12 +198,16 @@ export interface ProductWithStore extends Product {
   store?: Store;
 }
 
-// Form values
+// Form values - Omit fields managed by Firestore or system
 export interface StoreFormValues extends Omit<Store, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface CouponFormValues extends Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'store'> {}
 export interface BannerFormValues extends Omit<Banner, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface CategoryFormValues extends Omit<Category, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface ProductFormValues extends Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'storeName'> {}
-export interface TransactionFormValues extends Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'confirmationDate' | 'paidDate' | 'payoutId' | 'reportedDate'> {
-    transactionDate: Date;
+export interface TransactionFormValues extends Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'confirmationDate' | 'paidDate' | 'payoutId' | 'reportedDate' | 'cashbackRateApplied' | 'initialCashbackAmount' | 'finalSaleAmount' | 'finalCashbackAmount' | 'currency' > {
+    transactionDate: Date; // Ensure transactionDate is always a Date for the form
+    saleAmount: number;
+    cashbackAmount: number;
 }
+
+    

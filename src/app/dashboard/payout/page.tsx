@@ -23,7 +23,8 @@ import {
   QueryConstraint,
   DocumentData,
   getDoc,
-  Query
+  Query,
+  increment
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { UserProfile, PayoutDetails, PayoutMethod, Transaction, CashbackStatus } from '@/lib/types';
@@ -36,14 +37,15 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { formatCurrency, safeToDate } from '@/lib/utils';
-import { AlertCircle, IndianRupee, Send, Loader2, Info } from 'lucide-react';
+import { AlertCircle, IndianRupee, Send, Loader2, Info, ListChecks, ShieldCheck } from 'lucide-react';
 import ProtectedRoute from '@/components/guards/protected-route';
 import { Skeleton } from '@/components/ui/skeleton';
 
-const MIN_PAYOUT_AMOUNT = 250;
+const MIN_PAYOUT_AMOUNT = 250; // Minimum amount a user can request
 
+// Zod schema for payout form validation
 const payoutSchemaBase = z.object({
-  payoutMethod: z.enum(['bank_transfer', 'paypal', 'gift_card'], {
+  payoutMethod: z.enum(['bank_transfer', 'paypal', 'gift_card'] as [PayoutMethod, ...PayoutMethod[]], {
     required_error: "Please select a payout method.",
   }),
   payoutDetail: z.string().min(5, { message: "Payout details must be at least 5 characters." })
@@ -52,10 +54,9 @@ const payoutSchemaBase = z.object({
     required_error: "Amount is required.",
     invalid_type_error: "Amount must be a number.",
   }).positive({ message: "Amount must be positive." })
-    .min(MIN_PAYOUT_AMOUNT, { message: `Minimum payout amount is ₹${MIN_PAYOUT_AMOUNT}.` })
+    .min(MIN_PAYOUT_AMOUNT, { message: `Minimum payout amount is ${formatCurrency(MIN_PAYOUT_AMOUNT)}.` })
 });
 
-// Type for form values
 type PayoutFormValues = z.infer<typeof payoutSchemaBase>;
 
 function PayoutPageSkeleton() {
@@ -66,7 +67,6 @@ function PayoutPageSkeleton() {
       <Card>
         <CardHeader>
           <Skeleton className="h-6 w-1/2 mb-2" /> {/* Card Title */}
-          <Skeleton className="h-4 w-3/4" /> {/* Card Description */}
         </CardHeader>
         <CardContent>
           <Skeleton className="h-12 w-1/2" /> {/* Balance display */}
@@ -76,18 +76,29 @@ function PayoutPageSkeleton() {
       <Card>
         <CardHeader>
           <Skeleton className="h-6 w-1/2 mb-2" />
-          <Skeleton className="h-4 w-3/4" />
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
-            <Skeleton className="h-4 w-1/4" /> {/* Label */}
-            <Skeleton className="h-10 w-full" /> {/* Input/Select */}
+            <Skeleton className="h-4 w-1/4" />
+            <Skeleton className="h-10 w-full" />
           </div>
           <div className="space-y-2">
-            <Skeleton className="h-4 w-1/4" /> {/* Label */}
-            <Skeleton className="h-10 w-full" /> {/* Input */}
+            <Skeleton className="h-4 w-1/4" />
+            <Skeleton className="h-10 w-full" />
           </div>
-          <Skeleton className="h-10 w-full" /> {/* Button */}
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-1/4" />
+            <Skeleton className="h-20 w-full" />
+          </div>
+          <Skeleton className="h-10 w-full" />
+        </CardContent>
+      </Card>
+       <Card>
+        <CardHeader><Skeleton className="h-6 w-1/3 mb-2" /></CardHeader>
+        <CardContent className="space-y-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+            <Skeleton className="h-4 w-full" />
         </CardContent>
       </Card>
     </div>
@@ -99,14 +110,14 @@ export default function PayoutPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [availableBalance, setAvailableBalance] = useState(0);
+  const [currentBalance, setCurrentBalance] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
+  const [canRequest, setCanRequest] = useState(false);
 
-  // Dynamic schema for amount validation based on availableBalance
   const dynamicPayoutSchema = payoutSchemaBase.refine(
-    (data) => data.amount <= availableBalance,
+    (data) => data.amount <= currentBalance,
     {
       message: "Requested amount cannot exceed your available balance.",
       path: ["amount"],
@@ -119,13 +130,14 @@ export default function PayoutPage() {
     control,
     reset,
     watch,
+    setValue,
     formState: { errors, isValid: isFormValid, isDirty },
   } = useForm<PayoutFormValues>({
-    resolver: zodResolver(dynamicPayoutSchema), // Use dynamic schema
-    mode: "onChange", // Validate on change for better UX with amount
+    resolver: zodResolver(dynamicPayoutSchema),
+    mode: "onChange",
     defaultValues: {
       payoutMethod: undefined,
-      payoutDetail: userProfile?.payoutDetails?.detail || '',
+      payoutDetail: '',
       amount: MIN_PAYOUT_AMOUNT,
     },
   });
@@ -133,25 +145,60 @@ export default function PayoutPage() {
   const requestedAmount = watch("amount");
 
   useEffect(() => {
-    if (userProfile) {
-      const balance = userProfile.cashbackBalance || 0;
-      setAvailableBalance(parseFloat(balance.toFixed(2)));
-      if (userProfile.payoutDetails) {
-        reset({
-          payoutMethod: userProfile.payoutDetails.method,
-          payoutDetail: userProfile.payoutDetails.detail,
-          amount: parseFloat(Math.max(MIN_PAYOUT_AMOUNT, Math.min(balance, MIN_PAYOUT_AMOUNT)).toFixed(2)) // Sensible default for amount
-        });
-      } else {
-        reset({
-          amount: parseFloat(Math.max(MIN_PAYOUT_AMOUNT, Math.min(balance, MIN_PAYOUT_AMOUNT)).toFixed(2))
-        });
+    let isMounted = true;
+    const loadProfile = async () => {
+      if (userProfile) {
+        if (isMounted) {
+          const balance = userProfile.cashbackBalance || 0;
+          setCurrentBalance(parseFloat(balance.toFixed(2)));
+          setValue('amount', parseFloat(Math.max(MIN_PAYOUT_AMOUNT, Math.min(balance, MIN_PAYOUT_AMOUNT)).toFixed(2)), { shouldValidate: true });
+          if (userProfile.payoutDetails) {
+            setValue('payoutMethod', userProfile.payoutDetails.method);
+            setValue('payoutDetail', userProfile.payoutDetails.detail);
+          }
+          setLoadingProfile(false);
+          setCanRequest(balance >= MIN_PAYOUT_AMOUNT);
+        }
+      } else if (!authLoading && user) {
+        // If auth is done but profile is still null, try fetching again
+        console.log("PayoutPage: userProfile is null, attempting to fetch.");
+        try {
+            const fetchedProfile = await fetchUserProfile(user.uid);
+            if (fetchedProfile && isMounted) {
+                const balance = fetchedProfile.cashbackBalance || 0;
+                setCurrentBalance(parseFloat(balance.toFixed(2)));
+                setValue('amount', parseFloat(Math.max(MIN_PAYOUT_AMOUNT, Math.min(balance, MIN_PAYOUT_AMOUNT)).toFixed(2)), { shouldValidate: true });
+                if (fetchedProfile.payoutDetails) {
+                    setValue('payoutMethod', fetchedProfile.payoutDetails.method);
+                    setValue('payoutDetail', fetchedProfile.payoutDetails.detail);
+                }
+                setLoadingProfile(false);
+                setCanRequest(balance >= MIN_PAYOUT_AMOUNT);
+            } else if (isMounted) {
+                console.error("PayoutPage: Failed to fetch profile on mount.");
+                setPageError("Could not load your profile data for payout.");
+                setLoadingProfile(false);
+                setCanRequest(false);
+            }
+        } catch (err) {
+            if (isMounted) {
+                console.error("PayoutPage: Error fetching profile on mount:", err);
+                setPageError("Error loading profile data.");
+                setLoadingProfile(false);
+                setCanRequest(false);
+            }
+        }
+      } else if (!authLoading && !user) {
+        if (isMounted) {
+          setLoadingProfile(false);
+          setCanRequest(false);
+          router.push('/login?message=Please login to request a payout.');
+        }
       }
-      setLoadingProfile(false);
-    } else if (!authLoading) {
-      setLoadingProfile(false);
-    }
-  }, [userProfile, authLoading, reset]);
+    };
+    loadProfile();
+    return () => { isMounted = false; };
+  }, [userProfile, authLoading, user, fetchUserProfile, router, setValue]);
 
 
   const onSubmit = async (data: PayoutFormValues) => {
@@ -161,17 +208,9 @@ export default function PayoutPage() {
       return;
     }
 
-    // Re-check balance just before submission inside transaction
-    const requestedPayoutAmount = data.amount;
-
-    if (requestedPayoutAmount < MIN_PAYOUT_AMOUNT) {
-        setPageError(`Minimum payout amount of ₹${MIN_PAYOUT_AMOUNT} not met.`);
-        toast({ variant: "destructive", title: "Payout Error", description: `Minimum payout amount is ₹${MIN_PAYOUT_AMOUNT}.` });
-        return;
-    }
-
     setIsSubmitting(true);
     setPageError(null);
+    const requestedPayoutAmount = data.amount;
 
     const payoutDetails: PayoutDetails = {
       method: data.payoutMethod as PayoutMethod,
@@ -184,68 +223,54 @@ export default function PayoutPage() {
         const userDocSnap = await transaction.get(userDocRef);
 
         if (!userDocSnap.exists()) {
-          throw new Error("User profile not found.");
+          throw new Error("User profile not found. Please ensure you are logged in correctly.");
         }
         const currentUserData = userDocSnap.data() as UserProfile;
-        const currentBalance = currentUserData.cashbackBalance || 0;
+        const currentFreshBalance = currentUserData.cashbackBalance || 0;
 
-        if (requestedPayoutAmount > currentBalance) {
-          throw new Error(`Requested amount (₹${requestedPayoutAmount.toFixed(2)}) exceeds your current available balance (₹${currentBalance.toFixed(2)}). Please refresh and try again.`);
+        if (requestedPayoutAmount > currentFreshBalance) {
+          throw new Error(`Requested amount (₹${requestedPayoutAmount.toFixed(2)}) exceeds your current available balance (₹${currentFreshBalance.toFixed(2)}). Your balance may have updated. Please refresh.`);
         }
         if (requestedPayoutAmount < MIN_PAYOUT_AMOUNT) {
-          throw new Error(`Minimum payout amount is ₹${MIN_PAYOUT_AMOUNT}.`);
+          throw new Error(`Minimum payout amount is ${formatCurrency(MIN_PAYOUT_AMOUNT)}.`);
         }
 
-        // Fetch confirmed transactions that have not been paid out yet, up to the requested amount
+        // Fetch confirmed transactions that have not been paid out yet
         const transactionsCollection = collection(db, 'transactions');
         const confirmedUnpaidQuery = query(
           transactionsCollection,
           where('userId', '==', user.uid),
           where('status', '==', 'confirmed'),
-          where('payoutId', '==', null), // Only transactions not yet part of any payout
-          orderBy('transactionDate', 'asc') // Process older transactions first
+          where('payoutId', '==', null),
+          orderBy('transactionDate', 'asc')
         );
 
-        let confirmedTransactionsSnap;
-        try {
-          confirmedTransactionsSnap = await getDocs(confirmedUnpaidQuery); // Use getDocs directly within transaction for reads if needed, or pass snapshot if large
-        } catch (getQueryError: any) {
-          console.error("Error during getDocs(query) for transactions:", getQueryError);
-          throw new Error("Failed to fetch confirmed transactions for payout verification.");
-        }
-        console.log(`Found ${confirmedTransactionsSnap.size} 'confirmed' and unpaid transactions.`);
+        const confirmedTransactionsSnap = await getDocs(confirmedUnpaidQuery); // Read outside transaction if possible, or simplify logic
 
-        let sumOfTransactionsToPayout = 0;
+        let sumOfSelectedTransactions = 0;
         const transactionIdsToUpdate: string[] = [];
 
         for (const docSnap of confirmedTransactionsSnap.docs) {
           const txData = docSnap.data() as Transaction;
           const cashbackAmt = txData.finalCashbackAmount ?? txData.initialCashbackAmount ?? 0;
-          if (sumOfTransactionsToPayout + cashbackAmt <= requestedPayoutAmount) {
-            sumOfTransactionsToPayout += cashbackAmt;
+          if (cashbackAmt > 0 && (sumOfSelectedTransactions + cashbackAmt) <= requestedPayoutAmount) {
+            sumOfSelectedTransactions += cashbackAmt;
             transactionIdsToUpdate.push(docSnap.id);
-          } else if (sumOfTransactionsToPayout < requestedPayoutAmount) {
-            // This case is complex (partial transaction use) and generally avoided
-            // For simplicity, we'll only include full transactions up to the amount
-            // Or, error out if a perfect match isn't possible without splitting a transaction
-            console.warn("Could not find exact transaction match for requested amount. Considering only full transactions.");
-            break; 
           }
-          if (sumOfTransactionsToPayout >= requestedPayoutAmount) break;
+          if (sumOfSelectedTransactions >= requestedPayoutAmount) break; // Stop if we've covered the amount
         }
-        sumOfTransactionsToPayout = parseFloat(sumOfTransactionsToPayout.toFixed(2));
+        sumOfSelectedTransactions = parseFloat(sumOfSelectedTransactions.toFixed(2));
 
-        // Critical validation: The sum of transactions to be paid out *must* equal the requested amount.
-        // This prevents over/under payment.
-        if (Math.abs(sumOfTransactionsToPayout - requestedPayoutAmount) > 0.01) {
-          console.error(`Payout amount calculation error: Requested ₹${requestedPayoutAmount.toFixed(2)}, but transactions sum to ₹${sumOfTransactionsToPayout.toFixed(2)}.`);
-          throw new Error("Could not match exact payout amount with available transactions. Please try requesting a slightly different amount or contact support.");
+        // If we couldn't gather enough transaction value to cover the requested amount
+        if (sumOfSelectedTransactions < requestedPayoutAmount) {
+          throw new Error(`Not enough confirmed transaction value (found ₹${sumOfSelectedTransactions.toFixed(2)}) to fulfill this specific payout request of ₹${requestedPayoutAmount.toFixed(2)}. Please try a smaller amount or wait for more transactions to be confirmed.`);
         }
-        
+
+        // Create Payout Request Document
         const payoutRequestRef = doc(collection(db, 'payoutRequests'));
         transaction.set(payoutRequestRef, {
           userId: user.uid,
-          amount: requestedPayoutAmount, // Use the validated requested amount
+          amount: requestedPayoutAmount, // The amount the user requested
           status: 'pending',
           requestedAt: serverTimestamp(),
           processedAt: null,
@@ -256,30 +281,37 @@ export default function PayoutPage() {
           failureReason: null,
         });
 
+        // Update User's Profile
         transaction.update(userDocRef, {
-          cashbackBalance: currentBalance - requestedPayoutAmount, // Decrement by requested amount
+          cashbackBalance: increment(-requestedPayoutAmount), // Decrement by the requested amount
           lastPayoutRequestAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-          payoutDetails: payoutDetails,
+          payoutDetails: payoutDetails, // Save/update user's payout details
         });
 
-        transactionIdsToUpdate.forEach(txId => {
+        // Update Selected Transactions
+        const payoutId = payoutRequestRef.id;
+        for (const txId of transactionIdsToUpdate) {
           const txRef = doc(db, 'transactions', txId);
-          transaction.update(txRef, { payoutId: payoutRequestRef.id, updatedAt: serverTimestamp() });
-        });
+          transaction.update(txRef, { status: 'awaiting_payout' as CashbackStatus, payoutId: payoutId, updatedAt: serverTimestamp() });
+        }
       });
 
       toast({
         title: "Payout Request Submitted",
-        description: `Your request for ₹${requestedPayoutAmount.toFixed(2)} is being processed.`,
+        description: `Your request for ${formatCurrency(requestedPayoutAmount)} is being processed.`,
       });
-      reset(); // Reset form
-      const updatedProfile = await fetchUserProfile(user.uid); // Refetch to update UI
+      reset({ amount: MIN_PAYOUT_AMOUNT, payoutDetail: data.payoutDetail, payoutMethod: data.payoutMethod }); // Reset form, keep payout details for convenience
+      
+      // Fetch and update user profile to reflect new balance
+      const updatedProfile = await fetchUserProfile(user.uid);
       if (updatedProfile) {
          const newBalance = updatedProfile.cashbackBalance || 0;
-         setAvailableBalance(parseFloat(newBalance.toFixed(2)));
+         setCurrentBalance(parseFloat(newBalance.toFixed(2)));
+         setCanRequest(newBalance >= MIN_PAYOUT_AMOUNT);
       } else {
-         setAvailableBalance(0);
+         setCurrentBalance(0);
+         setCanRequest(false);
       }
 
     } catch (err: any) {
@@ -295,8 +327,6 @@ export default function PayoutPage() {
     return <ProtectedRoute><PayoutPageSkeleton /></ProtectedRoute>;
   }
   
-  const canRequestPayout = availableBalance >= MIN_PAYOUT_AMOUNT;
-
   return (
     <ProtectedRoute>
       <div className="space-y-8 max-w-2xl mx-auto">
@@ -306,19 +336,28 @@ export default function PayoutPage() {
 
         <Card className="shadow-md border">
           <CardHeader>
-            <CardTitle>Your Available Balance</CardTitle>
+            <CardTitle className="flex items-center gap-2"><IndianRupee className="w-6 h-6 text-primary"/> Your Available Balance</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-4xl font-bold text-primary flex items-center">
-              <IndianRupee className="mr-1 h-7 w-7" /> {availableBalance.toFixed(2)}
+            <p className="text-4xl font-bold text-primary">
+              {formatCurrency(currentBalance)}
             </p>
-            <ul className="text-sm text-muted-foreground mt-2 list-disc list-inside space-y-1">
-              <li>Minimum payout amount: {formatCurrency(MIN_PAYOUT_AMOUNT)}.</li>
-              <li>Payouts are typically processed within 3-5 business days.</li>
-              <li>Ensure your payout details are correct to avoid delays.</li>
-            </ul>
           </CardContent>
         </Card>
+        
+        <Card>
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2"><ListChecks className="w-6 h-6 text-primary"/> Payout Rules & Information</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground space-y-2">
+                <p><strong>Minimum Payout:</strong> You need at least {formatCurrency(MIN_PAYOUT_AMOUNT)} in confirmed cashback to request a payout.</p>
+                <p><strong>Source:</strong> Payouts are made from your 'Confirmed' cashback balance.</p>
+                <p><strong>Processing Time:</strong> Requests are typically processed within 3-5 business days.</p>
+                <p><strong>Accuracy:</strong> Please ensure your payout details are correct to avoid delays or issues.</p>
+                <p><strong>Transaction Linking:</strong> When you request a payout, we will allocate specific confirmed transactions from your history to cover the amount. These transactions will be marked as 'Awaiting Payout'.</p>
+            </CardContent>
+        </Card>
+
 
         {pageError && (
           <Alert variant="destructive">
@@ -328,9 +367,9 @@ export default function PayoutPage() {
           </Alert>
         )}
 
-        {!canRequestPayout && !authLoading && !loadingProfile && (
+        {!canRequest && !authLoading && !loadingProfile && (
           <Alert>
-            <AlertCircle className="h-4 w-4" />
+            <Info className="h-4 w-4" />
             <AlertTitle>Minimum Payout Not Met</AlertTitle>
             <AlertDescription>
               You need at least {formatCurrency(MIN_PAYOUT_AMOUNT)} in available cashback to request a payout. Keep shopping to earn more!
@@ -338,11 +377,11 @@ export default function PayoutPage() {
           </Alert>
         )}
 
-        {canRequestPayout && (
+        {canRequest && (
           <Card className="shadow-md border">
             <CardHeader>
               <CardTitle>Payout Details</CardTitle>
-              <CardDescription>Select your preferred method and provide details.</CardDescription>
+              <CardDescription>Select your preferred method and provide details. Amount requested must be between {formatCurrency(MIN_PAYOUT_AMOUNT)} and {formatCurrency(currentBalance)}.</CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -353,54 +392,54 @@ export default function PayoutPage() {
                     type="number"
                     step="0.01"
                     {...register('amount', { valueAsNumber: true })}
-                    placeholder={`Min ₹${MIN_PAYOUT_AMOUNT}`}
+                    placeholder={`Min ${formatCurrency(MIN_PAYOUT_AMOUNT)}`}
                     disabled={isSubmitting}
                     className={errors.amount ? "border-destructive" : ""}
                   />
                   {errors.amount && <p className="text-sm text-destructive mt-1">{errors.amount.message}</p>}
-                   <p className="text-xs text-muted-foreground mt-1">
-                    Enter an amount between {formatCurrency(MIN_PAYOUT_AMOUNT)} and {formatCurrency(availableBalance)}.
-                  </p>
                 </div>
 
-                <Controller
-                  name="payoutMethod"
-                  control={control}
-                  render={({ field }) => (
-                    <RadioGroup
-                      onValueChange={field.onChange}
-                      value={field.value}
-                      className="grid grid-cols-1 md:grid-cols-3 gap-4"
-                      aria-label="Payout Method"
-                    >
-                      {(['bank_transfer', 'paypal', 'gift_card'] as PayoutMethod[]).map((method) => (
-                        <Label
-                          key={method}
-                          htmlFor={`payout-${method}`}
-                          className={`flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer ${
-                            field.value === method ? "border-primary ring-2 ring-primary" : ""
-                          }`}
-                        >
-                          <RadioGroupItem value={method} id={`payout-${method}`} className="sr-only" />
-                          <span className="font-semibold capitalize mb-1">{method.replace('_', ' ')}</span>
-                          <span className="text-xs text-muted-foreground text-center">
-                            {method === 'bank_transfer' && 'Direct to Bank/UPI'}
-                            {method === 'paypal' && 'To PayPal Account'}
-                            {method === 'gift_card' && 'e.g., Amazon Card'}
-                          </span>
-                        </Label>
-                      ))}
-                    </RadioGroup>
-                  )}
-                />
-                {errors.payoutMethod && <p className="text-sm text-destructive">{errors.payoutMethod.message}</p>}
+                <div>
+                  <Label className="mb-2 block">Payout Method*</Label>
+                  <Controller
+                    name="payoutMethod"
+                    control={control}
+                    render={({ field }) => (
+                      <RadioGroup
+                        onValueChange={field.onChange}
+                        value={field.value}
+                        className="grid grid-cols-1 sm:grid-cols-3 gap-4"
+                        aria-label="Payout Method"
+                      >
+                        {(['bank_transfer', 'paypal', 'gift_card'] as PayoutMethod[]).map((method) => (
+                          <Label
+                            key={method}
+                            htmlFor={`payout-settings-${method}`}
+                            className={`flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer ${
+                              field.value === method ? "border-primary ring-2 ring-primary" : ""
+                            }`}
+                          >
+                            <RadioGroupItem value={method} id={`payout-settings-${method}`} className="sr-only" />
+                            <span className="font-semibold capitalize mb-1 text-sm">{method.replace('_', ' ')}</span>
+                            <span className="text-xs text-muted-foreground text-center">
+                              {method === 'bank_transfer' && 'Direct to Bank/UPI'}
+                              {method === 'paypal' && 'To PayPal Account'}
+                              {method === 'gift_card' && 'e.g., Amazon Card'}
+                            </span>
+                          </Label>
+                        ))}
+                      </RadioGroup>
+                    )}
+                  />
+                  {errors.payoutMethod && <p className="text-sm text-destructive mt-1">{errors.payoutMethod.message}</p>}
+                </div>
 
                 <div>
                   <Label htmlFor="payoutDetail">
-                    {watch('payoutMethod') === 'bank_transfer' && 'Bank Account / UPI ID'}
-                    {watch('payoutMethod') === 'paypal' && 'PayPal Email Address'}
-                    {watch('payoutMethod') === 'gift_card' && 'Preferred Gift Card & Email'}
-                    {!watch('payoutMethod') && 'Payment Details'}
+                    {watch('payoutMethod') === 'bank_transfer' && 'Bank Account No, IFSC, Name / UPI ID*'}
+                    {watch('payoutMethod') === 'paypal' && 'PayPal Email Address*'}
+                    {watch('payoutMethod') === 'gift_card' && 'Preferred Gift Card & Email to send*'}
+                    {!watch('payoutMethod') && 'Payment Details*'}
                   </Label>
                   <Textarea
                     id="payoutDetail"
@@ -418,8 +457,8 @@ export default function PayoutPage() {
                   {errors.payoutDetail && <p className="text-sm text-destructive mt-1">{errors.payoutDetail.message}</p>}
                 </div>
 
-                <Button type="submit" disabled={isSubmitting || !canRequestPayout || !isFormValid || !isDirty} className="w-full">
-                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                <Button type="submit" disabled={isSubmitting || !canRequest || !isFormValid || !isDirty} className="w-full">
+                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4"/>}
                   Request Payout of {formatCurrency(requestedAmount || 0)}
                 </Button>
               </form>
