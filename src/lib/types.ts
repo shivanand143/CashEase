@@ -1,4 +1,5 @@
 
+// src/lib/types.ts
 import type { Timestamp } from 'firebase/firestore';
 
 // Basic user type from Firebase Auth
@@ -31,25 +32,31 @@ export interface PayoutDetails {
   detail: string;
 }
 
-export type CashbackStatus = 'pending' | 'confirmed' | 'rejected' | 'paid' | 'cancelled';
+export type CashbackStatus = 'pending' | 'confirmed' | 'rejected' | 'cancelled' | 'paid';
 
 export interface Transaction {
   id: string; // Firestore document ID
   userId: string;
+  clickId?: string | null; // Link to the original click, if available
   storeId: string;
-  storeName?: string; // Denormalized for easier display
+  storeName?: string | null; // Denormalized for easier display
   orderId?: string | null; // Retailer's order ID
-  clickId?: string | null; // Link to the click record
-  saleAmount: number;
-  cashbackAmount: number; // Cashback earned by the user for this transaction
-  commissionAmount?: number | null; // Optional: Commission earned by the platform
-  status: CashbackStatus;
+  productDetails?: string | null; // e.g., "iPhone 15, 2 items of clothing"
   transactionDate: Date | Timestamp; // Date of purchase
-  confirmationDate?: Date | Timestamp | null; // Date cashback confirmed by retailer/admin
+  reportedDate?: Date | Timestamp; // Date admin/system reported/entered it
+  saleAmount: number; // Initial sale amount reported
+  cashbackRateApplied?: string | null; // e.g., "5%" or "₹50 Flat"
+  initialCashbackAmount?: number; // Calculated or manually entered
+  finalSaleAmount?: number | null; // Updated by admin for adjustments
+  finalCashbackAmount?: number | null; // Updated by admin
+  currency?: string; // e.g., "INR"
+  status: CashbackStatus;
+  confirmationDate?: Date | Timestamp | null; // Date cashback confirmed
+  rejectionReason?: string | null;
   paidDate?: Date | Timestamp | null; // Date cashback was included in a payout
   payoutId?: string | null; // ID of the PayoutRequest this transaction was part of
-  adminNotes?: string | null;
-  notesToUser?: string | null; // e.g. reason for rejection if status is 'rejected'
+  adminNotes?: string | null; // For admin internal use
+  notesToUser?: string | null; // e.g., reason for adjustment or rejection visible to user
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
@@ -64,7 +71,7 @@ export interface Click {
     productName?: string | null; // Denormalized
     affiliateLink: string; // The final affiliate link clicked
     timestamp: Date | Timestamp;
-    userAgent?: string | null; // Store user agent on client-side
+    userAgent?: string | null;
     clickId: string; // Ensure clickId is part of the data itself
 }
 
@@ -75,7 +82,7 @@ export type PayoutStatus = 'pending' | 'approved' | 'processing' | 'paid' | 'rej
 export interface Store {
   id: string;
   name: string;
-  slug?: string | null; // Made optional for flexibility
+  slug?: string | null;
   logoUrl: string | null;
   heroImageUrl?: string | null;
   affiliateLink: string;
@@ -96,7 +103,7 @@ export interface Store {
   terms?: string | null;
   isFeatured: boolean;
   isActive: boolean;
-  isTodaysDeal?: boolean; // For highlighting stores with special deals
+  isTodaysDeal?: boolean;
   dataAiHint?: string | null;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
@@ -105,14 +112,13 @@ export interface Store {
 export interface Coupon {
   id: string;
   storeId: string;
-  store?: Store; // Optional: for enriched data
+  store?: Store;
   code: string | null;
   description: string;
   link: string | null;
   expiryDate: Date | Timestamp | null;
   isFeatured: boolean;
   isActive: boolean;
-  // isTodaysDeal?: boolean; // Removed from Coupon, moved to Store
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
@@ -136,7 +142,7 @@ export interface Banner {
     subtitle?: string | null;
     imageUrl: string;
     link?: string | null;
-    altText: string;
+    altText?: string | null;
     dataAiHint?: string | null;
     order: number;
     isActive: boolean;
@@ -147,14 +153,14 @@ export interface Banner {
 export interface Product {
   id:string;
   storeId: string;
-  storeName?: string; // Denormalized for easier display in ProductCard if storeContext isn't available
+  storeName?: string;
   name: string;
   description?: string | null;
   imageUrl: string | null;
   affiliateLink: string;
   price?: number | null;
   priceDisplay?: string | null;
-  category?: string | null; // Category slug
+  category?: string | null;
   brand?: string | null;
   sku?: string | null;
   rating?: number | null;
@@ -163,7 +169,7 @@ export interface Product {
   specifications?: Record<string, string>;
   isActive: boolean;
   isFeatured?: boolean;
-  isTodaysPick?: boolean; // For highlighting specific products
+  isTodaysPick?: boolean;
   dataAiHint?: string | null;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
@@ -178,7 +184,7 @@ export interface PayoutRequest {
   processedAt?: Date | Timestamp | null;
   paymentMethod: PayoutMethod;
   paymentDetails: PayoutDetails;
-  transactionIds: string[]; // IDs of 'confirmed' transactions included in this payout
+  transactionIds: string[];
   adminNotes?: string | null;
   failureReason?: string | null;
 }
@@ -192,15 +198,12 @@ export interface ProductWithStore extends Product {
   store?: Store;
 }
 
-
-// Form values (ensure these are comprehensive for admin forms)
+// Form values
 export interface StoreFormValues extends Omit<Store, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface CouponFormValues extends Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'store'> {}
 export interface BannerFormValues extends Omit<Banner, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface CategoryFormValues extends Omit<Category, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface ProductFormValues extends Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'storeName'> {}
-
-// Form values for manual transaction entry by admin
-export interface TransactionFormValues extends Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'confirmationDate' | 'paidDate' | 'payoutId'> {
-    transactionDate: Date; // Ensure it's Date for form
+export interface TransactionFormValues extends Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'confirmationDate' | 'paidDate' | 'payoutId' | 'reportedDate'> {
+    transactionDate: Date;
 }
