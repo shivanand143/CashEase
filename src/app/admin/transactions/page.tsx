@@ -42,7 +42,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Loader2, Search, Edit, PlusCircle, CheckCircle, XCircle, Info, ListFilter, Calendar as CalendarIconLucide, IndianRupee } from 'lucide-react';
+import { AlertCircle, Loader2, Search, Edit, PlusCircle, CheckCircle, XCircle, Info, ListFilter, Calendar as CalendarIconLucide, IndianRupee, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -139,7 +139,7 @@ const getStatusVariant = (status: CashbackStatus): "default" | "secondary" | "de
 const getStatusIcon = (status: CashbackStatus) => {
   switch (status) {
     case 'confirmed': return <CheckCircle className="h-3 w-3 text-green-600" />;
-    case 'paid': return <IndianRupee className="h-3 w-3 text-blue-600" />; // Changed icon for paid
+    case 'paid': return <IndianRupee className="h-3 w-3 text-blue-600" />;
     case 'pending': return <Loader2 className="h-3 w-3 animate-spin text-yellow-600" />;
     case 'rejected':
     case 'cancelled': return <XCircle className="h-3 w-3 text-red-600" />;
@@ -162,30 +162,28 @@ export default function AdminTransactionsPage() {
   const debouncedSearchTerm = useDebounce(searchTermInput, 500);
   const [isSearching, setIsSearching] = useState(false);
 
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<TransactionWithUser | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  
+  // State for the edit/manage dialog, separate from the main form
+  const [currentEditStatus, setCurrentEditStatus] = useState<CashbackStatus>('pending');
+  const [currentEditAdminNotes, setCurrentEditAdminNotes] = useState('');
+  const [currentEditNotesToUser, setCurrentEditNotesToUser] = useState('');
+  const [currentEditRejectionReason, setCurrentEditRejectionReason] = useState('');
+
 
   const [userCache, setUserCache] = useState<Record<string, Pick<UserProfile, 'displayName' | 'email'>>>({});
   const [storeCache, setStoreCache] = useState<Record<string, Pick<Store, 'name'>>>({});
 
 
-  const form = useForm<TransactionFormValues>({
+  const addForm = useForm<TransactionFormValues>({
     resolver: zodResolver(transactionFormSchema),
     defaultValues: {
-      userId: '',
-      storeId: '',
-      storeName: '',
-      orderId: '',
-      clickId: '',
-      productDetails: '',
-      transactionDate: new Date(),
-      saleAmount: 0,
-      cashbackAmount: 0,
-      status: 'pending',
-      adminNotes: '',
-      notesToUser: '',
-      rejectionReason: '',
+      userId: '', storeId: '', storeName: '', orderId: '', clickId: '',
+      productDetails: '', transactionDate: new Date(), saleAmount: 0,
+      cashbackAmount: 0, status: 'pending', adminNotes: '', notesToUser: '', rejectionReason: ''
     },
   });
 
@@ -335,144 +333,60 @@ export default function AdminTransactionsPage() {
   };
 
   const openAddDialog = () => {
-    setEditingTransaction(null);
-    form.reset({
+    addForm.reset({
       userId: '', storeId: '', storeName: '', orderId: '', clickId: '',
       productDetails: '', transactionDate: new Date(), saleAmount: 0,
       cashbackAmount: 0, status: 'pending', adminNotes: '', notesToUser: '', rejectionReason: ''
     });
-    setIsDialogOpen(true);
+    setIsAddDialogOpen(true);
   };
 
   const openEditDialog = (transaction: TransactionWithUser) => {
     setEditingTransaction(transaction);
-    form.reset({
-      userId: transaction.userId,
-      storeId: transaction.storeId,
-      storeName: transaction.storeName || '',
-      orderId: transaction.orderId || '',
-      clickId: transaction.clickId || '',
-      productDetails: transaction.productDetails || '',
-      transactionDate: safeToDate(transaction.transactionDate) || new Date(),
-      saleAmount: transaction.finalSaleAmount ?? transaction.saleAmount,
-      cashbackAmount: transaction.finalCashbackAmount ?? transaction.initialCashbackAmount ?? 0,
-      status: transaction.status,
-      adminNotes: transaction.adminNotes || '',
-      notesToUser: transaction.notesToUser || '',
-      rejectionReason: transaction.rejectionReason || '',
-    });
-    setIsDialogOpen(true);
+    setCurrentEditStatus(transaction.status);
+    setCurrentEditAdminNotes(transaction.adminNotes || '');
+    setCurrentEditNotesToUser(transaction.notesToUser || '');
+    setCurrentEditRejectionReason(transaction.rejectionReason || '');
+    setIsEditDialogOpen(true);
   };
 
-  const handleAddOrEditTransactionSubmit = async (data: TransactionFormValues) => {
+  const handleAddTransactionSubmit = async (data: TransactionFormValues) => {
     if (!db) { setPageError("Database not available."); setIsSaving(false); return; }
     setIsSaving(true);
     setPageError(null);
 
-    const originalTransaction = editingTransaction;
-    const newStatus = data.status;
-    const oldStatus = originalTransaction?.status;
-
     try {
-      if (editingTransaction) { // --- EDITING EXISTING TRANSACTION ---
-        await runTransaction(db, async (firestoreTransaction) => {
-          const transactionDocRef = doc(db, 'transactions', editingTransaction.id);
-          const userDocRef = doc(db, 'users', editingTransaction.userId);
-
-          const transactionSnap = await firestoreTransaction.get(transactionDocRef);
-          const userSnap = await firestoreTransaction.get(userDocRef);
-
-          if (!transactionSnap.exists()) throw new Error("Transaction not found.");
-          if (!userSnap.exists()) throw new Error("User profile not found.");
-
-          const currentTransactionData = transactionSnap.data() as Transaction;
-          
-          const updatesForTransaction: Partial<Transaction> = {
-            ...data,
-            storeName: data.storeName || (storeCache[data.storeId]?.name || null),
-            finalSaleAmount: data.saleAmount,
-            finalCashbackAmount: data.cashbackAmount,
-            updatedAt: serverTimestamp(),
-            rejectionReason: (newStatus === 'rejected' || newStatus === 'cancelled') ? data.rejectionReason : null,
-            notesToUser: data.notesToUser || null,
-            adminNotes: data.adminNotes || null,
-          };
-
-          const userProfileUpdates: Record<string, any> = { updatedAt: serverTimestamp() };
-          const oldCashbackInDb = currentTransactionData.finalCashbackAmount ?? currentTransactionData.initialCashbackAmount ?? 0;
-          const newCashbackAmountFromForm = data.cashbackAmount;
-
-          if (newStatus !== oldStatus) {
-            updatesForTransaction.confirmationDate = (newStatus === 'confirmed' || newStatus === 'paid') ? 
-                                                     (currentTransactionData.confirmationDate || serverTimestamp()) : null;
-            updatesForTransaction.paidDate = newStatus === 'paid' ? (currentTransactionData.paidDate || serverTimestamp()) : null;
-
-            // Reverting from Confirmed/Paid to Pending/Rejected/Cancelled
-            if ((oldStatus === 'confirmed' || oldStatus === 'paid') && (newStatus === 'pending' || newStatus === 'rejected' || newStatus === 'cancelled')) {
-              userProfileUpdates.cashbackBalance = increment(-oldCashbackInDb);
-              if (oldStatus !== 'paid') userProfileUpdates.lifetimeCashback = increment(-oldCashbackInDb); // Don't double-deduct lifetime if it was already paid
-              if (newStatus === 'pending') userProfileUpdates.pendingCashback = increment(newCashbackAmountFromForm); // Add the new amount to pending
-            }
-            // Reverting from Pending to Rejected/Cancelled
-            else if (oldStatus === 'pending' && (newStatus === 'rejected' || newStatus === 'cancelled')) {
-              userProfileUpdates.pendingCashback = increment(-oldCashbackInDb);
-            }
-            // Moving to Confirmed/Paid from Pending
-            else if (oldStatus === 'pending' && (newStatus === 'confirmed' || newStatus === 'paid')) {
-              userProfileUpdates.pendingCashback = increment(-oldCashbackInDb);
-              userProfileUpdates.cashbackBalance = increment(newCashbackAmountFromForm);
-              userProfileUpdates.lifetimeCashback = increment(newCashbackAmountFromForm);
-            }
-            // Moving to Paid from Confirmed (No change to user balance fields, only transaction status)
-            // else if (oldStatus === 'confirmed' && newStatus === 'paid') { /* No direct balance change here */ }
-          } else { // Status is the same, but amounts might have changed
-            if (newStatus === 'confirmed' || newStatus === 'paid') {
-              if (newCashbackAmountFromForm !== oldCashbackInDb) {
-                const diff = newCashbackAmountFromForm - oldCashbackInDb;
-                userProfileUpdates.cashbackBalance = increment(diff);
-                userProfileUpdates.lifetimeCashback = increment(diff);
-              }
-            } else if (newStatus === 'pending') {
-              if (newCashbackAmountFromForm !== oldCashbackInDb) {
-                const diff = newCashbackAmountFromForm - oldCashbackInDb;
-                userProfileUpdates.pendingCashback = increment(diff);
-              }
-            }
-          }
-
-          firestoreTransaction.update(transactionDocRef, updatesForTransaction);
-          if (Object.keys(userProfileUpdates).length > 1) {
-            firestoreTransaction.update(userDocRef, userProfileUpdates);
-          }
-        });
-
-        toast({ title: "Transaction Updated", description: `Transaction ${editingTransaction.id} details saved.` });
-        fetchTransactions(false, null); // Re-fetch
-
-      } else { // --- ADDING NEW TRANSACTION ---
         await runTransaction(db, async (firestoreTransaction) => {
             const userDocRef = doc(db, 'users', data.userId);
             const userSnap = await firestoreTransaction.get(userDocRef);
             if (!userSnap.exists()) throw new Error(`User with ID ${data.userId} not found.`);
 
             const newTransactionRef = doc(collection(db, 'transactions'));
+            const storeNameFromCache = storeCache[data.storeId]?.name || data.storeName || 'Unknown Store';
+            
             const transactionDataToSave: Omit<Transaction, 'id'> = {
-                ...data,
-                storeName: data.storeName || (storeCache[data.storeId]?.name || null),
-                transactionDate: data.transactionDate, // Already a Date object from form
+                userId: data.userId,
+                storeId: data.storeId,
+                storeName: storeNameFromCache,
+                orderId: data.orderId || null,
+                clickId: data.clickId || null,
+                productDetails: data.productDetails || null,
+                transactionDate: data.transactionDate,
+                saleAmount: data.saleAmount,
                 initialCashbackAmount: data.cashbackAmount,
-                finalSaleAmount: data.saleAmount,
-                finalCashbackAmount: data.cashbackAmount,
-                rejectionReason: (data.status === 'rejected' || data.status === 'cancelled') ? data.rejectionReason : null,
+                finalSaleAmount: data.saleAmount, // Initially same
+                finalCashbackAmount: data.cashbackAmount, // Initially same
+                currency: 'INR',
+                status: data.status,
                 confirmationDate: (data.status === 'confirmed' || data.status === 'paid') ? serverTimestamp() : null,
                 paidDate: data.status === 'paid' ? serverTimestamp() : null,
                 payoutId: null,
                 reportedDate: serverTimestamp(),
+                rejectionReason: (data.status === 'rejected' || data.status === 'cancelled') ? data.rejectionReason : null,
+                adminNotes: data.adminNotes || null,
+                notesToUser: data.notesToUser || null,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
-                currency: 'INR', // Assuming INR
-                notesToUser: data.notesToUser || null,
-                adminNotes: data.adminNotes || null,
             };
             firestoreTransaction.set(newTransactionRef, transactionDataToSave);
 
@@ -483,20 +397,150 @@ export default function AdminTransactionsPage() {
                 userProfileUpdates.cashbackBalance = increment(data.cashbackAmount);
                 userProfileUpdates.lifetimeCashback = increment(data.cashbackAmount);
             }
-            if (Object.keys(userProfileUpdates).length > 1) {
+            if (Object.keys(userProfileUpdates).length > 1) { // only update if more than just updatedAt
                 firestoreTransaction.update(userDocRef, userProfileUpdates);
             }
         });
         toast({ title: "Transaction Added", description: `New transaction has been created.` });
-        fetchTransactions(false, null); // Re-fetch
-      }
-      setIsDialogOpen(false);
-      form.reset();
+        fetchTransactions(false, null);
+        setIsAddDialogOpen(false);
+        addForm.reset();
     } catch (err) {
-      console.error("Error saving transaction:", err);
-      const errorMsg = err instanceof Error ? err.message : "Could not save transaction details.";
+      console.error("Error adding transaction:", err);
+      const errorMsg = err instanceof Error ? err.message : "Could not add transaction.";
       setPageError(errorMsg);
-      toast({ variant: "destructive", title: "Save Failed", description: errorMsg });
+      toast({ variant: "destructive", title: "Add Failed", description: errorMsg });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleApproveTransaction = async () => {
+    if (!editingTransaction || !db) return;
+    setIsSaving(true);
+    setPageError(null);
+
+    const transactionRef = doc(db, 'transactions', editingTransaction.id);
+    const userRef = doc(db, 'users', editingTransaction.userId);
+
+    try {
+      await runTransaction(db, async (firestoreTransaction) => {
+        const transactionSnap = await firestoreTransaction.get(transactionRef);
+        const userSnap = await firestoreTransaction.get(userRef);
+
+        if (!transactionSnap.exists()) throw new Error("Transaction not found.");
+        if (!userSnap.exists()) throw new Error("User profile not found.");
+
+        const currentTransactionData = transactionSnap.data() as Transaction;
+        if (currentTransactionData.status !== 'pending') {
+            throw new Error("Transaction is not pending and cannot be approved this way.");
+        }
+
+        const cashbackToConfirm = currentTransactionData.finalCashbackAmount ?? currentTransactionData.initialCashbackAmount ?? 0;
+
+        firestoreTransaction.update(transactionRef, {
+          status: 'confirmed' as CashbackStatus,
+          confirmationDate: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          adminNotes: currentEditAdminNotes,
+          notesToUser: currentEditNotesToUser,
+          rejectionReason: null, // Clear rejection reason on approval
+        });
+
+        firestoreTransaction.update(userRef, {
+          pendingCashback: increment(-cashbackToConfirm),
+          cashbackBalance: increment(cashbackToConfirm),
+          lifetimeCashback: increment(cashbackToConfirm), // Assume confirmed cashback adds to lifetime earnings
+          updatedAt: serverTimestamp(),
+        });
+      });
+
+      toast({ title: "Transaction Approved", description: `Transaction ${editingTransaction.id} marked as confirmed.` });
+      fetchTransactions(false, null);
+      setIsEditDialogOpen(false);
+    } catch (err) {
+      console.error("Error approving transaction:", err);
+      const errorMsg = err instanceof Error ? err.message : "Could not approve transaction.";
+      setPageError(errorMsg);
+      toast({ variant: "destructive", title: "Approval Failed", description: errorMsg });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleRejectTransaction = async () => {
+    if (!editingTransaction || !currentEditRejectionReason.trim() || !db) {
+      toast({ variant: "destructive", title: "Rejection Failed", description: "Rejection reason is required." });
+      return;
+    }
+    setIsSaving(true);
+    setPageError(null);
+
+    const transactionRef = doc(db, 'transactions', editingTransaction.id);
+    const userRef = doc(db, 'users', editingTransaction.userId);
+
+    try {
+      await runTransaction(db, async (firestoreTransaction) => {
+        const transactionSnap = await firestoreTransaction.get(transactionRef);
+        const userSnap = await firestoreTransaction.get(userRef);
+
+        if (!transactionSnap.exists()) throw new Error("Transaction not found.");
+        if (!userSnap.exists()) throw new Error("User profile not found.");
+        
+        const currentTransactionData = transactionSnap.data() as Transaction;
+        if (currentTransactionData.status !== 'pending') {
+            throw new Error("Transaction is not pending and cannot be rejected this way.");
+        }
+        
+        const cashbackToAdjust = currentTransactionData.finalCashbackAmount ?? currentTransactionData.initialCashbackAmount ?? 0;
+
+        firestoreTransaction.update(transactionRef, {
+          status: 'rejected' as CashbackStatus,
+          rejectionReason: currentEditRejectionReason.trim(),
+          confirmationDate: null, // Clear confirmation date on rejection
+          updatedAt: serverTimestamp(),
+          adminNotes: currentEditAdminNotes,
+          notesToUser: currentEditNotesToUser,
+        });
+
+        firestoreTransaction.update(userRef, {
+          pendingCashback: increment(-cashbackToAdjust),
+          updatedAt: serverTimestamp(),
+        });
+      });
+
+      toast({ title: "Transaction Rejected", description: `Transaction ${editingTransaction.id} marked as rejected.` });
+      fetchTransactions(false, null);
+      setIsEditDialogOpen(false);
+    } catch (err) {
+      console.error("Error rejecting transaction:", err);
+      const errorMsg = err instanceof Error ? err.message : "Could not reject transaction.";
+      setPageError(errorMsg);
+      toast({ variant: "destructive", title: "Rejection Failed", description: errorMsg });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // For updating notes on already processed transactions
+  const handleUpdateNotes = async () => {
+    if (!editingTransaction || !db) return;
+    setIsSaving(true);
+    setPageError(null);
+    try {
+      const transactionRef = doc(db, 'transactions', editingTransaction.id);
+      await updateDoc(transactionRef, {
+        adminNotes: currentEditAdminNotes,
+        notesToUser: currentEditNotesToUser,
+        updatedAt: serverTimestamp(),
+      });
+      toast({ title: "Transaction Notes Updated" });
+      fetchTransactions(false, null);
+      setIsEditDialogOpen(false);
+    } catch (err) {
+      console.error("Error updating notes:", err);
+      setPageError(err instanceof Error ? err.message : "Could not update notes.");
+      toast({ variant: "destructive", title: "Update Failed" });
     } finally {
       setIsSaving(false);
     }
@@ -597,7 +641,7 @@ export default function AdminTransactionsPage() {
                       <TableHead>Cashback Amt.</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Transaction Date</TableHead>
-                      <TableHead>Confirmed/Paid Date</TableHead>
+                      <TableHead>Details</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -626,11 +670,10 @@ export default function AdminTransactionsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="whitespace-nowrap">{transaction.transactionDate ? format(new Date(transaction.transactionDate), 'PP') : 'N/A'}</TableCell>
-                        <TableCell className="whitespace-nowrap text-xs">
-                            {transaction.confirmationDate ? `Conf: ${format(safeToDate(transaction.confirmationDate)!, 'PP')}` : ''}
-                            {transaction.confirmationDate && transaction.paidDate ? <br /> : ''}
-                            {transaction.paidDate ? `Paid: ${format(safeToDate(transaction.paidDate)!, 'PP')}` : ''}
-                            {!transaction.confirmationDate && !transaction.paidDate ? 'N/A' : ''}
+                        <TableCell className="text-xs">
+                           {transaction.confirmationDate && <div>Conf: {format(safeToDate(transaction.confirmationDate)!, 'PP')}</div>}
+                           {transaction.paidDate && <div>Paid: {format(safeToDate(transaction.paidDate)!, 'PP')}</div>}
+                           {transaction.rejectionReason && <div className="text-destructive">Rej: {transaction.rejectionReason}</div>}
                         </TableCell>
                         <TableCell className="text-right">
                               <Button variant="outline" size="sm" onClick={() => openEditDialog(transaction)}>
@@ -655,44 +698,44 @@ export default function AdminTransactionsPage() {
           </CardContent>
         </Card>
 
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        {/* Add Transaction Dialog */}
+        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{editingTransaction ? 'Edit Transaction' : 'Add New Transaction'}</DialogTitle>
-              <DialogDescription>
-                {editingTransaction ? `Update details for transaction ID: ${editingTransaction.id}` : 'Manually enter a new transaction.'}
-              </DialogDescription>
+              <DialogTitle>Add New Transaction</DialogTitle>
+              <DialogDescription>Manually enter a new transaction.</DialogDescription>
             </DialogHeader>
-            <form onSubmit={form.handleSubmit(handleAddOrEditTransactionSubmit)} className="grid gap-4 py-4">
+            <form onSubmit={addForm.handleSubmit(handleAddTransactionSubmit)} className="grid gap-4 py-4">
+              {/* Form fields from transactionFormSchema */}
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="userIdForm" className="text-right col-span-1">User ID*</Label>
-                <Input id="userIdForm" {...form.register('userId')} className="col-span-3" disabled={isSaving || !!editingTransaction} />
-                {form.formState.errors.userId && <p className="col-span-3 col-start-2 text-sm text-destructive">{form.formState.errors.userId.message}</p>}
+                <Input id="userIdForm" {...addForm.register('userId')} className="col-span-3" disabled={isSaving} />
+                {addForm.formState.errors.userId && <p className="col-span-3 col-start-2 text-sm text-destructive">{addForm.formState.errors.userId.message}</p>}
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="storeIdForm" className="text-right col-span-1">Store ID*</Label>
-                <Input id="storeIdForm" {...form.register('storeId')} className="col-span-3" disabled={isSaving || !!editingTransaction}/>
-                {form.formState.errors.storeId && <p className="col-span-3 col-start-2 text-sm text-destructive">{form.formState.errors.storeId.message}</p>}
+                <Input id="storeIdForm" {...addForm.register('storeId')} className="col-span-3" disabled={isSaving}/>
+                {addForm.formState.errors.storeId && <p className="col-span-3 col-start-2 text-sm text-destructive">{addForm.formState.errors.storeId.message}</p>}
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="storeNameForm" className="text-right col-span-1">Store Name</Label>
-                <Input id="storeNameForm" {...form.register('storeName')} className="col-span-3" disabled={isSaving} placeholder="Auto-filled if Store ID known"/>
+                <Input id="storeNameForm" {...addForm.register('storeName')} className="col-span-3" disabled={isSaving} placeholder="Auto-filled if Store ID known"/>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="orderIdForm" className="text-right col-span-1">Order ID</Label>
-                <Input id="orderIdForm" {...form.register('orderId')} className="col-span-3" disabled={isSaving}/>
+                <Input id="orderIdForm" {...addForm.register('orderId')} className="col-span-3" disabled={isSaving}/>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="clickIdForm" className="text-right col-span-1">Click ID</Label>
-                <Input id="clickIdForm" {...form.register('clickId')} className="col-span-3" disabled={isSaving}/>
+                <Input id="clickIdForm" {...addForm.register('clickId')} className="col-span-3" disabled={isSaving}/>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="productDetailsForm" className="text-right col-span-1">Product Details</Label>
-                <Textarea id="productDetailsForm" {...form.register('productDetails')} className="col-span-3" rows={2} disabled={isSaving}/>
+                <Textarea id="productDetailsForm" {...addForm.register('productDetails')} className="col-span-3" rows={2} disabled={isSaving}/>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                  <Label htmlFor="transactionDateForm" className="text-right col-span-1">Transaction Date*</Label>
-                  <Controller name="transactionDate" control={form.control} render={({ field }) => (
+                  <Controller name="transactionDate" control={addForm.control} render={({ field }) => (
                     <Popover>
                       <PopoverTrigger asChild>
                         <Button variant={"outline"} className={cn("col-span-3 justify-start text-left font-normal h-10",!field.value && "text-muted-foreground")} disabled={isSaving}>
@@ -705,21 +748,21 @@ export default function AdminTransactionsPage() {
                       </PopoverContent>
                     </Popover>
                   )} />
-                  {form.formState.errors.transactionDate && <p className="col-span-3 col-start-2 text-sm text-destructive">{form.formState.errors.transactionDate.message}</p>}
+                  {addForm.formState.errors.transactionDate && <p className="col-span-3 col-start-2 text-sm text-destructive">{addForm.formState.errors.transactionDate.message}</p>}
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="saleAmountForm" className="text-right col-span-1">Sale Amount*</Label>
-                <Input id="saleAmountForm" type="number" step="0.01" {...form.register('saleAmount', { valueAsNumber: true })} className="col-span-3" disabled={isSaving}/>
-                {form.formState.errors.saleAmount && <p className="col-span-3 col-start-2 text-sm text-destructive">{form.formState.errors.saleAmount.message}</p>}
+                <Input id="saleAmountForm" type="number" step="0.01" {...addForm.register('saleAmount', { valueAsNumber: true })} className="col-span-3" disabled={isSaving}/>
+                {addForm.formState.errors.saleAmount && <p className="col-span-3 col-start-2 text-sm text-destructive">{addForm.formState.errors.saleAmount.message}</p>}
               </div>
                <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="cashbackAmountForm" className="text-right col-span-1">Cashback Amount*</Label>
-                <Input id="cashbackAmountForm" type="number" step="0.01" {...form.register('cashbackAmount', { valueAsNumber: true })} className="col-span-3" disabled={isSaving}/>
-                {form.formState.errors.cashbackAmount && <p className="col-span-3 col-start-2 text-sm text-destructive">{form.formState.errors.cashbackAmount.message}</p>}
+                <Input id="cashbackAmountForm" type="number" step="0.01" {...addForm.register('cashbackAmount', { valueAsNumber: true })} className="col-span-3" disabled={isSaving}/>
+                {addForm.formState.errors.cashbackAmount && <p className="col-span-3 col-start-2 text-sm text-destructive">{addForm.formState.errors.cashbackAmount.message}</p>}
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="statusForm" className="text-right col-span-1">Status*</Label>
-                <Controller name="status" control={form.control} render={({ field }) => (
+                <Controller name="status" control={addForm.control} render={({ field }) => (
                     <Select value={field.value} onValueChange={field.onChange} disabled={isSaving}>
                     <SelectTrigger id="statusForm" className="col-span-3"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -731,21 +774,21 @@ export default function AdminTransactionsPage() {
                     </SelectContent>
                     </Select>
                 )} />
-                {form.formState.errors.status && <p className="col-span-3 col-start-2 text-sm text-destructive">{form.formState.errors.status.message}</p>}
+                {addForm.formState.errors.status && <p className="col-span-3 col-start-2 text-sm text-destructive">{addForm.formState.errors.status.message}</p>}
               </div>
-              {(form.watch('status') === 'rejected' || form.watch('status') === 'cancelled') && (
+              {(addForm.watch('status') === 'rejected' || addForm.watch('status') === 'cancelled') && (
                   <div className="grid grid-cols-4 items-center gap-4">
                       <Label htmlFor="rejectionReasonForm" className="text-right col-span-1">Rejection Reason</Label>
-                      <Input id="rejectionReasonForm" {...form.register('rejectionReason')} className="col-span-3" disabled={isSaving} placeholder="Required if rejected/cancelled"/>
+                      <Input id="rejectionReasonForm" {...addForm.register('rejectionReason')} className="col-span-3" disabled={isSaving} placeholder="Required if rejected/cancelled"/>
                   </div>
               )}
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="adminNotesForm" className="text-right col-span-1">Admin Notes</Label>
-                <Textarea id="adminNotesForm" {...form.register('adminNotes')} className="col-span-3" rows={2} disabled={isSaving}/>
+                <Textarea id="adminNotesForm" {...addForm.register('adminNotes')} className="col-span-3" rows={2} disabled={isSaving}/>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="notesToUserForm" className="text-right col-span-1">Notes for User</Label>
-                <Textarea id="notesToUserForm" {...form.register('notesToUser')} className="col-span-3" rows={2} disabled={isSaving}/>
+                <Textarea id="notesToUserForm" {...addForm.register('notesToUser')} className="col-span-3" rows={2} disabled={isSaving}/>
               </div>
               <DialogFooter>
                 <DialogClose asChild>
@@ -753,13 +796,79 @@ export default function AdminTransactionsPage() {
                 </DialogClose>
                 <Button type="submit" disabled={isSaving}>
                   {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  {editingTransaction ? 'Save Changes' : 'Add Transaction'}
+                  Add Transaction
                 </Button>
               </DialogFooter>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit/Manage Transaction Dialog */}
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Manage Transaction</DialogTitle>
+              <DialogDescription>
+                Review and update transaction ID: {editingTransaction?.id}
+              </DialogDescription>
+            </DialogHeader>
+            {editingTransaction && (
+              <div className="space-y-4 py-4">
+                <p className="text-sm"><strong>User:</strong> {editingTransaction.userDisplayName} ({editingTransaction.userId})</p>
+                <p className="text-sm"><strong>Store:</strong> {editingTransaction.storeName}</p>
+                <p className="text-sm"><strong>Order ID:</strong> {editingTransaction.orderId || 'N/A'}</p>
+                <p className="text-sm"><strong>Sale Amount:</strong> {formatCurrency(editingTransaction.finalSaleAmount ?? editingTransaction.saleAmount)}</p>
+                <p className="text-sm"><strong>Cashback:</strong> {formatCurrency(editingTransaction.finalCashbackAmount ?? editingTransaction.initialCashbackAmount ?? 0)}</p>
+                <p className="text-sm"><strong>Current Status:</strong> <Badge variant={getStatusVariant(editingTransaction.status)}>{editingTransaction.status}</Badge></p>
+                
+                <hr/>
+                
+                <div>
+                  <Label htmlFor="editAdminNotes">Admin Notes</Label>
+                  <Textarea id="editAdminNotes" value={currentEditAdminNotes} onChange={(e) => setCurrentEditAdminNotes(e.target.value)} disabled={isSaving} />
+                </div>
+                <div>
+                  <Label htmlFor="editNotesToUser">Notes for User</Label>
+                  <Textarea id="editNotesToUser" value={currentEditNotesToUser} onChange={(e) => setCurrentEditNotesToUser(e.target.value)} disabled={isSaving} />
+                </div>
+
+                {editingTransaction.status === 'pending' && (
+                  <>
+                    <hr/>
+                    <div className="space-y-2">
+                      <Label htmlFor="editRejectionReason">Rejection Reason (if rejecting)</Label>
+                      <Textarea id="editRejectionReason" value={currentEditRejectionReason} onChange={(e) => setCurrentEditRejectionReason(e.target.value)} placeholder="Enter reason if rejecting this transaction" disabled={isSaving} />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline" disabled={isSaving}>Cancel</Button>
+              </DialogClose>
+              {editingTransaction?.status === 'pending' ? (
+                <>
+                  <Button onClick={handleRejectTransaction} variant="destructive" disabled={isSaving || !currentEditRejectionReason.trim()}>
+                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ThumbsDown className="mr-2 h-4 w-4" />}
+                    Reject
+                  </Button>
+                  <Button onClick={handleApproveTransaction} disabled={isSaving}>
+                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ThumbsUp className="mr-2 h-4 w-4" />}
+                    Approve
+                  </Button>
+                </>
+              ) : (
+                <Button onClick={handleUpdateNotes} disabled={isSaving}>
+                   {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                   Update Notes
+                </Button>
+              )}
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
     </AdminGuard>
   );
 }
+
