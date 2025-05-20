@@ -23,7 +23,7 @@ function AddProductPageSkeleton() {
         <CardContent className="grid md:grid-cols-2 gap-x-6 gap-y-4">
           {/* Loop for form fields - adjust count based on actual form complexity */}
           {Array.from({ length: 8 }).map((_, index) => (
-            <div key={`form-field-skel-${index}`} className="space-y-1 md:col-span-${index < 4 ? 1 : 2}`}>
+            <div key={`form-field-skel-${index}`} className={`space-y-1 md:col-span-${index < 4 ? 1 : 2}`}>
               <Skeleton className="h-4 w-1/4" /> {/* Label */}
               <Skeleton className="h-10 w-full" /> {/* Input/Select/Textarea */}
             </div>
