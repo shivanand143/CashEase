@@ -1,4 +1,3 @@
-
 // src/app/dashboard/clicks/page.tsx
 "use client";
 
@@ -36,6 +35,7 @@ import { safeToDate } from '@/lib/utils';
 import { format } from 'date-fns';
 import { AlertCircle, Loader2, MousePointerClick, ExternalLink } from 'lucide-react';
 import ProtectedRoute from '@/components/guards/protected-route';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const CLICKS_PER_PAGE = 20;
 
@@ -76,36 +76,40 @@ export default function ClickHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [clicks, setClicks] = React.useState<Click[]>([]);
-  const [loadingPage, setLoadingPage] = React.useState(true); // Primary page loading state
+  const [loading, setLoading] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
 
-  const fetchClicks = React.useCallback(async (isLoadMore = false) => {
+  const fetchClicks = React.useCallback(async (isLoadMore = false, docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null) => {
     let isMounted = true;
     if (!user) {
-      if (isMounted && !isLoadMore) setLoadingPage(false);
-      return;
+      if (isMounted && !isLoadMore) setLoading(false);
+      return () => { isMounted = false; };
     }
 
     if (firebaseInitializationError || !db) {
       if (isMounted) {
         setPageError(firebaseInitializationError || "Database not available.");
-        if (!isLoadMore) setLoadingPage(false); else setLoadingMore(false);
+        if (!isLoadMore) setLoading(false); else setLoadingMore(false);
         setHasMore(false);
       }
-      return;
+      return () => { isMounted = false; };
     }
     
-    if (isLoadMore) {
-      setLoadingMore(true);
-    } else {
-      setLoadingPage(true);
+    if (!isLoadMore) {
+      setLoading(true);
       setClicks([]);
       setLastVisible(null);
       setHasMore(true);
       setPageError(null);
+    } else {
+      if (!docToStartAfter && isLoadMore) {
+        if(isMounted) setLoadingMore(false);
+        return () => { isMounted = false; };
+      }
+      setLoadingMore(true);
     }
 
     try {
@@ -116,8 +120,8 @@ export default function ClickHistoryPage() {
         limit(CLICKS_PER_PAGE)
       ];
 
-      if (isLoadMore && lastVisible) {
-        constraints.push(startAfter(lastVisible));
+      if (isLoadMore && docToStartAfter) {
+        constraints.push(startAfter(docToStartAfter));
       }
 
       const q = query(clicksCollection, ...constraints);
@@ -146,38 +150,40 @@ export default function ClickHistoryPage() {
       }
     } finally {
       if(isMounted) {
-        if (isLoadMore) setLoadingMore(false);
-        else setLoadingPage(false);
+        if (!isLoadMore) setLoading(false);
+        else setLoadingMore(false);
       }
     }
-  }, [user, lastVisible]); // Added lastVisible
+    return () => { isMounted = false; };
+  }, [user, lastVisible]);
 
   React.useEffect(() => {
     let isMounted = true;
     if (authLoading) {
-      // console.log("CLICKS_PAGE: Auth loading, waiting...");
+      setLoading(true);
       return;
     }
 
     if (!user) {
-      console.log("CLICKS_PAGE: No user, auth finished. Redirecting.");
-      if (isMounted) setLoadingPage(false);
-      router.push('/login?message=Please login to view your click history.');
+      if(isMounted) {
+        setLoading(false);
+        router.push('/login?message=Please login to view your click history.');
+      }
     } else {
-      // console.log("CLICKS_PAGE: User present, auth done. Fetching initial clicks.");
-      fetchClicks(false);
+      if(isMounted) {
+        fetchClicks(false, null);
+      }
     }
     return () => { isMounted = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, authLoading, router]); // fetchClicks is memoized
+  }, [user, authLoading, router, fetchClicks]);
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      fetchClicks(true);
+      fetchClicks(true, lastVisible);
     }
   };
 
-  if (authLoading || loadingPage) {
+  if (authLoading || (loading && clicks.length === 0 && !pageError)) {
     return <ProtectedRoute><ClickHistoryTableSkeleton /></ProtectedRoute>;
   }
 
@@ -198,80 +204,107 @@ export default function ClickHistoryPage() {
 
   return (
     <ProtectedRoute>
+      <TooltipProvider>
         <div className="space-y-6">
-        <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-            <MousePointerClick className="w-6 h-6 sm:w-7 sm:h-7" /> Click History
-        </h1>
+          <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+              <MousePointerClick className="w-6 h-6 sm:w-7 sm:h-7" /> Click History
+          </h1>
 
-        {pageError && (
-            <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error Loading History</AlertTitle>
-            <AlertDescription>{pageError}</AlertDescription>
-            </Alert>
-        )}
+          {pageError && (
+              <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Error Loading History</AlertTitle>
+              <AlertDescription>{pageError}</AlertDescription>
+              </Alert>
+          )}
 
-        <Card>
-            <CardHeader>
-            <CardTitle>Your Recent Clicks</CardTitle>
-            <CardDescription>View the stores and offers you recently clicked on. Clicks are retained for 90 days.</CardDescription>
-            </CardHeader>
-            <CardContent>
-            {!loadingPage && clicks.length === 0 && !pageError ? (
-                <div className="text-center py-16 text-muted-foreground">
-                <p className="mb-4">You haven't clicked on any offers yet, or your clicks are older than 90 days.</p>
-                <Button asChild>
-                    <Link href="/stores">Browse Stores & Offers</Link>
-                </Button>
-                </div>
-            ) : (
-                <div className="overflow-x-auto">
-                <Table>
-                    <TableHeader>
-                    <TableRow>
-                        <TableHead className="min-w-[150px]">Store</TableHead>
-                        <TableHead className="min-w-[200px]">Item Clicked</TableHead>
-                        <TableHead className="min-w-[180px]">Clicked At</TableHead>
-                        <TableHead className="min-w-[200px]">Link Clicked</TableHead>
-                        <TableHead className="text-right min-w-[120px]">Click ID</TableHead>
-                    </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                    {clicks.map((click) => (
-                        <TableRow key={click.id}>
-                        <TableCell className="font-medium truncate" title={click.storeName || click.storeId || undefined}>{click.storeName || click.storeId || 'N/A'}</TableCell>
-                        <TableCell className="truncate" title={click.productId ? `Product: ${click.productName || click.productId}` : click.couponId ? `Coupon ID: ${click.couponId}` : 'Store Visit'}>
-                            {click.productId ? `Product: ${click.productName || click.productId}` :
-                            click.couponId ? `Coupon: ${click.couponId}` : 
-                            'Store Visit'}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">{click.timestamp ? format(new Date(click.timestamp), 'PPp') : 'N/A'}</TableCell>
-                        <TableCell>
-                            <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs">
-                                <a href={click.affiliateLink} target="_blank" rel="noopener noreferrer" title={click.affiliateLink} className="truncate block max-w-[200px] sm:max-w-xs md:max-w-sm">
-                                    {click.affiliateLink || 'N/A'} <ExternalLink className="h-3 w-3 ml-1 inline-block align-middle"/>
-                                </a>
-                            </Button>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs truncate text-right" title={click.clickId}>{click.clickId}</TableCell>
-                        </TableRow>
-                    ))}
-                    </TableBody>
-                </Table>
-                </div>
-            )}
-            {hasMore && !loadingPage && clicks.length > 0 &&(
-                <div className="mt-6 text-center">
-                <Button onClick={handleLoadMore} disabled={loadingMore || loadingPage}>
-                    {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Load More Clicks
-                </Button>
-                </div>
-            )}
-            {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
-            </CardContent>
-        </Card>
+          <Card>
+              <CardHeader>
+              <CardTitle>Your Recent Clicks</CardTitle>
+              <CardDescription>View the stores and offers you recently clicked on. Clicks are retained for 90 days.</CardDescription>
+              </CardHeader>
+              <CardContent>
+              {loading && clicks.length === 0 ? (
+                  <ClickHistoryTableSkeleton />
+              ) : !loading && clicks.length === 0 && !pageError ? (
+                  <div className="text-center py-16 text-muted-foreground">
+                  <p className="mb-4">You haven't clicked on any offers yet, or your clicks are older than 90 days.</p>
+                  <Button asChild>
+                      <Link href="/stores">Browse Stores & Offers</Link>
+                  </Button>
+                  </div>
+              ) : (
+                  <div className="overflow-x-auto">
+                  <Table>
+                      <TableHeader>
+                      <TableRow>
+                          <TableHead className="min-w-[150px]">Store</TableHead>
+                          <TableHead className="min-w-[200px]">Item Clicked</TableHead>
+                          <TableHead className="min-w-[180px]">Clicked At</TableHead>
+                          <TableHead className="min-w-[200px]">Link Clicked</TableHead>
+                          <TableHead className="text-right min-w-[120px]">Click ID</TableHead>
+                      </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                      {clicks.map((click) => (
+                          <TableRow key={click.id}>
+                          <TableCell className="font-medium">
+                            <Tooltip>
+                              <TooltipTrigger asChild><span className="truncate block max-w-[150px]">{click.storeName || click.storeId || 'N/A'}</span></TooltipTrigger>
+                              <TooltipContent><p>{click.storeName || click.storeId || 'N/A'}</p></TooltipContent>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell>
+                             <Tooltip>
+                               <TooltipTrigger asChild>
+                                <span className="truncate block max-w-[200px]">
+                                  {click.productId ? `Product: ${click.productName || click.productId}` :
+                                  click.couponId ? `Coupon: ${click.couponId}` : 
+                                  'Store Visit'}
+                                </span>
+                               </TooltipTrigger>
+                               <TooltipContent>
+                                <p>
+                                  {click.productId ? `Product: ${click.productName || click.productId}` :
+                                  click.couponId ? `Coupon: ${click.couponId}` : 
+                                  'Store Visit'}
+                                </p>
+                               </TooltipContent>
+                             </Tooltip>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">{click.timestamp ? format(new Date(click.timestamp), 'PPp') : 'N/A'}</TableCell>
+                          <TableCell>
+                              <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs">
+                                  <a href={click.affiliateLink} target="_blank" rel="noopener noreferrer" title={click.affiliateLink} className="truncate block max-w-[200px] sm:max-w-xs md:max-w-sm">
+                                      {click.affiliateLink || 'N/A'} <ExternalLink className="h-3 w-3 ml-1 inline-block align-middle"/>
+                                  </a>
+                              </Button>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-right">
+                            <Tooltip>
+                              <TooltipTrigger asChild><span className="truncate block max-w-[100px]">{click.clickId}</span></TooltipTrigger>
+                              <TooltipContent><p>{click.clickId}</p></TooltipContent>
+                            </Tooltip>
+                          </TableCell>
+                          </TableRow>
+                      ))}
+                      </TableBody>
+                  </Table>
+                  </div>
+              )}
+              {hasMore && !loading && clicks.length > 0 &&(
+                  <div className="mt-6 text-center">
+                  <Button onClick={handleLoadMore} disabled={loadingMore || loading}>
+                      {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Load More Clicks
+                  </Button>
+                  </div>
+              )}
+              {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
+              </CardContent>
+          </Card>
         </div>
+      </TooltipProvider>
     </ProtectedRoute>
   );
 }

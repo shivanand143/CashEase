@@ -1,4 +1,3 @@
-
 // src/app/dashboard/history/page.tsx
 "use client";
 
@@ -37,6 +36,7 @@ import { formatCurrency, safeToDate } from '@/lib/utils';
 import { format } from 'date-fns';
 import { AlertCircle, History, Loader2, Info, CheckCircle, XCircle } from 'lucide-react';
 import ProtectedRoute from '@/components/guards/protected-route';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const TRANSACTIONS_PER_PAGE = 15;
 
@@ -101,36 +101,40 @@ export default function CashbackHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [transactions, setTransactions] = React.useState<Transaction[]>([]);
-  const [loadingPage, setLoadingPage] = React.useState(true); // Primary page loading state
+  const [loading, setLoading] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
 
-  const fetchTransactions = React.useCallback(async (isLoadMore = false) => {
+  const fetchTransactions = React.useCallback(async (isLoadMore = false, docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null) => {
     let isMounted = true;
     if (!user) {
-      if (isMounted && !isLoadMore) setLoadingPage(false);
-      return;
+      if (isMounted && !isLoadMore) setLoading(false);
+      return () => { isMounted = false; };
     }
 
     if (firebaseInitializationError || !db) {
       if (isMounted) {
         setPageError(firebaseInitializationError || "Database connection not available.");
-        if (!isLoadMore) setLoadingPage(false); else setLoadingMore(false);
+        if (!isLoadMore) setLoading(false); else setLoadingMore(false);
         setHasMore(false);
       }
-      return;
+      return () => { isMounted = false; };
     }
 
-    if (isLoadMore) {
-      setLoadingMore(true);
-    } else {
-      setLoadingPage(true); // Set primary loading true for initial fetch
+    if (!isLoadMore) {
+      setLoading(true);
       setTransactions([]);
       setLastVisible(null);
       setHasMore(true);
       setPageError(null);
+    } else {
+      if (!docToStartAfter && isLoadMore) {
+        if(isMounted) setLoadingMore(false);
+        return () => { isMounted = false; };
+      }
+      setLoadingMore(true);
     }
 
     try {
@@ -141,8 +145,8 @@ export default function CashbackHistoryPage() {
         limit(TRANSACTIONS_PER_PAGE)
       ];
 
-      if (isLoadMore && lastVisible) {
-        qConstraints.push(startAfter(lastVisible));
+      if (isLoadMore && docToStartAfter) {
+        qConstraints.push(startAfter(docToStartAfter));
       }
 
       const q = query(transactionsCollection, ...qConstraints);
@@ -165,7 +169,7 @@ export default function CashbackHistoryPage() {
         setTransactions(prev => isLoadMore ? [...prev, ...newTransactionsData] : newTransactionsData);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(newTransactionsData.length === TRANSACTIONS_PER_PAGE);
-        if (!isLoadMore) setPageError(null);
+        if (!isLoadMore) setPageError(null); // Clear error on successful initial fetch
       }
     } catch (err) {
       console.error("Error fetching transactions:", err);
@@ -176,45 +180,47 @@ export default function CashbackHistoryPage() {
       }
     } finally {
       if (isMounted) {
-        if (isLoadMore) setLoadingMore(false);
-        else setLoadingPage(false); // Primary loading done after initial fetch
+        if (!isLoadMore) setLoading(false);
+        else setLoadingMore(false);
       }
     }
-  }, [user, lastVisible]); // Add lastVisible
+    return () => { isMounted = false; };
+  }, [user]);
 
   React.useEffect(() => {
     let isMounted = true;
     if (authLoading) {
-      // console.log("HISTORY_PAGE: Auth loading, waiting...");
-      return; // Wait for auth to resolve
+      setLoading(true); // Keep loading true while auth is resolving
+      return;
     }
 
     if (!user) {
-      console.log("HISTORY_PAGE: No user, auth finished. Redirecting.");
-      if (isMounted) setLoadingPage(false);
-      router.push('/login?message=Please login to view your history.');
+      if (isMounted) {
+        setLoading(false); // Auth resolved, no user
+        router.push('/login?message=Please login to view your history.');
+      }
     } else {
-      // console.log("HISTORY_PAGE: User present, auth done. Fetching initial transactions.");
-      fetchTransactions(false);
+      if (isMounted) {
+        fetchTransactions(false, null);
+      }
     }
     return () => { isMounted = false; };
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, authLoading, router]); // fetchTransactions is memoized, safe to include if its own deps are stable
+  }, [user, authLoading, router, fetchTransactions]);
 
 
   const handleLoadMore = () => {
-    if (!loadingMore && hasMore) {
-      fetchTransactions(true);
+    if (!loadingMore && hasMore && lastVisible) {
+      fetchTransactions(true, lastVisible);
     }
   };
 
-  if (authLoading || loadingPage) {
+  if (authLoading || (loading && transactions.length === 0 && !pageError)) {
     return <ProtectedRoute><HistoryTableSkeleton /></ProtectedRoute>;
   }
 
-   if (!user && !authLoading) { // Should be caught by ProtectedRoute, but as a fallback
+   if (!user && !authLoading) {
      return (
-      <ProtectedRoute> {/* Still keep ProtectedRoute for consistency */}
+      <ProtectedRoute>
          <Alert variant="destructive" className="max-w-md mx-auto">
              <AlertCircle className="h-4 w-4" />
              <AlertTitle>Authentication Required</AlertTitle>
@@ -229,81 +235,98 @@ export default function CashbackHistoryPage() {
 
   return (
     <ProtectedRoute>
-      <div className="space-y-6">
-        <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-            <History className="w-6 h-6 sm:w-7 sm:h-7 text-primary" /> Cashback History
-        </h1>
+      <TooltipProvider>
+        <div className="space-y-6">
+          <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+              <History className="w-6 h-6 sm:w-7 sm:h-7 text-primary" /> Cashback History
+          </h1>
 
-        {pageError && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error Loading History</AlertTitle>
-            <AlertDescription>{pageError}</AlertDescription>
-          </Alert>
-        )}
+          {pageError && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Error Loading History</AlertTitle>
+              <AlertDescription>{pageError}</AlertDescription>
+            </Alert>
+          )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Your Transactions</CardTitle>
-            <CardDescription>Track the status and details of your cashback earnings.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!loadingPage && transactions.length === 0 && !pageError ? (
-              <div className="text-center py-16 text-muted-foreground">
-                <p className="mb-4">You don't have any transactions yet.</p>
-                <Button asChild>
-                  <Link href="/stores">Start Shopping & Earning</Link>
-                </Button>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="min-w-[150px]">Store</TableHead>
-                      <TableHead className="min-w-[120px]">Order ID</TableHead>
-                      <TableHead className="min-w-[100px]">Sale Amount</TableHead>
-                      <TableHead className="min-w-[100px]">Cashback</TableHead>
-                      <TableHead className="min-w-[120px]">Status</TableHead>
-                      <TableHead className="min-w-[120px]">Date</TableHead>
-                      <TableHead className="min-w-[200px]">Notes</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transactions.map((transaction) => (
-                      <TableRow key={transaction.id}>
-                        <TableCell className="font-medium truncate" title={transaction.storeName || transaction.storeId}>{transaction.storeName || transaction.storeId}</TableCell>
-                        <TableCell className="font-mono text-xs truncate" title={transaction.orderId || undefined}>{transaction.orderId || 'N/A'}</TableCell>
-                        <TableCell>{formatCurrency(transaction.finalSaleAmount ?? transaction.saleAmount)}</TableCell>
-                        <TableCell className="font-semibold text-primary">{formatCurrency(transaction.finalCashbackAmount ?? transaction.initialCashbackAmount ?? 0)}</TableCell>
-                        <TableCell>
-                          <Badge variant={getStatusVariant(transaction.status)} className="capitalize flex items-center gap-1 text-xs whitespace-nowrap">
-                            {getStatusIcon(transaction.status)}
-                            {transaction.status.replace('_', ' ')}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">{transaction.transactionDate ? format(new Date(transaction.transactionDate), 'PP') : 'N/A'}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground truncate max-w-[150px] sm:max-w-xs" title={transaction.notesToUser || undefined}>
-                          {transaction.notesToUser || '-'}
-                        </TableCell>
+          <Card>
+            <CardHeader>
+              <CardTitle>Your Transactions</CardTitle>
+              <CardDescription>Track the status and details of your cashback earnings.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading && transactions.length === 0 ? ( // Show skeleton if loading and no transactions yet
+                <HistoryTableSkeleton />
+              ) : !loading && transactions.length === 0 && !pageError ? (
+                <div className="text-center py-16 text-muted-foreground">
+                  <p className="mb-4">You don't have any transactions yet.</p>
+                  <Button asChild>
+                    <Link href="/stores">Start Shopping & Earning</Link>
+                  </Button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="min-w-[150px]">Store</TableHead>
+                        <TableHead className="min-w-[120px]">Order ID</TableHead>
+                        <TableHead className="min-w-[100px]">Sale Amount</TableHead>
+                        <TableHead className="min-w-[100px]">Cashback</TableHead>
+                        <TableHead className="min-w-[120px]">Status</TableHead>
+                        <TableHead className="min-w-[120px]">Date</TableHead>
+                        <TableHead className="min-w-[200px]">Notes</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-            {hasMore && !loadingPage && transactions.length > 0 && (
-              <div className="mt-6 text-center">
-                <Button onClick={handleLoadMore} disabled={loadingMore || loadingPage}>
-                  {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Load More Transactions
-                </Button>
-              </div>
-            )}
-             {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
-          </CardContent>
-        </Card>
-      </div>
+                    </TableHeader>
+                    <TableBody>
+                      {transactions.map((transaction) => (
+                        <TableRow key={transaction.id}>
+                          <TableCell className="font-medium">
+                            <Tooltip>
+                              <TooltipTrigger asChild><span className="truncate block max-w-[150px]">{transaction.storeName || transaction.storeId}</span></TooltipTrigger>
+                              <TooltipContent><p>{transaction.storeName || transaction.storeId}</p></TooltipContent>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
+                             <Tooltip>
+                               <TooltipTrigger asChild><span className="truncate block max-w-[120px]">{transaction.orderId || 'N/A'}</span></TooltipTrigger>
+                               <TooltipContent><p>{transaction.orderId || 'N/A'}</p></TooltipContent>
+                             </Tooltip>
+                          </TableCell>
+                          <TableCell>{formatCurrency(transaction.finalSaleAmount ?? transaction.saleAmount)}</TableCell>
+                          <TableCell className="font-semibold text-primary">{formatCurrency(transaction.finalCashbackAmount ?? transaction.initialCashbackAmount ?? 0)}</TableCell>
+                          <TableCell>
+                            <Badge variant={getStatusVariant(transaction.status)} className="capitalize flex items-center gap-1 text-xs whitespace-nowrap">
+                              {getStatusIcon(transaction.status)}
+                              {transaction.status.replace('_', ' ')}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">{transaction.transactionDate ? format(new Date(transaction.transactionDate), 'PP') : 'N/A'}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            <Tooltip>
+                              <TooltipTrigger asChild><span className="truncate block max-w-[200px]">{transaction.notesToUser || '-'}</span></TooltipTrigger>
+                              <TooltipContent><p>{transaction.notesToUser || '-'}</p></TooltipContent>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+              {hasMore && !loading && transactions.length > 0 && (
+                <div className="mt-6 text-center">
+                  <Button onClick={handleLoadMore} disabled={loadingMore || loading}>
+                    {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Load More Transactions
+                  </Button>
+                </div>
+              )}
+               {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
+            </CardContent>
+          </Card>
+        </div>
+      </TooltipProvider>
     </ProtectedRoute>
   );
 }
