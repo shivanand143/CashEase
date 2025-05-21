@@ -34,9 +34,10 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { formatCurrency, safeToDate } from '@/lib/utils';
 import { format } from 'date-fns';
-import { AlertCircle, History, Loader2, Info, CheckCircle, XCircle } from 'lucide-react';
+import { AlertCircle, History, Loader2, Info, CheckCircle, XCircle, Eye } from 'lucide-react';
 import ProtectedRoute from '@/components/guards/protected-route';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 
 const TRANSACTIONS_PER_PAGE = 15;
 
@@ -88,9 +89,9 @@ const getStatusVariant = (status: CashbackStatus): "default" | "secondary" | "de
 const getStatusIcon = (status: CashbackStatus) => {
   switch (status) {
     case 'confirmed': return <CheckCircle className="h-3 w-3 text-green-600" />;
-    case 'paid': return <History className="h-3 w-3 text-green-700" />;
+    case 'paid': return <History className="h-3 w-3 text-green-700" />; // Changed for Paid to History
     case 'pending': return <Loader2 className="h-3 w-3 animate-spin text-yellow-600" />;
-    case 'awaiting_payout': return <History className="h-3 w-3 text-purple-600" />;
+    case 'awaiting_payout': return <History className="h-3 w-3 text-purple-600" />; // Changed for Awaiting to History
     case 'rejected':
     case 'cancelled': return <XCircle className="h-3 w-3 text-red-600" />;
     default: return <Info className="h-3 w-3 text-muted-foreground" />;
@@ -101,36 +102,52 @@ export default function CashbackHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [transactions, setTransactions] = React.useState<Transaction[]>([]);
-  const [pageLoading, setPageLoading] = React.useState(true);
+  const [loading, setLoading] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const isMountedRef = React.useRef(true);
 
-  const fetchInitialTransactions = React.useCallback(async (userId: string) => {
-    isMountedRef.current = true;
-    setPageLoading(true);
-    setPageError(null);
-    setTransactions([]);
-    setLastVisible(null);
-    setHasMore(true);
+  const [isFullTextDialogOpen, setIsFullTextDialogOpen] = React.useState(false);
+  const [fullTextContent, setFullTextContent] = React.useState<{ title: string; content: string | null | undefined }>({ title: '', content: '' });
+
+  const showFullText = (title: string, content: string | null | undefined) => {
+    setFullTextContent({ title, content: content || "No details available." });
+    setIsFullTextDialogOpen(true);
+  };
+
+  const fetchTransactions = React.useCallback(async (isLoadMoreOp: boolean = false, docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null) => {
+    if (!user || !isMountedRef.current) return;
 
     if (firebaseInitializationError || !db) {
-      if (isMountedRef.current) {
-        setPageError(firebaseInitializationError || "Database not available.");
-        setPageLoading(false);
-      }
+      setPageError(firebaseInitializationError || "Database not available.");
+      if (!isLoadMoreOp) setLoading(false); else setLoadingMore(false);
+      setHasMore(false);
       return;
+    }
+
+    if (!isLoadMoreOp) {
+      setLoading(true);
+      setTransactions([]);
+      setLastVisible(null);
+      setHasMore(true);
+      setPageError(null);
+    } else {
+      if (!docToStartAfter) { setLoadingMore(false); return; }
+      setLoadingMore(true);
     }
 
     try {
       const transactionsCollection = collection(db, 'transactions');
       const qConstraints = [
-        where('userId', '==', userId),
+        where('userId', '==', user.uid),
         orderBy('transactionDate', 'desc'),
         limit(TRANSACTIONS_PER_PAGE)
       ];
+      if (isLoadMoreOp && docToStartAfter) {
+        qConstraints.push(startAfter(docToStartAfter));
+      }
       const q = query(transactionsCollection, ...qConstraints);
       const querySnapshot = await getDocs(q);
 
@@ -148,7 +165,7 @@ export default function CashbackHistoryPage() {
       });
 
       if (isMountedRef.current) {
-        setTransactions(newTransactionsData);
+        setTransactions(prev => isLoadMoreOp ? [...prev, ...newTransactionsData] : newTransactionsData);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(newTransactionsData.length === TRANSACTIONS_PER_PAGE);
       }
@@ -159,87 +176,33 @@ export default function CashbackHistoryPage() {
       }
     } finally {
       if (isMountedRef.current) {
-        setPageLoading(false);
+        if (!isLoadMoreOp) setLoading(false); else setLoadingMore(false);
       }
     }
-  }, []);
-
-  const fetchMoreTransactions = React.useCallback(async (userId: string, lastDoc: QueryDocumentSnapshot<DocumentData> | null) => {
-    if (!lastDoc) return;
-    isMountedRef.current = true;
-    setLoadingMore(true);
-
-    if (firebaseInitializationError || !db) {
-      if (isMountedRef.current) {
-        setPageError(firebaseInitializationError || "Database not available.");
-        setLoadingMore(false);
-      }
-      return;
-    }
-
-    try {
-      const transactionsCollection = collection(db, 'transactions');
-      const qConstraints = [
-        where('userId', '==', userId),
-        orderBy('transactionDate', 'desc'),
-        startAfter(lastDoc),
-        limit(TRANSACTIONS_PER_PAGE)
-      ];
-      const q = query(transactionsCollection, ...qConstraints);
-      const querySnapshot = await getDocs(q);
-
-      const newTransactionsData = querySnapshot.docs.map(docSnap => {
-        const data = docSnap.data();
-        return {
-          id: docSnap.id,
-          ...data,
-          transactionDate: safeToDate(data.transactionDate as Timestamp | undefined) || new Date(0),
-          confirmationDate: safeToDate(data.confirmationDate as Timestamp | undefined),
-          paidDate: safeToDate(data.paidDate as Timestamp | undefined),
-          createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0),
-          updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0),
-        } as Transaction;
-      });
-
-      if (isMountedRef.current) {
-        setTransactions(prev => [...prev, ...newTransactionsData]);
-        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-        setHasMore(newTransactionsData.length === TRANSACTIONS_PER_PAGE);
-      }
-    } catch (err) {
-      if (isMountedRef.current) {
-        const errorMsg = err instanceof Error ? err.message : "Failed to load more transactions.";
-        setPageError(errorMsg);
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setLoadingMore(false);
-      }
-    }
-  }, []);
+  }, [user]);
 
   React.useEffect(() => {
     isMountedRef.current = true;
     if (authLoading) {
-      setPageLoading(true);
+      setLoading(true);
       return;
     }
     if (!user) {
-      setPageLoading(false);
+      setLoading(false);
       router.push('/login?message=Please login to view your history.');
     } else {
-      fetchInitialTransactions(user.uid);
+      fetchTransactions(false, null);
     }
     return () => { isMountedRef.current = false; };
-  }, [user, authLoading, router, fetchInitialTransactions]);
+  }, [user, authLoading, router, fetchTransactions]);
 
   const handleLoadMore = () => {
     if (user && !loadingMore && hasMore && lastVisible) {
-      fetchMoreTransactions(user.uid, lastVisible);
+      fetchTransactions(true, lastVisible);
     }
   };
 
-  if (authLoading || (pageLoading && transactions.length === 0 && !pageError)) {
+  if (authLoading || (loading && transactions.length === 0 && !pageError)) {
     return <ProtectedRoute><HistoryTableSkeleton /></ProtectedRoute>;
   }
 
@@ -279,9 +242,9 @@ export default function CashbackHistoryPage() {
             <CardDescription>Track the status and details of your cashback earnings.</CardDescription>
           </CardHeader>
           <CardContent>
-            {pageLoading && transactions.length === 0 ? (
+            {loading && transactions.length === 0 ? (
               <HistoryTableSkeleton />
-            ) : !pageLoading && transactions.length === 0 && !pageError ? (
+            ) : !loading && transactions.length === 0 && !pageError ? (
               <div className="text-center py-16 text-muted-foreground">
                 <p className="mb-4">You don't have any transactions yet.</p>
                 <Button asChild>
@@ -331,12 +294,17 @@ export default function CashbackHistoryPage() {
                         </TableCell>
                         <TableCell className="whitespace-nowrap">{transaction.transactionDate ? format(new Date(transaction.transactionDate), 'PP') : 'N/A'}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild><span className="truncate block max-w-[200px]">{transaction.notesToUser || '-'}</span></TooltipTrigger>
-                              <TooltipContent><p>{transaction.notesToUser || '-'}</p></TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                          {(transaction.notesToUser && transaction.notesToUser.length > 50) || (transaction.rejectionReason && transaction.rejectionReason.length > 50) ? (
+                            <span 
+                              className="truncate block max-w-[200px] cursor-pointer hover:text-primary"
+                              onClick={() => showFullText(transaction.rejectionReason ? "Rejection Reason" : "Notes", transaction.rejectionReason || transaction.notesToUser)}
+                            >
+                              {transaction.rejectionReason ? transaction.rejectionReason.substring(0, 50) : transaction.notesToUser!.substring(0, 50)}... 
+                              <Eye className="inline h-3 w-3 ml-1 opacity-70" />
+                            </span>
+                          ) : (
+                            transaction.rejectionReason || transaction.notesToUser || '-'
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -344,9 +312,9 @@ export default function CashbackHistoryPage() {
                 </Table>
               </div>
             )}
-            {hasMore && !pageLoading && transactions.length > 0 && (
+            {hasMore && !loading && transactions.length > 0 && (
               <div className="mt-6 text-center">
-                <Button onClick={handleLoadMore} disabled={loadingMore || pageLoading}>
+                <Button onClick={handleLoadMore} disabled={loadingMore || loading}>
                   {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Load More Transactions
                 </Button>
@@ -356,6 +324,22 @@ export default function CashbackHistoryPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={isFullTextDialogOpen} onOpenChange={setIsFullTextDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{fullTextContent.title}</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 max-h-[60vh] overflow-y-auto">
+            <p className="text-sm text-muted-foreground whitespace-pre-wrap">{fullTextContent.content}</p>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">Close</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </ProtectedRoute>
   );
 }
