@@ -19,7 +19,7 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { PayoutRequest, PayoutStatus } from '@/lib/types';
+import type { PayoutRequest, PayoutStatus, PayoutMethod } from '@/lib/types';
 import {
   Table,
   TableBody,
@@ -129,13 +129,13 @@ export default function PayoutHistoryPage() {
     }
 
     if (!isLoadMore) {
-      setLoading(true);
+      setLoading(true); // Ensure loading is true for initial fetch
       setPayouts([]);
       setLastVisible(null);
       setHasMore(true);
       setPageError(null);
     } else {
-      if (!docToStartAfter) { // Check if cursor exists for load more
+      if (!docToStartAfter) {
         if (isMounted) setLoadingMore(false);
         return () => { isMounted = false; };
       }
@@ -176,21 +176,31 @@ export default function PayoutHistoryPage() {
       if (isMounted) {
         const errorMsg = err instanceof Error ? err.message : "Failed to load payout history.";
         setPageError(errorMsg);
-        setHasMore(false);
+        setHasMore(false); // Stop pagination on error
       }
     } finally {
       if (isMounted) {
-        if (!isLoadMore) setLoading(false); else setLoadingMore(false);
+        if (!isLoadMore) setLoading(false);
+        setLoadingMore(false);
       }
     }
     return () => { isMounted = false; };
-  }, [user, lastVisible]); // Removed hasMore, loadingMore from deps as they are managed inside
+  }, [user, lastVisible]);
 
   useEffect(() => {
-    if (user && !authLoading) {
+    if (authLoading) {
+      // Still waiting for auth state to resolve
+      return;
+    }
+    if (user) {
       fetchPayouts(false);
     } else if (!authLoading && !user) {
+      // Auth is done loading, but no user, so redirect
+      setLoading(false); // Ensure loading is false before redirect
       router.push('/login?message=Please login to view your payout history.');
+    } else {
+        // Fallback case to ensure loading is always reset if other conditions fail
+        setLoading(false);
     }
   }, [user, authLoading, router, fetchPayouts]);
 
@@ -203,23 +213,31 @@ export default function PayoutHistoryPage() {
   const maskPaymentDetail = (method: PayoutMethod, detail: string): string => {
     if (!detail) return 'N/A';
     if (method === 'bank_transfer') {
-      if (detail.includes('UPI:')) return `UPI: ****${detail.slice(-4)}`;
-      if (detail.length > 8) return `A/C: ****${detail.slice(-4)}`;
+      if (detail.toLowerCase().includes('upi:')) return `UPI: ****${detail.slice(-4)}`;
+      const accountParts = detail.split(/[\s,]+/); // Split by space or comma
+      const lastPart = accountParts[accountParts.length -1];
+      if (lastPart && lastPart.length > 4) return `A/C: ****${lastPart.slice(-4)}`;
       return 'Bank: ****';
     } else if (method === 'paypal') {
       const parts = detail.split('@');
       if (parts.length === 2) return `${parts[0].substring(0, Math.min(3, parts[0].length))}****@${parts[1]}`;
       return 'PayPal: ****@****';
     } else if (method === 'gift_card') {
-      return `Gift Card (${detail.substring(0, Math.min(10, detail.length))}...)`;
+      const emailMatch = detail.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/gi);
+      const cardTypeMatch = detail.toLowerCase().match(/(amazon|flipkart|myntra)/);
+      let maskedDetail = cardTypeMatch ? cardTypeMatch[0].charAt(0).toUpperCase() + cardTypeMatch[0].slice(1) + " GC" : "Gift Card";
+      if (emailMatch) maskedDetail += ` to ...${emailMatch[0].slice(-10)}`;
+      return maskedDetail;
     }
-    return detail;
+    return detail.length > 10 ? `${detail.substring(0,7)}...` : detail;
   };
 
+  // This condition should cover initial auth loading AND data loading
   if (authLoading || (loading && payouts.length === 0 && !pageError)) {
     return <ProtectedRoute><PayoutHistoryTableSkeleton /></ProtectedRoute>;
   }
 
+  // This case is handled by useEffect redirecting, but as a fallback UI before redirect.
   if (!user && !authLoading) {
      return (
       <ProtectedRoute>
@@ -227,8 +245,7 @@ export default function PayoutHistoryPage() {
              <AlertCircle className="h-4 w-4" />
              <AlertTitle>Authentication Required</AlertTitle>
              <AlertDescription>
-                 Please log in to view your payout history.
-                 <Button variant="link" className="ml-2 p-0 h-auto" onClick={() => router.push('/login')}>Go to Login</Button>
+                 Please log in to view your payout history. Loading login page...
              </AlertDescription>
          </Alert>
       </ProtectedRoute>
@@ -256,16 +273,19 @@ export default function PayoutHistoryPage() {
             <CardDescription>Track the status and details of your cashback withdrawal requests.</CardDescription>
           </CardHeader>
           <CardContent>
-            {loading && payouts.length === 0 ? (
-                <PayoutHistoryTableSkeleton />
-            ) : !loading && payouts.length === 0 && !pageError ? (
+            {/* This handles the case where initial fetch is done, no error, but no payouts */}
+            {!loading && payouts.length === 0 && !pageError && (
               <div className="text-center py-16 text-muted-foreground">
-                <p className="mb-4">You haven't requested any payouts yet.</p>
-                <Button asChild variant="link" onClick={() => router.push('/dashboard/payout')}>
+                <Info className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
+                <p className="text-lg mb-2">No payout requests found.</p>
+                <p className="text-sm">Once you request a payout, it will appear here.</p>
+                <Button asChild variant="link" onClick={() => router.push('/dashboard/payout')} className="mt-4">
                   Request a Payout
                 </Button>
               </div>
-            ) : (
+            )}
+
+            {payouts.length > 0 && (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -291,13 +311,13 @@ export default function PayoutHistoryPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="capitalize">{payout.paymentMethod.replace('_', ' ')}</TableCell>
-                        <TableCell className="text-xs truncate" title={payout.paymentDetails.detail}>
+                        <TableCell className="text-xs truncate max-w-[150px] sm:max-w-xs" title={payout.paymentDetails.detail}>
                           {maskPaymentDetail(payout.paymentMethod, payout.paymentDetails.detail)}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           {payout.processedAt ? format(new Date(payout.processedAt), 'PPp') : '-'}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground truncate" title={payout.adminNotes || payout.failureReason || undefined}>
+                        <TableCell className="text-xs text-muted-foreground truncate max-w-[150px] sm:max-w-xs" title={payout.adminNotes || payout.failureReason || undefined}>
                           {payout.status === 'rejected' || payout.status === 'failed' ? payout.failureReason : payout.adminNotes || '-'}
                         </TableCell>
                       </TableRow>
@@ -306,6 +326,7 @@ export default function PayoutHistoryPage() {
                 </Table>
               </div>
             )}
+
             {hasMore && !loading && payouts.length > 0 && (
               <div className="mt-6 text-center">
                 <Button onClick={handleLoadMore} disabled={loadingMore || loading}>
@@ -321,3 +342,4 @@ export default function PayoutHistoryPage() {
     </ProtectedRoute>
   );
 }
+
