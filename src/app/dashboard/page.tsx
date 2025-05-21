@@ -1,3 +1,4 @@
+
 // src/app/dashboard/page.tsx
 "use client";
 
@@ -8,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { formatCurrency, safeToDate } from '@/lib/utils'; // Ensure safeToDate is imported
+import { formatCurrency, safeToDate } from '@/lib/utils';
 import {
     IndianRupee,
     History,
@@ -21,17 +22,16 @@ import {
     AlertCircle,
     ArrowRight,
     MousePointerClick,
-    ReceiptText, // Icon for Payouts
-    ListChecks // Icon for Recent Payouts card
+    ReceiptText,
+    ListChecks
 } from 'lucide-react';
 import ProtectedRoute from '@/components/guards/protected-route';
 import { useRouter } from 'next/navigation';
 import { collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase/config';
+import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { PayoutRequest, PayoutStatus } from '@/lib/types';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
-
 
 const getStatusVariant = (status: PayoutStatus): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
@@ -76,27 +76,29 @@ function DashboardPageSkeleton() {
           </Card>
         ))}
       </div>
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-6 w-1/2 mb-2" />
-          <Skeleton className="h-4 w-3/4" />
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <Skeleton key={`quicklink-skel-${index}`} className="h-12 w-full rounded-md" />
-          ))}
-        </CardContent>
-      </Card>
-       <Card>
-        <CardHeader>
-          <Skeleton className="h-6 w-1/2 mb-2" /> {/* Recent Payouts Title */}
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <Skeleton key={`payout-skel-${index}`} className="h-10 w-full rounded-md" />
-          ))}
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-1/2 mb-2" />
+            <Skeleton className="h-4 w-3/4" />
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <Skeleton key={`quicklink-skel-${index}`} className="h-12 w-full rounded-md" />
+            ))}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-1/2 mb-2" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <Skeleton key={`payout-skel-${index}`} className="h-10 w-full rounded-md" />
+            ))}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -105,22 +107,36 @@ export default function DashboardPage() {
   const { user, userProfile, loading: authLoading, authError } = useAuth();
   const router = useRouter();
   const [recentPayouts, setRecentPayouts] = React.useState<PayoutRequest[]>([]);
-  const [loadingPayouts, setLoadingPayouts] = React.useState(true);
-
-  React.useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/login?message=Please login to access your dashboard.');
-    }
-  }, [user, authLoading, router]);
+  const [loadingPageData, setLoadingPageData] = React.useState(true); // Combined loading state for this page
 
   React.useEffect(() => {
     let isMounted = true;
+
+    if (authLoading) {
+      // console.log("DASHBOARD_PAGE: Auth loading, waiting...");
+      // setLoadingPageData(true); // Ensure it stays true if auth is loading
+      return;
+    }
+
+    if (!user) {
+      console.log("DASHBOARD_PAGE: No user, auth finished. Redirecting.");
+      if (isMounted) setLoadingPageData(false); // Auth is done, no user, stop loading
+      router.push('/login?message=Please login to access your dashboard.');
+      return;
+    }
+
+    // User is present, auth is done. Now fetch payouts.
+    // console.log("DASHBOARD_PAGE: User present, auth done. Fetching recent payouts...");
+    setLoadingPageData(true); // Explicitly set loading for data fetch
+
     const fetchRecentPayouts = async () => {
-      if (!user || !db) {
-        if (isMounted) setLoadingPayouts(false);
+      if (!user || !db || firebaseInitializationError) {
+        if (isMounted) {
+          console.error("DASHBOARD_PAGE: User or DB not available for payout fetch.", { user, db, firebaseInitializationError });
+          setLoadingPageData(false);
+        }
         return;
       }
-      setLoadingPayouts(true);
       try {
         const payoutsQuery = query(
           collection(db, 'payoutRequests'),
@@ -135,23 +151,30 @@ export default function DashboardPage() {
           requestedAt: safeToDate(doc.data().requestedAt as Timestamp | undefined) || new Date(0),
           processedAt: safeToDate(doc.data().processedAt as Timestamp | undefined),
         } as PayoutRequest));
-        if (isMounted) setRecentPayouts(fetchedPayouts);
+        if (isMounted) {
+          setRecentPayouts(fetchedPayouts);
+          // console.log("DASHBOARD_PAGE: Recent payouts fetched:", fetchedPayouts.length);
+        }
       } catch (error) {
-        console.error("Error fetching recent payouts:", error);
-        // Optionally set an error state for payouts
+        console.error("DASHBOARD_PAGE: Error fetching recent payouts:", error);
+        // Optionally set an error state for payouts display
       } finally {
-        if (isMounted) setLoadingPayouts(false);
+        if (isMounted) {
+          setLoadingPageData(false);
+          // console.log("DASHBOARD_PAGE: Finished fetching payouts, page loading false.");
+        }
       }
     };
 
-    if (user) {
-      fetchRecentPayouts();
-    }
-    return () => { isMounted = false; };
-  }, [user]);
+    fetchRecentPayouts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user, authLoading, router]);
 
 
-  if (authLoading || (!user && !authError) || (!userProfile && !authError)) {
+  if (authLoading || loadingPageData || (!user && !authError) || (!userProfile && !authError)) {
     return <ProtectedRoute><DashboardPageSkeleton /></ProtectedRoute>;
   }
 
@@ -162,13 +185,13 @@ export default function DashboardPage() {
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Authentication Error</AlertTitle>
           <AlertDescription>{authError}</AlertDescription>
+           <Button variant="link" className="mt-2 p-0 h-auto" onClick={() => router.push('/login')}>Go to Login</Button>
         </Alert>
       </ProtectedRoute>
     );
   }
 
   if (!userProfile) {
-    // This case might occur if authUser is set but profile fetching failed silently earlier
     return (
       <ProtectedRoute>
         <Alert variant="destructive">
@@ -245,7 +268,7 @@ export default function DashboardPage() {
                     <CardDescription>Navigate to important sections.</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-3 sm:grid-cols-2">
-                    {quickLinks.slice(0, 4).map((linkItem) => ( // Show first 4 prominent actions
+                    {quickLinks.slice(0, 4).map((linkItem) => (
                         <Button variant="outline" className="justify-start h-auto py-3" asChild key={linkItem.href}>
                             <Link href={linkItem.href} className="flex items-center text-left">
                                 <linkItem.icon className="w-5 h-5 mr-3 text-primary" />
@@ -263,13 +286,7 @@ export default function DashboardPage() {
                 <CardDescription>A quick look at your latest payout activities.</CardDescription>
               </CardHeader>
               <CardContent>
-                {loadingPayouts ? (
-                   <div className="space-y-2">
-                       <Skeleton className="h-8 w-full" />
-                       <Skeleton className="h-8 w-full" />
-                       <Skeleton className="h-8 w-full" />
-                   </div>
-                ) : recentPayouts.length > 0 ? (
+                {recentPayouts.length > 0 ? (
                   <ul className="space-y-3">
                     {recentPayouts.map(payout => (
                       <li key={payout.id} className="flex justify-between items-center text-sm p-2 bg-muted/50 rounded-md">

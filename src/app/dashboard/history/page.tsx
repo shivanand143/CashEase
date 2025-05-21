@@ -3,7 +3,6 @@
 "use client";
 
 import * as React from 'react';
-import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -89,7 +88,7 @@ const getStatusVariant = (status: CashbackStatus): "default" | "secondary" | "de
 const getStatusIcon = (status: CashbackStatus) => {
   switch (status) {
     case 'confirmed': return <CheckCircle className="h-3 w-3 text-green-600" />;
-    case 'paid': return <History className="h-3 w-3 text-green-700" />; // Or a dedicated 'paid' icon
+    case 'paid': return <History className="h-3 w-3 text-green-700" />;
     case 'pending': return <Loader2 className="h-3 w-3 animate-spin text-yellow-600" />;
     case 'awaiting_payout': return <History className="h-3 w-3 text-purple-600" />;
     case 'rejected':
@@ -101,35 +100,38 @@ const getStatusIcon = (status: CashbackStatus) => {
 export default function CashbackHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [pageError, setPageError] = useState<string | null>(null);
-  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [transactions, setTransactions] = React.useState<Transaction[]>([]);
+  const [loadingPage, setLoadingPage] = React.useState(true); // Primary page loading state
+  const [pageError, setPageError] = React.useState<string | null>(null);
+  const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMore, setHasMore] = React.useState(true);
+  const [loadingMore, setLoadingMore] = React.useState(false);
 
-  const fetchInitialTransactions = useCallback(async () => {
+  const fetchTransactions = React.useCallback(async (isLoadMore = false) => {
     let isMounted = true;
     if (!user) {
-      if (isMounted) setLoading(false);
-      return () => { isMounted = false; };
+      if (isMounted && !isLoadMore) setLoadingPage(false);
+      return;
     }
 
     if (firebaseInitializationError || !db) {
       if (isMounted) {
         setPageError(firebaseInitializationError || "Database connection not available.");
-        setLoading(false);
+        if (!isLoadMore) setLoadingPage(false); else setLoadingMore(false);
         setHasMore(false);
       }
-      return () => { isMounted = false; };
+      return;
     }
 
-    console.log("Dashboard/History: Fetching initial transactions...");
-    setLoading(true);
-    setTransactions([]);
-    setLastVisible(null);
-    setHasMore(true);
-    setPageError(null);
+    if (isLoadMore) {
+      setLoadingMore(true);
+    } else {
+      setLoadingPage(true); // Set primary loading true for initial fetch
+      setTransactions([]);
+      setLastVisible(null);
+      setHasMore(true);
+      setPageError(null);
+    }
 
     try {
       const transactionsCollection = collection(db, 'transactions');
@@ -139,9 +141,12 @@ export default function CashbackHistoryPage() {
         limit(TRANSACTIONS_PER_PAGE)
       ];
 
+      if (isLoadMore && lastVisible) {
+        qConstraints.push(startAfter(lastVisible));
+      }
+
       const q = query(transactionsCollection, ...qConstraints);
       const querySnapshot = await getDocs(q);
-      console.log(`Dashboard/History: Fetched ${querySnapshot.size} initial transactions.`);
 
       const newTransactionsData = querySnapshot.docs.map(docSnap => {
         const data = docSnap.data();
@@ -157,10 +162,10 @@ export default function CashbackHistoryPage() {
       });
       
       if (isMounted) {
-        setTransactions(newTransactionsData);
+        setTransactions(prev => isLoadMore ? [...prev, ...newTransactionsData] : newTransactionsData);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(newTransactionsData.length === TRANSACTIONS_PER_PAGE);
-        setPageError(null);
+        if (!isLoadMore) setPageError(null);
       }
     } catch (err) {
       console.error("Error fetching transactions:", err);
@@ -170,73 +175,46 @@ export default function CashbackHistoryPage() {
         setHasMore(false);
       }
     } finally {
-      if (isMounted) setLoading(false);
-    }
-    return () => { isMounted = false; };
-  }, [user]);
-
-  useEffect(() => {
-    if (user && !authLoading) {
-      fetchInitialTransactions();
-    } else if (!authLoading && !user) {
-      router.push('/login?message=Please login to view your history.');
-    }
-  }, [user, authLoading, router, fetchInitialTransactions]);
-
-  const handleLoadMore = useCallback(async () => {
-    let isMounted = true;
-    if (!user || !lastVisible || !hasMore || loadingMore) {
-      return () => { isMounted = false; };
-    }
-    if (!db) {
-        if(isMounted) setPageError("Database connection not available.");
-        return () => { isMounted = false; };
-    }
-    setLoadingMore(true);
-    console.log("Dashboard/History: Loading more transactions...");
-    try {
-      const transactionsCollection = collection(db, 'transactions');
-      const qConstraints = [
-        where('userId', '==', user.uid),
-        orderBy('transactionDate', 'desc'),
-        startAfter(lastVisible),
-        limit(TRANSACTIONS_PER_PAGE)
-      ];
-      const q = query(transactionsCollection, ...qConstraints);
-      const querySnapshot = await getDocs(q);
-      const newTransactionsData = querySnapshot.docs.map(docSnap => {
-        const data = docSnap.data();
-        return {
-          id: docSnap.id,
-          ...data,
-          transactionDate: safeToDate(data.transactionDate as Timestamp | undefined) || new Date(0),
-          confirmationDate: safeToDate(data.confirmationDate as Timestamp | undefined),
-          paidDate: safeToDate(data.paidDate as Timestamp | undefined),
-          createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0),
-          updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0),
-        } as Transaction;
-      });
       if (isMounted) {
-        setTransactions(prev => [...prev, ...newTransactionsData]);
-        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-        setHasMore(newTransactionsData.length === TRANSACTIONS_PER_PAGE);
+        if (isLoadMore) setLoadingMore(false);
+        else setLoadingPage(false); // Primary loading done after initial fetch
       }
-    } catch (err) {
-      console.error("Error loading more transactions:", err);
-      if (isMounted) setPageError(err instanceof Error ? err.message : "Failed to load more transactions.");
-    } finally {
-      if (isMounted) setLoadingMore(false);
+    }
+  }, [user, lastVisible]); // Add lastVisible
+
+  React.useEffect(() => {
+    let isMounted = true;
+    if (authLoading) {
+      // console.log("HISTORY_PAGE: Auth loading, waiting...");
+      return; // Wait for auth to resolve
+    }
+
+    if (!user) {
+      console.log("HISTORY_PAGE: No user, auth finished. Redirecting.");
+      if (isMounted) setLoadingPage(false);
+      router.push('/login?message=Please login to view your history.');
+    } else {
+      // console.log("HISTORY_PAGE: User present, auth done. Fetching initial transactions.");
+      fetchTransactions(false);
     }
     return () => { isMounted = false; };
-  }, [user, lastVisible, hasMore, loadingMore]);
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, authLoading, router]); // fetchTransactions is memoized, safe to include if its own deps are stable
 
-  if (authLoading || (loading && transactions.length === 0 && !pageError)) {
+
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMore) {
+      fetchTransactions(true);
+    }
+  };
+
+  if (authLoading || loadingPage) {
     return <ProtectedRoute><HistoryTableSkeleton /></ProtectedRoute>;
   }
 
-  if (!user && !authLoading) {
+   if (!user && !authLoading) { // Should be caught by ProtectedRoute, but as a fallback
      return (
-      <ProtectedRoute>
+      <ProtectedRoute> {/* Still keep ProtectedRoute for consistency */}
          <Alert variant="destructive" className="max-w-md mx-auto">
              <AlertCircle className="h-4 w-4" />
              <AlertTitle>Authentication Required</AlertTitle>
@@ -270,9 +248,7 @@ export default function CashbackHistoryPage() {
             <CardDescription>Track the status and details of your cashback earnings.</CardDescription>
           </CardHeader>
           <CardContent>
-            {loading && transactions.length === 0 ? (
-                <HistoryTableSkeleton />
-            ) : !loading && transactions.length === 0 && !pageError ? (
+            {!loadingPage && transactions.length === 0 && !pageError ? (
               <div className="text-center py-16 text-muted-foreground">
                 <p className="mb-4">You don't have any transactions yet.</p>
                 <Button asChild>
@@ -307,7 +283,7 @@ export default function CashbackHistoryPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="whitespace-nowrap">{transaction.transactionDate ? format(new Date(transaction.transactionDate), 'PP') : 'N/A'}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground truncate" title={transaction.notesToUser || undefined}>
+                        <TableCell className="text-xs text-muted-foreground truncate max-w-[150px] sm:max-w-xs" title={transaction.notesToUser || undefined}>
                           {transaction.notesToUser || '-'}
                         </TableCell>
                       </TableRow>
@@ -316,9 +292,9 @@ export default function CashbackHistoryPage() {
                 </Table>
               </div>
             )}
-            {hasMore && !loading && transactions.length > 0 && (
+            {hasMore && !loadingPage && transactions.length > 0 && (
               <div className="mt-6 text-center">
-                <Button onClick={handleLoadMore} disabled={loadingMore || loading}>
+                <Button onClick={handleLoadMore} disabled={loadingMore || loadingPage}>
                   {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Load More Transactions
                 </Button>

@@ -3,7 +3,6 @@
 "use client";
 
 import * as React from 'react';
-import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, Controller } from 'react-hook-form';
@@ -16,7 +15,7 @@ import {
   EmailAuthProvider 
 } from 'firebase/auth';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth as firebaseAuthService } from '@/lib/firebase/config';
+import { db, auth as firebaseAuthService, firebaseInitializationError } from '@/lib/firebase/config';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import {
@@ -123,19 +122,20 @@ export default function SettingsPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [profileError, setProfileError] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [payoutLoading, setPayoutLoading] = useState(false);
-  const [payoutError, setPayoutError] = useState<string | null>(null);
-  const [emailChangeLoading, setEmailChangeLoading] = useState(false);
-  const [emailChangeError, setEmailChangeError] = useState<string | null>(null);
-  const [isEmailChangeDialogOpen, setIsEmailChangeDialogOpen] = useState(false);
-  const [passwordChangeLoading, setPasswordChangeLoading] = useState(false);
-  const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
-  const [isPasswordChangeDialogOpen, setIsPasswordChangeDialogOpen] = useState(false);
+  const [loadingPage, setLoadingPage] = React.useState(true); // Page-level loading state
+  const [profileLoading, setProfileLoading] = React.useState(false);
+  const [profileError, setProfileError] = React.useState<string | null>(null);
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [showNewPassword, setShowNewPassword] = React.useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
+  const [payoutLoading, setPayoutLoading] = React.useState(false);
+  const [payoutError, setPayoutError] = React.useState<string | null>(null);
+  const [emailChangeLoading, setEmailChangeLoading] = React.useState(false);
+  const [emailChangeError, setEmailChangeError] = React.useState<string | null>(null);
+  const [isEmailChangeDialogOpen, setIsEmailChangeDialogOpen] = React.useState(false);
+  const [passwordChangeLoading, setPasswordChangeLoading] = React.useState(false);
+  const [passwordChangeError, setPasswordChangeError] = React.useState<string | null>(null);
+  const [isPasswordChangeDialogOpen, setIsPasswordChangeDialogOpen] = React.useState(false);
 
   const profileForm = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -157,20 +157,30 @@ export default function SettingsPage() {
     defaultValues: { currentPassword: '', newPassword: '', confirmNewPassword: '' },
   });
 
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/login?message=Please login to access settings.');
+  React.useEffect(() => {
+    let isMounted = true;
+    if (authLoading) {
+      // console.log("SETTINGS_PAGE: Auth loading, waiting...");
+      return; // Wait for auth to resolve
     }
-    if (userProfile) {
+
+    if (!user || !userProfile) {
+      console.log("SETTINGS_PAGE: No user/profile, auth finished. Redirecting.");
+      if (isMounted) setLoadingPage(false);
+      router.push('/login?message=Please login to access settings.');
+    } else {
+      // console.log("SETTINGS_PAGE: User and profile loaded. Resetting forms.");
       profileForm.reset({
         displayName: userProfile.displayName || '',
-        photoURL: userProfile.photoURL || null, // Ensure photoURL is explicitly null if empty
+        photoURL: userProfile.photoURL || null,
       });
       payoutForm.reset({
         method: userProfile.payoutDetails?.method || undefined,
         detail: userProfile.payoutDetails?.detail || '',
       });
+      if (isMounted) setLoadingPage(false);
     }
+    return () => { isMounted = false; };
   }, [user, userProfile, authLoading, router, profileForm, payoutForm]);
 
    const onProfileSubmit = async (data: ProfileFormValues) => {
@@ -186,7 +196,7 @@ export default function SettingsPage() {
          displayName: data.displayName || null,
          photoURL: data.photoURL || null,
        });
-       await fetchUserProfile(user.uid); // Re-fetch to update context
+       await fetchUserProfile(user.uid); 
        toast({ title: 'Profile Updated', description: 'Your profile information has been saved.' });
      } catch (err: any) {
        console.error("Profile update failed:", err);
@@ -218,15 +228,18 @@ export default function SettingsPage() {
   };
 
   const handleMakeAdmin = async () => {
-    if (!user || !userProfile) return;
+    if (!user || !userProfile || !db) return;
     const myAdminUid = process.env.NEXT_PUBLIC_INITIAL_ADMIN_UID;
     if (user.uid !== myAdminUid) {
       toast({ variant: "destructive", title: "Unauthorized", description: "You are not authorized for this action." });
       return;
     }
     try {
+      // Use createOrUpdateUserProfile to handle role change which includes transaction logic if needed
+      // For simplicity, directly update role here, assuming createOrUpdateUserProfile handles complex logic
+      // or a dedicated admin function would be better.
       await updateUserProfileData(user.uid, { role: 'admin' });
-      await fetchUserProfile(user.uid);
+      await fetchUserProfile(user.uid); // Refresh context
       toast({ title: 'Admin Role Granted', description: `${userProfile.displayName || user.email} is now an admin.` });
     } catch (err: any) {
       console.error("Admin role update failed:", err);
@@ -288,8 +301,22 @@ export default function SettingsPage() {
   };
 
 
-  if (authLoading || !userProfile) {
+  if (authLoading || loadingPage) { // Use loadingPage here
     return <ProtectedRoute><SettingsPageSkeleton /></ProtectedRoute>;
+  }
+
+  // User should be guaranteed by ProtectedRoute and useEffect redirect by this point
+  if (!userProfile) {
+     return (
+      <ProtectedRoute>
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Profile Error</AlertTitle>
+          <AlertDescription>Could not load your profile data. Please try again later.</AlertDescription>
+           <Button variant="link" onClick={() => router.push('/login')} className="mt-2">Go to Login</Button>
+        </Alert>
+      </ProtectedRoute>
+    );
   }
 
   return (

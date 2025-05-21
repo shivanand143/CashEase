@@ -3,7 +3,6 @@
 "use client";
 
 import * as React from 'react';
-import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -76,46 +75,38 @@ function ClickHistoryTableSkeleton() {
 export default function ClickHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [clicks, setClicks] = useState<Click[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [pageError, setPageError] = useState<string | null>(null);
-  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [clicks, setClicks] = React.useState<Click[]>([]);
+  const [loadingPage, setLoadingPage] = React.useState(true); // Primary page loading state
+  const [pageError, setPageError] = React.useState<string | null>(null);
+  const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMore, setHasMore] = React.useState(true);
+  const [loadingMore, setLoadingMore] = React.useState(false);
 
-  const fetchClicks = useCallback(async (isLoadMoreOperation = false) => {
+  const fetchClicks = React.useCallback(async (isLoadMore = false) => {
     let isMounted = true;
-    const docToStartAfter = isLoadMoreOperation ? lastVisible : null;
-
     if (!user) {
-      if(isMounted) {
-        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
-      }
-      return () => { isMounted = false; };
+      if (isMounted && !isLoadMore) setLoadingPage(false);
+      return;
     }
 
     if (firebaseInitializationError || !db) {
       if (isMounted) {
         setPageError(firebaseInitializationError || "Database not available.");
-        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+        if (!isLoadMore) setLoadingPage(false); else setLoadingMore(false);
         setHasMore(false);
       }
-      return () => { isMounted = false; };
+      return;
     }
-
-    if (!isLoadMoreOperation) {
-      setLoading(true);
+    
+    if (isLoadMore) {
+      setLoadingMore(true);
+    } else {
+      setLoadingPage(true);
       setClicks([]);
       setLastVisible(null);
       setHasMore(true);
-    } else {
-      if (!docToStartAfter && isLoadMoreOperation) {
-        if(isMounted) setLoadingMore(false);
-        return () => { isMounted = false; };
-      }
-      setLoadingMore(true);
+      setPageError(null);
     }
-    if (!isLoadMoreOperation) setPageError(null);
 
     try {
       const clicksCollection = collection(db, 'clicks');
@@ -125,8 +116,8 @@ export default function ClickHistoryPage() {
         limit(CLICKS_PER_PAGE)
       ];
 
-      if (isLoadMoreOperation && docToStartAfter) {
-        constraints.push(startAfter(docToStartAfter));
+      if (isLoadMore && lastVisible) {
+        constraints.push(startAfter(lastVisible));
       }
 
       const q = query(clicksCollection, ...constraints);
@@ -142,10 +133,10 @@ export default function ClickHistoryPage() {
       });
 
       if(isMounted) {
-        setClicks(prev => isLoadMoreOperation ? [...prev, ...clicksData] : clicksData);
-        const newLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
-        setLastVisible(newLastVisible);
-        setHasMore(querySnapshot.docs.length === CLICKS_PER_PAGE);
+        setClicks(prev => isLoadMore ? [...prev, ...clicksData] : clicksData);
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+        setHasMore(clicksData.length === CLICKS_PER_PAGE);
+        if (!isLoadMore) setPageError(null);
       }
     } catch (err) {
       if(isMounted) {
@@ -155,27 +146,38 @@ export default function ClickHistoryPage() {
       }
     } finally {
       if(isMounted) {
-        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+        if (isLoadMore) setLoadingMore(false);
+        else setLoadingPage(false);
       }
     }
-    return () => { isMounted = false; };
-  }, [user, lastVisible, hasMore, loadingMore]); // Added dependencies
+  }, [user, lastVisible]); // Added lastVisible
 
-  useEffect(() => {
-    if (user && !authLoading) {
-      fetchClicks(false);
-    } else if (!authLoading && !user) {
-      router.push('/login');
+  React.useEffect(() => {
+    let isMounted = true;
+    if (authLoading) {
+      // console.log("CLICKS_PAGE: Auth loading, waiting...");
+      return;
     }
-  }, [user, authLoading, router, fetchClicks]);
+
+    if (!user) {
+      console.log("CLICKS_PAGE: No user, auth finished. Redirecting.");
+      if (isMounted) setLoadingPage(false);
+      router.push('/login?message=Please login to view your click history.');
+    } else {
+      // console.log("CLICKS_PAGE: User present, auth done. Fetching initial clicks.");
+      fetchClicks(false);
+    }
+    return () => { isMounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, authLoading, router]); // fetchClicks is memoized
 
   const handleLoadMore = () => {
-    if (!loadingMore && hasMore) { // Removed lastVisible check here, fetchClicks handles it
+    if (!loadingMore && hasMore) {
       fetchClicks(true);
     }
   };
 
-  if (authLoading || (loading && clicks.length === 0 && !pageError)) {
+  if (authLoading || loadingPage) {
     return <ProtectedRoute><ClickHistoryTableSkeleton /></ProtectedRoute>;
   }
 
@@ -215,9 +217,7 @@ export default function ClickHistoryPage() {
             <CardDescription>View the stores and offers you recently clicked on. Clicks are retained for 90 days.</CardDescription>
             </CardHeader>
             <CardContent>
-            {loading && clicks.length === 0 ? ( 
-                <ClickHistoryTableSkeleton />
-            ) : !loading && clicks.length === 0 && !pageError ? (
+            {!loadingPage && clicks.length === 0 && !pageError ? (
                 <div className="text-center py-16 text-muted-foreground">
                 <p className="mb-4">You haven't clicked on any offers yet, or your clicks are older than 90 days.</p>
                 <Button asChild>
@@ -260,9 +260,9 @@ export default function ClickHistoryPage() {
                 </Table>
                 </div>
             )}
-            {hasMore && !loading && clicks.length > 0 &&(
+            {hasMore && !loadingPage && clicks.length > 0 &&(
                 <div className="mt-6 text-center">
-                <Button onClick={handleLoadMore} disabled={loadingMore || loading}>
+                <Button onClick={handleLoadMore} disabled={loadingMore || loadingPage}>
                     {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Load More Clicks
                 </Button>

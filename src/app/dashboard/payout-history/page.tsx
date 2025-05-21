@@ -3,7 +3,6 @@
 "use client";
 
 import * as React from 'react';
-import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import {
@@ -101,45 +100,37 @@ function PayoutHistoryTableSkeleton() {
 export default function PayoutHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [payouts, setPayouts] = useState<PayoutRequest[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [pageError, setPageError] = useState<string | null>(null);
-  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [payouts, setPayouts] = React.useState<PayoutRequest[]>([]);
+  const [loadingPage, setLoadingPage] = React.useState(true); // Primary page loading state
+  const [pageError, setPageError] = React.useState<string | null>(null);
+  const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMore, setHasMore] = React.useState(true);
+  const [loadingMore, setLoadingMore] = React.useState(false);
 
-  const fetchPayouts = useCallback(async (isLoadMore = false) => {
+  const fetchPayouts = React.useCallback(async (isLoadMore = false) => {
     let isMounted = true;
-    const docToStartAfter = isLoadMore ? lastVisible : null;
-
     if (!user) {
-      if (isMounted) {
-        if (!isLoadMore) setLoading(false); else setLoadingMore(false);
-      }
-      return () => { isMounted = false; };
+      if (isMounted && !isLoadMore) setLoadingPage(false);
+      return;
     }
 
     if (firebaseInitializationError || !db) {
       if (isMounted) {
         setPageError(firebaseInitializationError || "Database connection not available.");
-        if (!isLoadMore) setLoading(false); else setLoadingMore(false);
+        if (!isLoadMore) setLoadingPage(false); else setLoadingMore(false);
         setHasMore(false);
       }
-      return () => { isMounted = false; };
+      return;
     }
 
-    if (!isLoadMore) {
-      setLoading(true); // Ensure loading is true for initial fetch
+    if (isLoadMore) {
+      setLoadingMore(true);
+    } else {
+      setLoadingPage(true);
       setPayouts([]);
       setLastVisible(null);
       setHasMore(true);
       setPageError(null);
-    } else {
-      if (!docToStartAfter) {
-        if (isMounted) setLoadingMore(false);
-        return () => { isMounted = false; };
-      }
-      setLoadingMore(true);
     }
 
     try {
@@ -150,8 +141,8 @@ export default function PayoutHistoryPage() {
         limit(PAYOUTS_PER_PAGE)
       ];
 
-      if (isLoadMore && docToStartAfter) {
-        qConstraints.push(startAfter(docToStartAfter));
+      if (isLoadMore && lastVisible) {
+        qConstraints.push(startAfter(lastVisible));
       }
 
       const q = query(payoutsCollection, ...qConstraints);
@@ -171,38 +162,40 @@ export default function PayoutHistoryPage() {
         setPayouts(prev => isLoadMore ? [...prev, ...newPayoutsData] : newPayoutsData);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(newPayoutsData.length === PAYOUTS_PER_PAGE);
+        if (!isLoadMore) setPageError(null);
       }
     } catch (err) {
       if (isMounted) {
         const errorMsg = err instanceof Error ? err.message : "Failed to load payout history.";
         setPageError(errorMsg);
-        setHasMore(false); // Stop pagination on error
+        setHasMore(false);
       }
     } finally {
       if (isMounted) {
-        if (!isLoadMore) setLoading(false);
-        setLoadingMore(false);
+        if (isLoadMore) setLoadingMore(false);
+        else setLoadingPage(false);
       }
     }
-    return () => { isMounted = false; };
-  }, [user, lastVisible]);
+  }, [user, lastVisible]); // Added lastVisible
 
-  useEffect(() => {
+  React.useEffect(() => {
+    let isMounted = true;
     if (authLoading) {
-      // Still waiting for auth state to resolve
+      // console.log("PAYOUT_HISTORY_PAGE: Auth loading, waiting...");
       return;
     }
-    if (user) {
-      fetchPayouts(false);
-    } else if (!authLoading && !user) {
-      // Auth is done loading, but no user, so redirect
-      setLoading(false); // Ensure loading is false before redirect
+
+    if (!user) {
+      console.log("PAYOUT_HISTORY_PAGE: No user, auth finished. Redirecting.");
+      if (isMounted) setLoadingPage(false);
       router.push('/login?message=Please login to view your payout history.');
     } else {
-        // Fallback case to ensure loading is always reset if other conditions fail
-        setLoading(false);
+      // console.log("PAYOUT_HISTORY_PAGE: User present, auth done. Fetching initial payouts.");
+      fetchPayouts(false);
     }
-  }, [user, authLoading, router, fetchPayouts]);
+    return () => { isMounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, authLoading, router]); // fetchPayouts is memoized
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
@@ -214,7 +207,7 @@ export default function PayoutHistoryPage() {
     if (!detail) return 'N/A';
     if (method === 'bank_transfer') {
       if (detail.toLowerCase().includes('upi:')) return `UPI: ****${detail.slice(-4)}`;
-      const accountParts = detail.split(/[\s,]+/); // Split by space or comma
+      const accountParts = detail.split(/[\s,]+/);
       const lastPart = accountParts[accountParts.length -1];
       if (lastPart && lastPart.length > 4) return `A/C: ****${lastPart.slice(-4)}`;
       return 'Bank: ****';
@@ -232,12 +225,10 @@ export default function PayoutHistoryPage() {
     return detail.length > 10 ? `${detail.substring(0,7)}...` : detail;
   };
 
-  // This condition should cover initial auth loading AND data loading
-  if (authLoading || (loading && payouts.length === 0 && !pageError)) {
+  if (authLoading || loadingPage) {
     return <ProtectedRoute><PayoutHistoryTableSkeleton /></ProtectedRoute>;
   }
 
-  // This case is handled by useEffect redirecting, but as a fallback UI before redirect.
   if (!user && !authLoading) {
      return (
       <ProtectedRoute>
@@ -247,6 +238,7 @@ export default function PayoutHistoryPage() {
              <AlertDescription>
                  Please log in to view your payout history. Loading login page...
              </AlertDescription>
+              <Button variant="link" className="mt-2 p-0 h-auto" onClick={() => router.push('/login')}>Go to Login</Button>
          </Alert>
       </ProtectedRoute>
      );
@@ -273,8 +265,7 @@ export default function PayoutHistoryPage() {
             <CardDescription>Track the status and details of your cashback withdrawal requests.</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* This handles the case where initial fetch is done, no error, but no payouts */}
-            {!loading && payouts.length === 0 && !pageError && (
+            {!loadingPage && payouts.length === 0 && !pageError && (
               <div className="text-center py-16 text-muted-foreground">
                 <Info className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
                 <p className="text-lg mb-2">No payout requests found.</p>
@@ -327,9 +318,9 @@ export default function PayoutHistoryPage() {
               </div>
             )}
 
-            {hasMore && !loading && payouts.length > 0 && (
+            {hasMore && !loadingPage && payouts.length > 0 && (
               <div className="mt-6 text-center">
-                <Button onClick={handleLoadMore} disabled={loadingMore || loading}>
+                <Button onClick={handleLoadMore} disabled={loadingMore || loadingPage}>
                   {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Load More Payouts
                 </Button>
@@ -342,4 +333,3 @@ export default function PayoutHistoryPage() {
     </ProtectedRoute>
   );
 }
-

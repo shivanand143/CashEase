@@ -3,7 +3,6 @@
 "use client";
 
 import * as React from 'react';
-import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
@@ -20,11 +19,6 @@ import {
   runTransaction,
   serverTimestamp,
   Timestamp,
-  writeBatch,
-  QueryConstraint,
-  DocumentData,
-  getDoc,
-  Query,
   increment
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
@@ -42,7 +36,7 @@ import { AlertCircle, IndianRupee, Send, Loader2, Info, ListChecks, ShieldCheck 
 import ProtectedRoute from '@/components/guards/protected-route';
 import { Skeleton } from '@/components/ui/skeleton';
 
-const MIN_PAYOUT_AMOUNT = 250; // Minimum payout amount
+const MIN_PAYOUT_AMOUNT = 250;
 
 const payoutSchemaBase = z.object({
   payoutMethod: z.enum(['bank_transfer', 'paypal', 'gift_card'] as [PayoutMethod, ...PayoutMethod[]], {
@@ -86,11 +80,11 @@ export default function PayoutPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [availableBalance, setAvailableBalance] = useState(0);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [pageError, setPageError] = useState<string | null>(null);
-  const [loadingProfile, setLoadingProfile] = useState(true);
-  const [canRequest, setCanRequest] = useState(false);
+  const [availableBalance, setAvailableBalance] = React.useState(0);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [pageError, setPageError] = React.useState<string | null>(null);
+  const [loadingPage, setLoadingPage] = React.useState(true); // Primary page loading state
+  const [canRequest, setCanRequest] = React.useState(false);
 
   const dynamicPayoutSchema = payoutSchemaBase.refine(
     (data) => data.amount <= availableBalance,
@@ -120,20 +114,29 @@ export default function PayoutPage() {
 
   const requestedPayoutAmount = watch("amount");
 
-  const refreshUserProfile = useCallback(async () => {
-    if (!user) return;
-    setLoadingProfile(true);
+  const refreshUserProfileAndSetState = React.useCallback(async () => {
+    if (!user) {
+      setLoadingPage(false);
+      return;
+    }
+    setLoadingPage(true);
     try {
       const profile = await fetchUserProfile(user.uid);
       if (profile) {
         const balance = parseFloat((profile.cashbackBalance || 0).toFixed(2));
         setAvailableBalance(balance);
+        const canActuallyRequest = balance >= MIN_PAYOUT_AMOUNT;
+        setCanRequest(canActuallyRequest);
+        
+        // Set form defaults
         setValue('amount', Math.max(MIN_PAYOUT_AMOUNT, Math.min(balance, MIN_PAYOUT_AMOUNT)), { shouldValidate: true });
         if (profile.payoutDetails) {
           setValue('payoutMethod', profile.payoutDetails.method);
           setValue('payoutDetail', profile.payoutDetails.detail);
+        } else { // If no saved details, clear them or set to defaults
+          setValue('payoutMethod', undefined);
+          setValue('payoutDetail', '');
         }
-        setCanRequest(balance >= MIN_PAYOUT_AMOUNT);
       } else {
         setPageError("Could not load your profile data for payout.");
         setCanRequest(false);
@@ -142,23 +145,30 @@ export default function PayoutPage() {
       setPageError("Error loading profile data.");
       setCanRequest(false);
     } finally {
-      setLoadingProfile(false);
+      setLoadingPage(false);
     }
   }, [user, fetchUserProfile, setValue]);
 
-  useEffect(() => {
-    if (!authLoading && user) {
-      refreshUserProfile();
-    } else if (!authLoading && !user) {
-      setLoadingProfile(false);
-      setCanRequest(false);
-      router.push('/login?message=Please login to request a payout.');
+  React.useEffect(() => {
+    let isMounted = true;
+    if (authLoading) {
+      // console.log("PAYOUT_PAGE: Auth loading, waiting...");
+      return;
     }
-  }, [authLoading, user, router, refreshUserProfile]);
+
+    if (!user) {
+      console.log("PAYOUT_PAGE: No user, auth finished. Redirecting.");
+      if (isMounted) setLoadingPage(false);
+      router.push('/login?message=Please login to request a payout.');
+    } else {
+      // console.log("PAYOUT_PAGE: User present, auth done. Refreshing profile.");
+      refreshUserProfileAndSetState();
+    }
+    return () => { isMounted = false; };
+  }, [authLoading, user, router, refreshUserProfileAndSetState]);
 
 
   const onSubmit = async (data: PayoutFormValues) => {
-    console.log("PAYOUT_PAGE: Payout submission started with form data:", data);
     if (!user || !db || firebaseInitializationError || !userProfile) {
       setPageError("User not authenticated or database not available.");
       toast({ variant: "destructive", title: "Error", description: "Could not process request. Please try again." });
@@ -176,28 +186,22 @@ export default function PayoutPage() {
 
     try {
       await runTransaction(db, async (transaction) => {
-        console.log("PAYOUT_PAGE: Starting Firestore transaction.");
         const userDocRef = doc(db, 'users', user.uid);
         const userDocSnap = await transaction.get(userDocRef);
 
         if (!userDocSnap.exists()) {
-          console.error("PAYOUT_PAGE: User profile not found within transaction. UID:", user.uid);
           throw new Error("User profile not found. Cannot process payout.");
         }
         const currentUserData = userDocSnap.data() as UserProfile;
         const currentFreshBalance = parseFloat((currentUserData.cashbackBalance || 0).toFixed(2));
-        console.log(`PAYOUT_PAGE: Fresh balance from Firestore: ₹${currentFreshBalance.toFixed(2)}`);
 
         if (finalRequestedAmount > currentFreshBalance) {
-          console.error(`PAYOUT_PAGE: Requested amount (₹${finalRequestedAmount.toFixed(2)}) exceeds fresh balance (₹${currentFreshBalance.toFixed(2)}).`);
-          throw new Error(`Your available balance (₹${currentFreshBalance.toFixed(2)}) is less than the requested amount. Please try again or refresh.`);
+          throw new Error(`Your available balance (₹${currentFreshBalance.toFixed(2)}) is less than the requested amount. Please refresh.`);
         }
         if (finalRequestedAmount < MIN_PAYOUT_AMOUNT) {
-          console.error(`PAYOUT_PAGE: Requested amount (₹${finalRequestedAmount.toFixed(2)}) is less than minimum (₹${MIN_PAYOUT_AMOUNT}).`);
           throw new Error(`Minimum payout amount is ${formatCurrency(MIN_PAYOUT_AMOUNT)}.`);
         }
-
-        // Create PayoutRequest document
+        
         const payoutRequestRef = doc(collection(db, 'payoutRequests'));
         const payoutRequestData = {
           userId: user.uid,
@@ -207,21 +211,18 @@ export default function PayoutPage() {
           processedAt: null,
           paymentMethod: payoutDetails.method,
           paymentDetails: payoutDetails,
-          transactionIds: [], // Will be populated by admin when marking as 'paid'
+          transactionIds: [], // To be populated by admin when marking as 'paid'
           adminNotes: null,
           failureReason: null,
         };
         transaction.set(payoutRequestRef, payoutRequestData);
-        console.log(`PAYOUT_PAGE: PayoutRequest document created (ID: ${payoutRequestRef.id}) for ₹${finalRequestedAmount.toFixed(2)}.`);
 
-        // Update user's profile: decrement cashbackBalance, set lastPayoutRequestAt, save payoutDetails
         transaction.update(userDocRef, {
           cashbackBalance: increment(-finalRequestedAmount),
           lastPayoutRequestAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-          payoutDetails: payoutDetails,
+          payoutDetails: payoutDetails, // Save/update user's preferred payout details
         });
-        console.log(`PAYOUT_PAGE: User profile (UID: ${user.uid}) updated. cashbackBalance decremented by ₹${finalRequestedAmount.toFixed(2)}.`);
       });
 
       toast({
@@ -229,10 +230,12 @@ export default function PayoutPage() {
         description: `Your request for ${formatCurrency(finalRequestedAmount)} is being processed.`,
       });
       
-      reset({ amount: MIN_PAYOUT_AMOUNT, payoutDetail: data.payoutDetail, payoutMethod: data.payoutMethod });
-      await refreshUserProfile(); 
-
-      console.log(`PAYOUT_PAGE: Payout request successful. Final Payout Amount: ₹${finalRequestedAmount.toFixed(2)}`);
+      reset({ // Reset form, keeping payout details if they were just used
+          amount: MIN_PAYOUT_AMOUNT, 
+          payoutDetail: data.payoutDetail, 
+          payoutMethod: data.payoutMethod 
+      }); 
+      await refreshUserProfileAndSetState(); 
 
     } catch (err: any) {
       console.error("PAYOUT_PAGE: Payout request submission failed:", err);
@@ -243,7 +246,7 @@ export default function PayoutPage() {
     }
   };
 
-  if (authLoading || loadingProfile) {
+  if (authLoading || loadingPage) {
     return <ProtectedRoute><PayoutPageSkeleton /></ProtectedRoute>;
   }
   
@@ -272,9 +275,9 @@ export default function PayoutPage() {
             <CardContent className="text-sm text-muted-foreground space-y-2">
                 <p><strong>Minimum Payout:</strong> You need at least {formatCurrency(MIN_PAYOUT_AMOUNT)} in confirmed cashback to request a payout.</p>
                 <p><strong>Source:</strong> Payouts are made from your 'Available Cashback Balance'.</p>
-                <p><strong>Processing Time:</strong> Requests are typically processed within 3-5 business days after admin approval.</p>
-                <p><strong>Accuracy:</strong> Please ensure your payout details are correct to avoid delays.</p>
-                <p><strong>Important:</strong> When your payout is marked as 'Paid' by an admin, specific confirmed transactions from your history will be linked to this payout request to reconcile the amount.</p>
+                <p><strong>Processing Time:</strong> Requests are typically processed within 3-7 business days after admin approval.</p>
+                <p><strong>Accuracy:</strong> Please ensure your payout details are correct to avoid delays. Your selected details will be saved for future requests.</p>
+                <p><strong>Settlement:</strong> Once your payout is marked 'Paid' by an admin, transactions totaling the payout amount will be linked to this request in your history.</p>
             </CardContent>
         </Card>
 
@@ -286,7 +289,7 @@ export default function PayoutPage() {
           </Alert>
         )}
 
-        {!canRequest && !authLoading && !loadingProfile && (
+        {!canRequest && !authLoading && !loadingPage && (
           <Alert>
             <Info className="h-4 w-4" />
             <AlertTitle>Minimum Payout Not Met</AlertTitle>
