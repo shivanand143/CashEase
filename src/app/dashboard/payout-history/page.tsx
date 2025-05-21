@@ -41,9 +41,9 @@ const PAYOUTS_PER_PAGE = 15;
 
 const getStatusVariant = (status: PayoutStatus): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
-    case 'approved':
-    case 'paid': return 'default';
-    case 'processing': return 'secondary';
+    case 'approved': return 'default';
+    case 'paid': return 'default'; // Changed from secondary for consistency, green-like
+    case 'processing': return 'secondary'; // Keep secondary for processing/in-progress
     case 'pending': return 'outline';
     case 'rejected':
     case 'failed': return 'destructive';
@@ -101,54 +101,35 @@ export default function PayoutHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [payouts, setPayouts] = React.useState<PayoutRequest[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [pageLoading, setPageLoading] = React.useState(true); // Renamed for clarity
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
 
-  const fetchPayouts = React.useCallback(async (isLoadMore = false, docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null) => {
+  const fetchInitialPayouts = React.useCallback(async (userId: string) => {
     let isMounted = true;
-    if (!user) {
-      if (isMounted && !isLoadMore) setLoading(false);
-      return () => { isMounted = false; };
-    }
+    setPageLoading(true);
+    setPageError(null);
+    setPayouts([]);
+    setLastVisible(null);
+    setHasMore(true);
 
     if (firebaseInitializationError || !db) {
       if (isMounted) {
         setPageError(firebaseInitializationError || "Database connection not available.");
-        if (!isLoadMore) setLoading(false); else setLoadingMore(false);
-        setHasMore(false);
+        setPageLoading(false);
       }
-      return () => { isMounted = false; };
-    }
-
-    if (!isLoadMore) {
-      setLoading(true);
-      setPayouts([]);
-      setLastVisible(null);
-      setHasMore(true);
-      setPageError(null);
-    } else {
-      if (!docToStartAfter && isLoadMore) {
-         if(isMounted) setLoadingMore(false);
-        return () => { isMounted = false; };
-      }
-      setLoadingMore(true);
+      return;
     }
 
     try {
       const payoutsCollection = collection(db, 'payoutRequests');
       const qConstraints = [
-        where('userId', '==', user.uid),
+        where('userId', '==', userId),
         orderBy('requestedAt', 'desc'),
         limit(PAYOUTS_PER_PAGE)
       ];
-
-      if (isLoadMore && docToStartAfter) {
-        qConstraints.push(startAfter(docToStartAfter));
-      }
-
       const q = query(payoutsCollection, ...qConstraints);
       const querySnapshot = await getDocs(q);
 
@@ -161,51 +142,93 @@ export default function PayoutHistoryPage() {
           processedAt: safeToDate(data.processedAt as Timestamp | undefined),
         } as PayoutRequest;
       });
-      
+
       if (isMounted) {
-        setPayouts(prev => isLoadMore ? [...prev, ...newPayoutsData] : newPayoutsData);
+        setPayouts(newPayoutsData);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(newPayoutsData.length === PAYOUTS_PER_PAGE);
-        if (!isLoadMore) setPageError(null);
       }
     } catch (err) {
       if (isMounted) {
         const errorMsg = err instanceof Error ? err.message : "Failed to load payout history.";
         setPageError(errorMsg);
-        setHasMore(false);
       }
     } finally {
       if (isMounted) {
-        if (!isLoadMore) setLoading(false);
-        else setLoadingMore(false);
+        setPageLoading(false);
       }
     }
-    return () => { isMounted = false; };
-  }, [user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  React.useEffect(() => {
+  const fetchMorePayouts = React.useCallback(async (userId: string, lastDoc: QueryDocumentSnapshot<DocumentData> | null) => {
+    if (!lastDoc) return;
     let isMounted = true;
-    if (authLoading) {
-      setLoading(true);
+    setLoadingMore(true);
+
+    if (firebaseInitializationError || !db) {
+      if (isMounted) {
+        setPageError(firebaseInitializationError || "Database connection not available.");
+        setLoadingMore(false);
+      }
       return;
     }
 
-    if (!user) {
-      if(isMounted) {
-        setLoading(false);
-        router.push('/login?message=Please login to view your payout history.');
+    try {
+      const payoutsCollection = collection(db, 'payoutRequests');
+      const qConstraints = [
+        where('userId', '==', userId),
+        orderBy('requestedAt', 'desc'),
+        startAfter(lastDoc),
+        limit(PAYOUTS_PER_PAGE)
+      ];
+      const q = query(payoutsCollection, ...qConstraints);
+      const querySnapshot = await getDocs(q);
+
+      const newPayoutsData = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          requestedAt: safeToDate(data.requestedAt as Timestamp | undefined) || new Date(0),
+          processedAt: safeToDate(data.processedAt as Timestamp | undefined),
+        } as PayoutRequest;
+      });
+
+      if (isMounted) {
+        setPayouts(prev => [...prev, ...newPayoutsData]);
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+        setHasMore(newPayoutsData.length === PAYOUTS_PER_PAGE);
       }
-    } else {
-      if(isMounted) {
-        fetchPayouts(false, null);
+    } catch (err) {
+      if (isMounted) {
+        const errorMsg = err instanceof Error ? err.message : "Failed to load more payouts.";
+        setPageError(errorMsg);
+      }
+    } finally {
+      if (isMounted) {
+        setLoadingMore(false);
       }
     }
-    return () => { isMounted = false; };
-  }, [user, authLoading, router, fetchPayouts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  React.useEffect(() => {
+    if (authLoading) {
+      setPageLoading(true);
+      return;
+    }
+    if (!user) {
+      setPageLoading(false);
+      router.push('/login?message=Please login to view your payout history.');
+    } else {
+      fetchInitialPayouts(user.uid);
+    }
+  }, [user, authLoading, router, fetchInitialPayouts]);
 
   const handleLoadMore = () => {
-    if (!loadingMore && hasMore && lastVisible) {
-      fetchPayouts(true, lastVisible);
+    if (user && !loadingMore && hasMore && lastVisible) {
+      fetchMorePayouts(user.uid, lastVisible);
     }
   };
 
@@ -230,7 +253,7 @@ export default function PayoutHistoryPage() {
     return detail.length > 10 ? `${detail.substring(0,7)}...` : detail;
   };
 
-  if (authLoading || (loading && payouts.length === 0 && !pageError)) {
+  if (authLoading || (pageLoading && payouts.length === 0 && !pageError)) {
     return <ProtectedRoute><PayoutHistoryTableSkeleton /></ProtectedRoute>;
   }
 
@@ -251,100 +274,96 @@ export default function PayoutHistoryPage() {
 
   return (
     <ProtectedRoute>
-      <TooltipProvider>
-        <div className="space-y-6">
-          <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-              <ReceiptText className="w-6 h-6 sm:w-7 sm:h-7 text-primary" /> Payout History
-          </h1>
+      <div className="space-y-6">
+        <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+            <ReceiptText className="w-6 h-6 sm:w-7 sm:h-7 text-primary" /> Payout History
+        </h1>
 
-          {pageError && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Error Loading History</AlertTitle>
-              <AlertDescription>{pageError}</AlertDescription>
-            </Alert>
-          )}
+        {pageError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error Loading History</AlertTitle>
+            <AlertDescription>{pageError}</AlertDescription>
+          </Alert>
+        )}
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Your Payout Requests</CardTitle>
-              <CardDescription>Track the status and details of your cashback withdrawal requests.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading && payouts.length === 0 ? (
-                  <PayoutHistoryTableSkeleton />
-              ): !loading && payouts.length === 0 && !pageError && (
-                <div className="text-center py-16 text-muted-foreground">
-                  <Info className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
-                  <p className="text-lg mb-2">No payout requests found.</p>
-                  <p className="text-sm">Once you request a payout, it will appear here.</p>
-                  <Button asChild variant="link" onClick={() => router.push('/dashboard/payout')} className="mt-4">
-                    Request a Payout
-                  </Button>
-                </div>
-              )}
-
-              {payouts.length > 0 && (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="min-w-[180px]">Requested At</TableHead>
-                        <TableHead className="min-w-[100px]">Amount</TableHead>
-                        <TableHead className="min-w-[120px]">Status</TableHead>
-                        <TableHead className="min-w-[120px]">Method</TableHead>
-                        <TableHead className="min-w-[180px]">Details</TableHead>
-                        <TableHead className="min-w-[180px]">Processed At</TableHead>
-                        <TableHead className="min-w-[200px]">Notes/Reason</TableHead>
+        <Card>
+          <CardHeader>
+            <CardTitle>Your Payout Requests</CardTitle>
+            <CardDescription>Track the status and details of your cashback withdrawal requests.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {pageLoading && payouts.length === 0 ? (
+                <PayoutHistoryTableSkeleton />
+            ): !pageLoading && payouts.length === 0 && !pageError ? (
+              <div className="text-center py-16 text-muted-foreground">
+                <Info className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
+                <p className="text-lg mb-2">No payout requests found.</p>
+                <p className="text-sm">Once you request a payout, it will appear here.</p>
+                <Button asChild variant="link" onClick={() => router.push('/dashboard/payout')} className="mt-4">
+                  Request a Payout
+                </Button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[180px]">Requested At</TableHead>
+                      <TableHead className="min-w-[100px]">Amount</TableHead>
+                      <TableHead className="min-w-[120px]">Status</TableHead>
+                      <TableHead className="min-w-[120px]">Method</TableHead>
+                      <TableHead className="min-w-[180px]">Details</TableHead>
+                      <TableHead className="min-w-[180px]">Processed At</TableHead>
+                      <TableHead className="min-w-[200px]">Notes/Reason</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {payouts.map((payout) => (
+                      <TableRow key={payout.id}>
+                        <TableCell className="whitespace-nowrap">{payout.requestedAt ? format(new Date(payout.requestedAt), 'PPp') : 'N/A'}</TableCell>
+                        <TableCell className="font-semibold">{formatCurrency(payout.amount)}</TableCell>
+                        <TableCell>
+                          <Badge variant={getStatusVariant(payout.status)} className="capitalize flex items-center gap-1 text-xs whitespace-nowrap">
+                            {getStatusIcon(payout.status)}
+                            {payout.status.replace('_', ' ')}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="capitalize">{payout.paymentMethod.replace('_', ' ')}</TableCell>
+                        <TableCell className="text-xs">
+                           <Tooltip>
+                             <TooltipTrigger asChild><span className="truncate block max-w-[150px]">{maskPaymentDetail(payout.paymentMethod, payout.paymentDetails.detail)}</span></TooltipTrigger>
+                             <TooltipContent><p>{payout.paymentDetails.detail}</p></TooltipContent>
+                           </Tooltip>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {payout.processedAt ? format(new Date(payout.processedAt), 'PPp') : '-'}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                           <Tooltip>
+                             <TooltipTrigger asChild><span className="truncate block max-w-[200px]">{payout.status === 'rejected' || payout.status === 'failed' ? payout.failureReason : payout.adminNotes || '-'}</span></TooltipTrigger>
+                             <TooltipContent><p>{payout.status === 'rejected' || payout.status === 'failed' ? payout.failureReason : payout.adminNotes || '-'}</p></TooltipContent>
+                           </Tooltip>
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {payouts.map((payout) => (
-                        <TableRow key={payout.id}>
-                          <TableCell className="whitespace-nowrap">{payout.requestedAt ? format(new Date(payout.requestedAt), 'PPp') : 'N/A'}</TableCell>
-                          <TableCell className="font-semibold">{formatCurrency(payout.amount)}</TableCell>
-                          <TableCell>
-                            <Badge variant={getStatusVariant(payout.status)} className="capitalize flex items-center gap-1 text-xs whitespace-nowrap">
-                              {getStatusIcon(payout.status)}
-                              {payout.status.replace('_', ' ')}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="capitalize">{payout.paymentMethod.replace('_', ' ')}</TableCell>
-                          <TableCell className="text-xs">
-                             <Tooltip>
-                               <TooltipTrigger asChild><span className="truncate block max-w-[150px]">{maskPaymentDetail(payout.paymentMethod, payout.paymentDetails.detail)}</span></TooltipTrigger>
-                               <TooltipContent><p>{payout.paymentDetails.detail}</p></TooltipContent>
-                             </Tooltip>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            {payout.processedAt ? format(new Date(payout.processedAt), 'PPp') : '-'}
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                             <Tooltip>
-                               <TooltipTrigger asChild><span className="truncate block max-w-[200px]">{payout.status === 'rejected' || payout.status === 'failed' ? payout.failureReason : payout.adminNotes || '-'}</span></TooltipTrigger>
-                               <TooltipContent><p>{payout.status === 'rejected' || payout.status === 'failed' ? payout.failureReason : payout.adminNotes || '-'}</p></TooltipContent>
-                             </Tooltip>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
 
-              {hasMore && !loading && payouts.length > 0 && (
-                <div className="mt-6 text-center">
-                  <Button onClick={handleLoadMore} disabled={loadingMore || loading}>
-                    {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Load More Payouts
-                  </Button>
-                </div>
-              )}
-               {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
-            </CardContent>
-          </Card>
-        </div>
-      </TooltipProvider>
+            {hasMore && !pageLoading && payouts.length > 0 && (
+              <div className="mt-6 text-center">
+                <Button onClick={handleLoadMore} disabled={loadingMore || pageLoading}>
+                  {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Load More Payouts
+                </Button>
+              </div>
+            )}
+            {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
+          </CardContent>
+        </Card>
+      </div>
     </ProtectedRoute>
   );
 }
