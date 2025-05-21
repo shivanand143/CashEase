@@ -1,3 +1,4 @@
+
 // src/app/dashboard/payout-history/page.tsx
 "use client";
 
@@ -42,11 +43,11 @@ const PAYOUTS_PER_PAGE = 15;
 const getStatusVariant = (status: PayoutStatus): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
     case 'approved':
-    case 'paid': return 'default'; // Green-like (paid is more final)
-    case 'processing': return 'secondary'; // Blue/Purple-like
-    case 'pending': return 'outline'; // Yellow-like
+    case 'paid': return 'default';
+    case 'processing': return 'secondary';
+    case 'pending': return 'outline';
     case 'rejected':
-    case 'failed': return 'destructive'; // Red-like
+    case 'failed': return 'destructive';
     default: return 'outline';
   }
 };
@@ -54,7 +55,7 @@ const getStatusVariant = (status: PayoutStatus): "default" | "secondary" | "dest
 const getStatusIcon = (status: PayoutStatus) => {
   switch (status) {
     case 'approved': return <CheckCircle className="h-3 w-3 text-green-600" />;
-    case 'paid': return <CheckCircle className="h-3 w-3 text-green-700" />; // Slightly different for paid
+    case 'paid': return <CheckCircle className="h-3 w-3 text-green-700" />;
     case 'processing': return <Loader2 className="h-3 w-3 animate-spin text-blue-600" />;
     case 'pending': return <Hourglass className="h-3 w-3 text-yellow-600" />;
     case 'rejected':
@@ -109,6 +110,8 @@ export default function PayoutHistoryPage() {
 
   const fetchPayouts = useCallback(async (isLoadMore = false) => {
     let isMounted = true;
+    const docToStartAfter = isLoadMore ? lastVisible : null;
+
     if (!user) {
       if (isMounted) {
         if (!isLoadMore) setLoading(false); else setLoadingMore(false);
@@ -132,7 +135,7 @@ export default function PayoutHistoryPage() {
       setHasMore(true);
       setPageError(null);
     } else {
-      if (!lastVisible) {
+      if (!docToStartAfter) { // Check if cursor exists for load more
         if (isMounted) setLoadingMore(false);
         return () => { isMounted = false; };
       }
@@ -147,8 +150,8 @@ export default function PayoutHistoryPage() {
         limit(PAYOUTS_PER_PAGE)
       ];
 
-      if (isLoadMore && lastVisible) {
-        qConstraints.push(startAfter(lastVisible));
+      if (isLoadMore && docToStartAfter) {
+        qConstraints.push(startAfter(docToStartAfter));
       }
 
       const q = query(payoutsCollection, ...qConstraints);
@@ -181,7 +184,7 @@ export default function PayoutHistoryPage() {
       }
     }
     return () => { isMounted = false; };
-  }, [user]);
+  }, [user, lastVisible]); // Removed hasMore, loadingMore from deps as they are managed inside
 
   useEffect(() => {
     if (user && !authLoading) {
@@ -200,13 +203,13 @@ export default function PayoutHistoryPage() {
   const maskPaymentDetail = (method: PayoutMethod, detail: string): string => {
     if (!detail) return 'N/A';
     if (method === 'bank_transfer') {
-      // Basic masking, assuming account number might be long
-      if (detail.length > 8) return `****${detail.slice(-4)}`;
-      return '****';
+      if (detail.includes('UPI:')) return `UPI: ****${detail.slice(-4)}`;
+      if (detail.length > 8) return `A/C: ****${detail.slice(-4)}`;
+      return 'Bank: ****';
     } else if (method === 'paypal') {
       const parts = detail.split('@');
       if (parts.length === 2) return `${parts[0].substring(0, Math.min(3, parts[0].length))}****@${parts[1]}`;
-      return '****@****';
+      return 'PayPal: ****@****';
     } else if (method === 'gift_card') {
       return `Gift Card (${detail.substring(0, Math.min(10, detail.length))}...)`;
     }
@@ -235,8 +238,8 @@ export default function PayoutHistoryPage() {
   return (
     <ProtectedRoute>
       <div className="space-y-6">
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-            <ReceiptText className="w-7 h-7 text-primary" /> Payout History
+        <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+            <ReceiptText className="w-6 h-6 sm:w-7 sm:h-7 text-primary" /> Payout History
         </h1>
 
         {pageError && (
@@ -267,13 +270,13 @@ export default function PayoutHistoryPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Requested At</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Details</TableHead>
-                      <TableHead>Processed At</TableHead>
-                      <TableHead>Notes/Reason</TableHead>
+                      <TableHead className="min-w-[180px]">Requested At</TableHead>
+                      <TableHead className="min-w-[100px]">Amount</TableHead>
+                      <TableHead className="min-w-[120px]">Status</TableHead>
+                      <TableHead className="min-w-[120px]">Method</TableHead>
+                      <TableHead className="min-w-[180px]">Details</TableHead>
+                      <TableHead className="min-w-[180px]">Processed At</TableHead>
+                      <TableHead className="min-w-[200px]">Notes/Reason</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -282,19 +285,19 @@ export default function PayoutHistoryPage() {
                         <TableCell className="whitespace-nowrap">{payout.requestedAt ? format(new Date(payout.requestedAt), 'PPp') : 'N/A'}</TableCell>
                         <TableCell className="font-semibold">{formatCurrency(payout.amount)}</TableCell>
                         <TableCell>
-                          <Badge variant={getStatusVariant(payout.status)} className="capitalize flex items-center gap-1 text-xs">
+                          <Badge variant={getStatusVariant(payout.status)} className="capitalize flex items-center gap-1 text-xs whitespace-nowrap">
                             {getStatusIcon(payout.status)}
-                            {payout.status}
+                            {payout.status.replace('_', ' ')}
                           </Badge>
                         </TableCell>
                         <TableCell className="capitalize">{payout.paymentMethod.replace('_', ' ')}</TableCell>
-                        <TableCell className="text-xs truncate max-w-[150px]" title={payout.paymentDetails.detail}>
+                        <TableCell className="text-xs truncate" title={payout.paymentDetails.detail}>
                           {maskPaymentDetail(payout.paymentMethod, payout.paymentDetails.detail)}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           {payout.processedAt ? format(new Date(payout.processedAt), 'PPp') : '-'}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate" title={payout.adminNotes || payout.failureReason || undefined}>
+                        <TableCell className="text-xs text-muted-foreground truncate" title={payout.adminNotes || payout.failureReason || undefined}>
                           {payout.status === 'rejected' || payout.status === 'failed' ? payout.failureReason : payout.adminNotes || '-'}
                         </TableCell>
                       </TableRow>
@@ -305,7 +308,7 @@ export default function PayoutHistoryPage() {
             )}
             {hasMore && !loading && payouts.length > 0 && (
               <div className="mt-6 text-center">
-                <Button onClick={handleLoadMore} disabled={loadingMore}>
+                <Button onClick={handleLoadMore} disabled={loadingMore || loading}>
                   {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Load More Payouts
                 </Button>

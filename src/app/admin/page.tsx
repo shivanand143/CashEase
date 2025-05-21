@@ -1,4 +1,5 @@
 
+// src/app/admin/page.tsx
 "use client";
 
 import * as React from 'react';
@@ -58,7 +59,7 @@ function AdminOverviewPageSkeleton() {
     <div className="space-y-8">
       <Skeleton className="h-9 w-1/3" /> {/* Title "Admin Overview" */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {Array.from({ length: 10 }).map((_, index) => ( // Assuming 10 stat cards
+        {Array.from({ length: 10 }).map((_, index) => (
           <Card key={`stat-skel-${index}`}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <Skeleton className="h-4 w-20" />
@@ -93,9 +94,9 @@ export default function AdminOverviewPage() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchCollectionCount = useCallback(async (collectionName: string, queryConstraints: any[] = []) => {
-    if (!db) {
+    if (!db || firebaseInitializationError) {
       console.error(`Admin Overview: DB not available for ${collectionName}`);
-      throw new Error("Firestore not initialized");
+      throw new Error(`Firestore not initialized for ${collectionName}`);
     }
     const collRef = collection(db, collectionName);
     const q = query(collRef, ...queryConstraints);
@@ -110,9 +111,12 @@ export default function AdminOverviewPage() {
       if (!isMounted) return;
       setLoadingStats(true);
       setError(null);
+
       if (firebaseInitializationError || !db) {
-        if (isMounted) setError(firebaseInitializationError || "Database connection not available.");
-        setLoadingStats(false);
+        if (isMounted) {
+             setError(firebaseInitializationError || "Database connection not available.");
+             setLoadingStats(false);
+        }
         return;
       }
 
@@ -120,7 +124,7 @@ export default function AdminOverviewPage() {
         console.log("Admin Overview: Fetching stats...");
         const [
           userCount, activeStoreCount, activeProductCount, activeCouponCount, activeCategoryCount, activeBannerCount,
-          transactionCount, clickCount, pendingPayoutCount, // totalPayoutAmount can be complex, omitting for now or fetching differently
+          transactionCount, clickCount, pendingPayoutCount,
         ] = await Promise.all([
           fetchCollectionCount('users'),
           fetchCollectionCount('stores', [where('isActive', '==', true)]),
@@ -137,7 +141,6 @@ export default function AdminOverviewPage() {
           setStats({
             userCount, activeStoreCount, activeProductCount, activeCouponCount, activeCategoryCount, activeBannerCount,
             transactionCount, clickCount, pendingPayoutCount,
-            // totalPayoutAmount: formatCurrency(totalPayoutAmount) // Add if implemented
           });
           console.log("Admin Overview: Stats fetched:", { userCount, activeStoreCount });
         }
@@ -169,7 +172,7 @@ export default function AdminOverviewPage() {
   return (
     <AdminGuard>
       <div className="space-y-8">
-        <h1 className="text-3xl font-bold">Admin Overview</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold">Admin Overview</h1>
 
         {error && (
           <Alert variant="destructive">
@@ -179,7 +182,7 @@ export default function AdminOverviewPage() {
           </Alert>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           <StatCard title="Total Users" value={stats.userCount ?? '...'} icon={Users} link="/admin/users" linkText="View all users" isLoading={loadingStats && stats.userCount === undefined} />
           <StatCard title="Active Stores" value={stats.activeStoreCount ?? '...'} icon={StoreIcon} link="/admin/stores" linkText="Manage stores" isLoading={loadingStats && stats.activeStoreCount === undefined} />
           <StatCard title="Active Products" value={stats.activeProductCount ?? '...'} icon={Package} link="/admin/products" linkText="Manage products" isLoading={loadingStats && stats.activeProductCount === undefined} />
@@ -188,8 +191,7 @@ export default function AdminOverviewPage() {
           <StatCard title="Active Banners" value={stats.activeBannerCount ?? '...'} icon={TicketPercent} link="/admin/banners" linkText="Manage banners" isLoading={loadingStats && stats.activeBannerCount === undefined} />
           <StatCard title="Total Transactions" value={stats.transactionCount ?? '...'} icon={ClipboardList} link="/admin/transactions" linkText="View transactions" isLoading={loadingStats && stats.transactionCount === undefined} />
           <StatCard title="Total Clicks" value={stats.clickCount ?? '...'} icon={MousePointerClick} link="/admin/clicks" linkText="View clicks" isLoading={loadingStats && stats.clickCount === undefined} />
-          <StatCard title="Pending Payouts" value={stats.pendingPayoutCount ?? '...'} icon={CreditCard} link="/admin/payouts" linkText="Process payouts" isLoading={loadingStats && stats.pendingPayoutCount === undefined} />
-          {/* <StatCard title="Total Paid Out" value={stats.totalPayoutAmount ?? '₹...'} icon={CreditCard} link="/admin/payouts?status=paid" linkText="View paid" isLoading={loadingStats && stats.totalPayoutAmount === undefined} /> */}
+          <StatCard title="Pending Payouts" value={stats.pendingPayoutCount ?? '...'} icon={CreditCard} link="/admin/payouts?status=pending" linkText="Process payouts" isLoading={loadingStats && stats.pendingPayoutCount === undefined} />
         </div>
 
         <Card>
@@ -197,8 +199,8 @@ export default function AdminOverviewPage() {
             <CardTitle>Quick Actions</CardTitle>
             <CardDescription>Common administrative tasks.</CardDescription>
           </CardHeader>
-          <CardContent className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {quickLinks.map(linkItem => ( // Renamed link to linkItem
+          <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {quickLinks.map(linkItem => (
               <Button variant="outline" asChild key={linkItem.href}>
                 <Link href={linkItem.href} className="flex items-center justify-start gap-2 text-left h-auto py-3">
                   <linkItem.icon className="w-4 h-4 text-primary" />
@@ -212,4 +214,3 @@ export default function AdminOverviewPage() {
     </AdminGuard>
   );
 }
-    

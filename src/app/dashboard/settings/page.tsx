@@ -1,15 +1,15 @@
+
 // src/app/dashboard/settings/page.tsx
 "use client";
 
 import * as React from 'react';
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, Controller } from 'react-hook-form';
 import * as z from 'zod';
 import { 
-  updateProfile as firebaseAuthUpdateProfile, // Renamed to avoid conflict with local updateProfile
+  updateProfile as firebaseAuthUpdateProfile,
   updateEmail as firebaseAuthUpdateEmail, 
   updatePassword as firebaseAuthUpdatePassword, 
   reauthenticateWithCredential, 
@@ -17,7 +17,7 @@ import {
 } from 'firebase/auth';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth as firebaseAuthService } from '@/lib/firebase/config';
-
+import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -35,7 +35,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, Eye, EyeOff, Loader2, User, Lock, Mail, CreditCard, Settings as SettingsIcon } from 'lucide-react';
 import ProtectedRoute from '@/components/guards/protected-route';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { PayoutDetails, PayoutMethod, UserProfile as AppUserProfileType } from '@/lib/types'; // Renamed UserProfile import
+import type { PayoutDetails, PayoutMethod, UserProfile as AppUserProfileType } from '@/lib/types';
 import {
   Dialog,
   DialogContent,
@@ -48,28 +48,24 @@ import {
 } from "@/components/ui/dialog";
 
 
-// --- Profile Update Schema ---
 const profileSchema = z.object({
   displayName: z.string().min(2, "Name must be at least 2 characters").max(50, "Name too long").optional().or(z.literal('')),
-  photoURL: z.string().url("Invalid URL format").optional().or(z.literal('')),
+  photoURL: z.string().url("Invalid URL format").optional().or(z.literal('')).nullable(),
 });
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
-// --- Payout Details Schema ---
 const payoutDetailsSchema = z.object({
-  method: z.enum(['bank_transfer', 'paypal', 'gift_card'], { required_error: "Please select a payout method." }),
+  method: z.enum(['bank_transfer', 'paypal', 'gift_card'] as [PayoutMethod, ...PayoutMethod[]], { required_error: "Please select a payout method." }),
   detail: z.string().min(5, "Payout details must be at least 5 characters.").max(200, "Details too long."),
 });
 type PayoutDetailsFormValues = z.infer<typeof payoutDetailsSchema>;
 
-// --- Email Change Schema ---
 const emailChangeSchema = z.object({
   newEmail: z.string().email("Invalid email address."),
   currentPasswordForEmail: z.string().min(6, "Password must be at least 6 characters."),
 });
 type EmailChangeFormValues = z.infer<typeof emailChangeSchema>;
 
-// --- Password Change Schema ---
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required."),
   newPassword: z.string().min(6, "New password must be at least 6 characters."),
@@ -83,82 +79,38 @@ type PasswordChangeFormValues = z.infer<typeof passwordChangeSchema>;
 
 function SettingsPageSkeleton() {
   return (
-    <div className="space-y-8 max-w-3xl mx-auto">
-      <Skeleton className="h-9 w-1/3" /> {/* Title "Account Settings" */}
-
-      {/* Profile Information Card Skeleton */}
+    <div className="space-y-8 max-w-2xl mx-auto">
+      <Skeleton className="h-9 w-1/3" />
       <Card>
-        <CardHeader>
-          <Skeleton className="h-7 w-1/2 mb-1" /> {/* Card Title */}
-          <Skeleton className="h-4 w-3/4" /> {/* Card Description */}
-        </CardHeader>
+        <CardHeader><Skeleton className="h-7 w-1/2 mb-1" /><Skeleton className="h-4 w-3/4" /></CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-1/4" /> {/* Label */}
-            <Skeleton className="h-10 w-full" /> {/* Input */}
-          </div>
-          <Skeleton className="h-10 w-32" /> {/* Button */}
+          <div className="space-y-2"><Skeleton className="h-4 w-1/4" /><Skeleton className="h-10 w-full" /></div>
+          <div className="space-y-2"><Skeleton className="h-4 w-1/4" /><Skeleton className="h-10 w-full" /></div>
+          <Skeleton className="h-10 w-32" />
         </CardContent>
       </Card>
-
-      {/* Payout Details Card Skeleton */}
       <Card>
-        <CardHeader>
-          <Skeleton className="h-7 w-1/2 mb-1" />
-          <Skeleton className="h-4 w-3/4" />
-        </CardHeader>
+        <CardHeader><Skeleton className="h-7 w-1/2 mb-1" /><Skeleton className="h-4 w-3/4" /></CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-1/4" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-1/4" />
-            <Skeleton className="h-10 w-full" />
-          </div>
+          <div className="space-y-2"><Skeleton className="h-4 w-1/4" /><Skeleton className="h-10 w-full" /></div>
+          <div className="space-y-2"><Skeleton className="h-4 w-1/4" /><Skeleton className="h-10 w-full" /></div>
           <Skeleton className="h-10 w-40" />
         </CardContent>
       </Card>
-
-
-      {/* Change Email Card Skeleton */}
       <Card>
-        <CardHeader>
-          <Skeleton className="h-7 w-1/2 mb-1" />
-          <Skeleton className="h-4 w-3/4" />
-        </CardHeader>
+        <CardHeader><Skeleton className="h-7 w-1/2 mb-1" /><Skeleton className="h-4 w-3/4" /></CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-1/4" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-1/4" />
-            <Skeleton className="h-10 w-full" />
-          </div>
+          <div className="space-y-2"><Skeleton className="h-4 w-1/4" /><Skeleton className="h-10 w-full" /></div>
+          <div className="space-y-2"><Skeleton className="h-4 w-1/4" /><Skeleton className="h-10 w-full" /></div>
           <Skeleton className="h-10 w-36" />
         </CardContent>
       </Card>
-
-      {/* Change Password Card Skeleton */}
       <Card>
-        <CardHeader>
-          <Skeleton className="h-7 w-1/2 mb-1" />
-          <Skeleton className="h-4 w-3/4" />
-        </CardHeader>
+        <CardHeader><Skeleton className="h-7 w-1/2 mb-1" /><Skeleton className="h-4 w-3/4" /></CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-1/4" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-1/4" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-1/4" />
-            <Skeleton className="h-10 w-full" />
-          </div>
+          <div className="space-y-2"><Skeleton className="h-4 w-1/4" /><Skeleton className="h-10 w-full" /></div>
+          <div className="space-y-2"><Skeleton className="h-4 w-1/4" /><Skeleton className="h-10 w-full" /></div>
+          <div className="space-y-2"><Skeleton className="h-4 w-1/4" /><Skeleton className="h-10 w-full" /></div>
           <Skeleton className="h-10 w-40" />
         </CardContent>
       </Card>
@@ -171,42 +123,28 @@ export default function SettingsPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  // --- State for Profile Form ---
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-  // --- State for Payout Details Form ---
   const [payoutLoading, setPayoutLoading] = useState(false);
   const [payoutError, setPayoutError] = useState<string | null>(null);
-
-  // --- State for Email Change ---
   const [emailChangeLoading, setEmailChangeLoading] = useState(false);
   const [emailChangeError, setEmailChangeError] = useState<string | null>(null);
   const [isEmailChangeDialogOpen, setIsEmailChangeDialogOpen] = useState(false);
-
-  // --- State for Password Change ---
   const [passwordChangeLoading, setPasswordChangeLoading] = useState(false);
   const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
   const [isPasswordChangeDialogOpen, setIsPasswordChangeDialogOpen] = useState(false);
 
-
   const profileForm = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
-    defaultValues: {
-      displayName: userProfile?.displayName || '',
-      photoURL: userProfile?.photoURL || '',
-    },
+    defaultValues: { displayName: '', photoURL: '' },
   });
 
   const payoutForm = useForm<PayoutDetailsFormValues>({
     resolver: zodResolver(payoutDetailsSchema),
-    defaultValues: {
-      method: userProfile?.payoutDetails?.method || undefined,
-      detail: userProfile?.payoutDetails?.detail || '',
-    },
+    defaultValues: { method: undefined, detail: '' },
   });
 
   const emailChangeForm = useForm<EmailChangeFormValues>({
@@ -219,7 +157,6 @@ export default function SettingsPage() {
     defaultValues: { currentPassword: '', newPassword: '', confirmNewPassword: '' },
   });
 
-
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login?message=Please login to access settings.');
@@ -227,38 +164,34 @@ export default function SettingsPage() {
     if (userProfile) {
       profileForm.reset({
         displayName: userProfile.displayName || '',
-        photoURL: userProfile.photoURL || '',
+        photoURL: userProfile.photoURL || null, // Ensure photoURL is explicitly null if empty
       });
       payoutForm.reset({
         method: userProfile.payoutDetails?.method || undefined,
         detail: userProfile.payoutDetails?.detail || '',
       });
     }
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, userProfile, authLoading, router]); // Removed form.reset from deps to avoid loops
+  }, [user, userProfile, authLoading, router, profileForm, payoutForm]);
 
    const onProfileSubmit = async (data: ProfileFormValues) => {
      if (!user || !userProfile || !firebaseAuthService?.currentUser) return;
      setProfileLoading(true);
      setProfileError(null);
-
      try {
        await firebaseAuthUpdateProfile(firebaseAuthService.currentUser, {
          displayName: data.displayName || null,
          photoURL: data.photoURL || null,
        });
-
        await updateUserProfileData(user.uid, {
          displayName: data.displayName || null,
          photoURL: data.photoURL || null,
        });
-        await fetchUserProfile(user.uid);
-
+       await fetchUserProfile(user.uid); // Re-fetch to update context
        toast({ title: 'Profile Updated', description: 'Your profile information has been saved.' });
      } catch (err: any) {
        console.error("Profile update failed:", err);
        setProfileError(err.message || "Failed to update profile.");
-        toast({ variant: "destructive", title: 'Update Failed', description: err.message || "Failed to update profile." });
+       toast({ variant: "destructive", title: 'Update Failed', description: err.message || "Failed to update profile." });
      } finally {
        setProfileLoading(false);
      }
@@ -270,7 +203,7 @@ export default function SettingsPage() {
     setPayoutError(null);
     try {
       const payoutDetailsToSave: PayoutDetails = {
-        method: data.method,
+        method: data.method as PayoutMethod,
         detail: data.detail,
       };
       await updateUserProfileData(user.uid, { payoutDetails: payoutDetailsToSave });
@@ -284,36 +217,21 @@ export default function SettingsPage() {
     }
   };
 
-   const handleMakeAdmin = async () => {
-     if (!user || !userProfile) return;
-     // THIS IS NOT SECURE FOR PRODUCTION. Role changes should be done via a backend admin SDK.
-     // This is for demonstration/testing in a controlled environment.
-     const myAdminUid = process.env.NEXT_PUBLIC_INITIAL_ADMIN_UID;
-     if (user.uid !== myAdminUid) {
-       toast({ variant: "destructive", title: "Unauthorized", description: "You are not authorized to perform this action." });
-       return;
-     }
-
-     try {
-       // Create a mock AuthUser object with the role property
-       const mockAuthUserWithAdminRole = {
-         ...user, // Spread existing user properties
-         // Firebase User type doesn't have 'role', so we create a compatible object for our function
-         // This assumes createOrUpdateUserProfile can handle this custom structure
-       };
-       
-       // We'll directly update the user's role in Firestore
-       await updateUserProfileData(user.uid, { role: 'admin' });
-       await fetchUserProfile(user.uid); // Re-fetch to update context
-
-       toast({
-         title: 'User Role Updated',
-         description: 'User has been made admin.',
-       });
-     } catch (err: any) {
-       console.error("Admin role update failed:", err);
-       toast({ variant: "destructive", title: 'Update Failed', description: err.message || "Failed to update role." });
-     }
+  const handleMakeAdmin = async () => {
+    if (!user || !userProfile) return;
+    const myAdminUid = process.env.NEXT_PUBLIC_INITIAL_ADMIN_UID;
+    if (user.uid !== myAdminUid) {
+      toast({ variant: "destructive", title: "Unauthorized", description: "You are not authorized for this action." });
+      return;
+    }
+    try {
+      await updateUserProfileData(user.uid, { role: 'admin' });
+      await fetchUserProfile(user.uid);
+      toast({ title: 'Admin Role Granted', description: `${userProfile.displayName || user.email} is now an admin.` });
+    } catch (err: any) {
+      console.error("Admin role update failed:", err);
+      toast({ variant: "destructive", title: 'Update Failed', description: err.message || "Failed to update role." });
+    }
   };
 
    const reauthenticate = async (password: string) => {
@@ -337,7 +255,6 @@ export default function SettingsPage() {
         email: data.newEmail,
         updatedAt: serverTimestamp(),
       });
-
       await fetchUserProfile(user.uid);
       toast({ title: "Email Updated", description: "Your email address has been successfully updated. Please verify your new email if prompted." });
       emailChangeForm.reset();
@@ -377,13 +294,12 @@ export default function SettingsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="space-y-8 max-w-3xl mx-auto">
-        <h1 className="text-3xl font-bold flex items-center gap-2"><SettingsIcon className="w-7 h-7 text-primary"/> Account Settings</h1>
+      <div className="space-y-8 max-w-2xl mx-auto">
+        <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2"><SettingsIcon className="w-6 h-6 sm:w-7 sm:h-7 text-primary"/> Account Settings</h1>
 
-        {/* Profile Information Card */}
         <Card className="shadow-md border">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><User className="w-5 h-5 text-primary"/> Profile Information</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-lg sm:text-xl"><User className="w-5 h-5 text-primary"/> Profile Information</CardTitle>
             <CardDescription>Update your display name and profile picture URL.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -418,18 +334,15 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Payout Details Card */}
         <Card className="shadow-md border">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><CreditCard className="w-5 h-5 text-primary"/> Payout Details</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-lg sm:text-xl"><CreditCard className="w-5 h-5 text-primary"/> Payout Details</CardTitle>
             <CardDescription>Manage your preferred method for receiving cashback.</CardDescription>
           </CardHeader>
           <CardContent>
             {payoutError && (
               <Alert variant="destructive" className="mb-4">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Error</AlertTitle>
-                <AlertDescription>{payoutError}</AlertDescription>
+                <AlertCircle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{payoutError}</AlertDescription>
               </Alert>
             )}
             <form onSubmit={payoutForm.handleSubmit(onPayoutDetailsSubmit)} className="space-y-4">
@@ -439,34 +352,37 @@ export default function SettingsPage() {
                 render={({ field }) => (
                   <RadioGroup
                     onValueChange={field.onChange}
-                    defaultValue={field.value} // Use defaultValue for initial set
-                    value={field.value} // Controlled component
-                    className="grid grid-cols-1 sm:grid-cols-3 gap-2"
+                    value={field.value}
+                    className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4"
                     aria-label="Payout Method"
                   >
                     {(['bank_transfer', 'paypal', 'gift_card'] as PayoutMethod[]).map((method) => (
                       <Label
                         key={method}
                         htmlFor={`payout-settings-${method}`}
-                        className={`flex items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground cursor-pointer ${
+                        className={`flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 sm:p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer ${
                           field.value === method ? "border-primary ring-2 ring-primary" : ""
                         }`}
                       >
                         <RadioGroupItem value={method} id={`payout-settings-${method}`} className="sr-only" />
-                        <span className="font-normal capitalize text-sm">{method.replace('_', ' ')}</span>
+                        <span className="font-semibold capitalize text-sm mb-1">{method.replace('_', ' ')}</span>
+                         <span className="text-xs text-muted-foreground text-center">
+                            {method === 'bank_transfer' && 'Bank/UPI'}
+                            {method === 'paypal' && 'PayPal Email'}
+                            {method === 'gift_card' && 'e.g., Amazon'}
+                         </span>
                       </Label>
                     ))}
                   </RadioGroup>
                 )}
               />
               {payoutForm.formState.errors.method && <p className="text-sm text-destructive">{payoutForm.formState.errors.method.message}</p>}
-
               <div>
                 <Label htmlFor="payoutDetailSettings">
-                  {payoutForm.watch('method') === 'bank_transfer' && 'Bank Account / UPI ID'}
-                  {payoutForm.watch('method') === 'paypal' && 'PayPal Email Address'}
-                  {payoutForm.watch('method') === 'gift_card' && 'Preferred Gift Card (e.g., Amazon)'}
-                  {!payoutForm.watch('method') && 'Payment Details'}
+                  {payoutForm.watch('method') === 'bank_transfer' && 'Bank Account / UPI ID*'}
+                  {payoutForm.watch('method') === 'paypal' && 'PayPal Email Address*'}
+                  {payoutForm.watch('method') === 'gift_card' && 'Preferred Gift Card (e.g., Amazon)*'}
+                  {!payoutForm.watch('method') && 'Payment Details*'}
                 </Label>
                 <Textarea
                   id="payoutDetailSettings"
@@ -474,6 +390,7 @@ export default function SettingsPage() {
                   placeholder="Enter your payout details..."
                   rows={2}
                   disabled={payoutLoading}
+                  className={payoutForm.formState.errors.detail ? "border-destructive" : ""}
                 />
                 {payoutForm.formState.errors.detail && <p className="text-sm text-destructive mt-1">{payoutForm.formState.errors.detail.message}</p>}
               </div>
@@ -485,10 +402,9 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Change Email Card */}
         <Card className="shadow-md border">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Mail className="w-5 h-5 text-primary"/> Change Email</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-lg sm:text-xl"><Mail className="w-5 h-5 text-primary"/> Change Email</CardTitle>
             <CardDescription>Update the email address associated with your account.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -499,20 +415,12 @@ export default function SettingsPage() {
                   Change Email
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                   <DialogTitle>Change Your Email Address</DialogTitle>
-                  <DialogDescription>
-                    Enter your current password and new email address. You may need to re-verify your email.
-                  </DialogDescription>
+                  <DialogDescription>Enter current password and new email. Verification may be required.</DialogDescription>
                 </DialogHeader>
-                {emailChangeError && (
-                  <Alert variant="destructive" className="my-2">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>Error</AlertTitle>
-                    <AlertDescription>{emailChangeError}</AlertDescription>
-                  </Alert>
-                )}
+                {emailChangeError && <Alert variant="destructive" className="my-2"><AlertCircle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{emailChangeError}</AlertDescription></Alert>}
                 <form onSubmit={emailChangeForm.handleSubmit(onEmailChangeSubmit)} className="space-y-4 py-2">
                   <div>
                     <Label htmlFor="currentPasswordForEmail">Current Password</Label>
@@ -524,9 +432,9 @@ export default function SettingsPage() {
                     <Input id="newEmail" type="email" {...emailChangeForm.register('newEmail')} disabled={emailChangeLoading} />
                     {emailChangeForm.formState.errors.newEmail && <p className="text-sm text-destructive mt-1">{emailChangeForm.formState.errors.newEmail.message}</p>}
                   </div>
-                  <DialogFooter>
-                    <DialogClose asChild><Button type="button" variant="outline" disabled={emailChangeLoading}>Cancel</Button></DialogClose>
-                    <Button type="submit" disabled={emailChangeLoading}>
+                  <DialogFooter className="flex-col sm:flex-row sm:justify-end gap-2">
+                    <DialogClose asChild><Button type="button" variant="outline" disabled={emailChangeLoading} className="w-full sm:w-auto">Cancel</Button></DialogClose>
+                    <Button type="submit" disabled={emailChangeLoading} className="w-full sm:w-auto">
                       {emailChangeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null} Submit Email Change
                     </Button>
                   </DialogFooter>
@@ -534,16 +442,14 @@ export default function SettingsPage() {
               </DialogContent>
             </Dialog>
             {user && user.providerData.length > 0 && user.providerData[0].providerId !== 'password' && (
-                <p className="text-xs text-muted-foreground mt-2">Email change is not available for accounts signed in with Google.</p>
+                <p className="text-xs text-muted-foreground mt-2">Email change is not available for accounts signed in with Google or other providers.</p>
             )}
           </CardContent>
         </Card>
 
-
-        {/* Change Password Card */}
         <Card className="shadow-md border">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Lock className="w-5 h-5 text-primary"/> Change Password</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-lg sm:text-xl"><Lock className="w-5 h-5 text-primary"/> Change Password</CardTitle>
             <CardDescription>Update your account password.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -553,25 +459,17 @@ export default function SettingsPage() {
                    Change Password
                  </Button>
                </DialogTrigger>
-               <DialogContent>
+               <DialogContent className="sm:max-w-md">
                  <DialogHeader>
                    <DialogTitle>Change Your Password</DialogTitle>
-                   <DialogDescription>
-                     Enter your current password and your new password.
-                   </DialogDescription>
+                   <DialogDescription>Enter your current password and your new password.</DialogDescription>
                  </DialogHeader>
-                 {passwordChangeError && (
-                   <Alert variant="destructive" className="my-2">
-                     <AlertCircle className="h-4 w-4" />
-                     <AlertTitle>Error</AlertTitle>
-                     <AlertDescription>{passwordChangeError}</AlertDescription>
-                   </Alert>
-                 )}
+                 {passwordChangeError && <Alert variant="destructive" className="my-2"><AlertCircle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{passwordChangeError}</AlertDescription></Alert>}
                  <form onSubmit={passwordChangeForm.handleSubmit(onPasswordChangeSubmit)} className="space-y-4 py-2">
                    <div className="relative">
                      <Label htmlFor="currentPassword">Current Password</Label>
                      <Input id="currentPassword" type={showPassword ? "text" : "password"} {...passwordChangeForm.register('currentPassword')} disabled={passwordChangeLoading} />
-                      <Button type="button" variant="ghost" size="sm" className="absolute right-1 top-6 h-7 px-2" onClick={() => setShowPassword(!showPassword)}>
+                      <Button type="button" variant="ghost" size="sm" className="absolute right-1 top-6 h-7 px-2" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Hide password" : "Show password"}>
                           {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
                      {passwordChangeForm.formState.errors.currentPassword && <p className="text-sm text-destructive mt-1">{passwordChangeForm.formState.errors.currentPassword.message}</p>}
@@ -579,7 +477,7 @@ export default function SettingsPage() {
                    <div className="relative">
                      <Label htmlFor="newPassword">New Password</Label>
                      <Input id="newPassword" type={showNewPassword ? "text" : "password"} {...passwordChangeForm.register('newPassword')} disabled={passwordChangeLoading} />
-                      <Button type="button" variant="ghost" size="sm" className="absolute right-1 top-6 h-7 px-2" onClick={() => setShowNewPassword(!showNewPassword)}>
+                      <Button type="button" variant="ghost" size="sm" className="absolute right-1 top-6 h-7 px-2" onClick={() => setShowNewPassword(!showNewPassword)} aria-label={showNewPassword ? "Hide new password" : "Show new password"}>
                           {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
                      {passwordChangeForm.formState.errors.newPassword && <p className="text-sm text-destructive mt-1">{passwordChangeForm.formState.errors.newPassword.message}</p>}
@@ -587,14 +485,14 @@ export default function SettingsPage() {
                    <div className="relative">
                      <Label htmlFor="confirmNewPassword">Confirm New Password</Label>
                      <Input id="confirmNewPassword" type={showConfirmPassword ? "text" : "password"} {...passwordChangeForm.register('confirmNewPassword')} disabled={passwordChangeLoading} />
-                     <Button type="button" variant="ghost" size="sm" className="absolute right-1 top-6 h-7 px-2" onClick={() => setShowConfirmPassword(!showConfirmPassword)}>
+                     <Button type="button" variant="ghost" size="sm" className="absolute right-1 top-6 h-7 px-2" onClick={() => setShowConfirmPassword(!showConfirmPassword)} aria-label={showConfirmPassword ? "Hide confirm new password" : "Show confirm new password"}>
                           {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
                      {passwordChangeForm.formState.errors.confirmNewPassword && <p className="text-sm text-destructive mt-1">{passwordChangeForm.formState.errors.confirmNewPassword.message}</p>}
                    </div>
-                   <DialogFooter>
-                     <DialogClose asChild><Button type="button" variant="outline" disabled={passwordChangeLoading}>Cancel</Button></DialogClose>
-                     <Button type="submit" disabled={passwordChangeLoading}>
+                   <DialogFooter className="flex-col sm:flex-row sm:justify-end gap-2">
+                     <DialogClose asChild><Button type="button" variant="outline" disabled={passwordChangeLoading} className="w-full sm:w-auto">Cancel</Button></DialogClose>
+                     <Button type="submit" disabled={passwordChangeLoading} className="w-full sm:w-auto">
                        {passwordChangeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null} Update Password
                      </Button>
                    </DialogFooter>
@@ -602,7 +500,7 @@ export default function SettingsPage() {
                </DialogContent>
              </Dialog>
              {user && user.providerData.length > 0 && user.providerData[0].providerId !== 'password' && (
-                <p className="text-xs text-muted-foreground mt-2">Password change is not available for accounts signed in with Google.</p>
+                <p className="text-xs text-muted-foreground mt-2">Password change is not available for accounts signed in with Google or other providers.</p>
              )}
           </CardContent>
         </Card>

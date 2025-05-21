@@ -1,4 +1,5 @@
 
+// src/app/dashboard/payout/page.tsx
 "use client";
 
 import * as React from 'react';
@@ -41,7 +42,7 @@ import { AlertCircle, IndianRupee, Send, Loader2, Info, ListChecks, ShieldCheck 
 import ProtectedRoute from '@/components/guards/protected-route';
 import { Skeleton } from '@/components/ui/skeleton';
 
-const MIN_PAYOUT_AMOUNT = 250;
+const MIN_PAYOUT_AMOUNT = 250; // Minimum payout amount
 
 const payoutSchemaBase = z.object({
   payoutMethod: z.enum(['bank_transfer', 'paypal', 'gift_card'] as [PayoutMethod, ...PayoutMethod[]], {
@@ -81,7 +82,7 @@ function PayoutPageSkeleton() {
 }
 
 export default function PayoutPage() {
-  const { user, userProfile, loading: authLoading, fetchUserProfile: authFetchUserProfile } = useAuth();
+  const { user, userProfile, loading: authLoading, fetchUserProfile } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -91,7 +92,6 @@ export default function PayoutPage() {
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [canRequest, setCanRequest] = useState(false);
 
-  // Dynamic Zod schema based on the actual availableBalance
   const dynamicPayoutSchema = payoutSchemaBase.refine(
     (data) => data.amount <= availableBalance,
     {
@@ -110,7 +110,7 @@ export default function PayoutPage() {
     formState: { errors, isValid: isFormValid, isDirty },
   } = useForm<PayoutFormValues>({
     resolver: zodResolver(dynamicPayoutSchema),
-    mode: "onChange", // Re-validate on change for better UX
+    mode: "onChange",
     defaultValues: {
       payoutMethod: undefined,
       payoutDetail: '',
@@ -118,13 +118,13 @@ export default function PayoutPage() {
     },
   });
 
-  const requestedAmount = watch("amount");
+  const requestedPayoutAmount = watch("amount");
 
   const refreshUserProfile = useCallback(async () => {
     if (!user) return;
     setLoadingProfile(true);
     try {
-      const profile = await authFetchUserProfile(user.uid);
+      const profile = await fetchUserProfile(user.uid);
       if (profile) {
         const balance = parseFloat((profile.cashbackBalance || 0).toFixed(2));
         setAvailableBalance(balance);
@@ -144,8 +144,7 @@ export default function PayoutPage() {
     } finally {
       setLoadingProfile(false);
     }
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, authFetchUserProfile, setValue]);
+  }, [user, fetchUserProfile, setValue]);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -155,13 +154,12 @@ export default function PayoutPage() {
       setCanRequest(false);
       router.push('/login?message=Please login to request a payout.');
     }
-     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user, router, refreshUserProfile]);
 
 
   const onSubmit = async (data: PayoutFormValues) => {
     console.log("PAYOUT_PAGE: Payout submission started with form data:", data);
-    if (!user || !db || firebaseInitializationError) {
+    if (!user || !db || firebaseInitializationError || !userProfile) {
       setPageError("User not authenticated or database not available.");
       toast({ variant: "destructive", title: "Error", description: "Could not process request. Please try again." });
       return;
@@ -192,7 +190,7 @@ export default function PayoutPage() {
 
         if (finalRequestedAmount > currentFreshBalance) {
           console.error(`PAYOUT_PAGE: Requested amount (₹${finalRequestedAmount.toFixed(2)}) exceeds fresh balance (₹${currentFreshBalance.toFixed(2)}).`);
-          throw new Error(`Your available balance (₹${currentFreshBalance.toFixed(2)}) is less than the requested amount. Please try again with a smaller amount or refresh the page.`);
+          throw new Error(`Your available balance (₹${currentFreshBalance.toFixed(2)}) is less than the requested amount. Please try again or refresh.`);
         }
         if (finalRequestedAmount < MIN_PAYOUT_AMOUNT) {
           console.error(`PAYOUT_PAGE: Requested amount (₹${finalRequestedAmount.toFixed(2)}) is less than minimum (₹${MIN_PAYOUT_AMOUNT}).`);
@@ -221,7 +219,7 @@ export default function PayoutPage() {
           cashbackBalance: increment(-finalRequestedAmount),
           lastPayoutRequestAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-          payoutDetails: payoutDetails, // Save the used details for future convenience
+          payoutDetails: payoutDetails,
         });
         console.log(`PAYOUT_PAGE: User profile (UID: ${user.uid}) updated. cashbackBalance decremented by ₹${finalRequestedAmount.toFixed(2)}.`);
       });
@@ -231,9 +229,8 @@ export default function PayoutPage() {
         description: `Your request for ${formatCurrency(finalRequestedAmount)} is being processed.`,
       });
       
-      // Reset form and refresh local balance state
       reset({ amount: MIN_PAYOUT_AMOUNT, payoutDetail: data.payoutDetail, payoutMethod: data.payoutMethod });
-      await refreshUserProfile(); // Fetch updated profile to reflect new balance
+      await refreshUserProfile(); 
 
       console.log(`PAYOUT_PAGE: Payout request successful. Final Payout Amount: ₹${finalRequestedAmount.toFixed(2)}`);
 
@@ -253,16 +250,16 @@ export default function PayoutPage() {
   return (
     <ProtectedRoute>
       <div className="space-y-8 max-w-2xl mx-auto">
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-          <Send className="w-7 h-7 text-primary" /> Request Payout
+        <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+          <Send className="w-6 h-6 sm:w-7 sm:h-7 text-primary" /> Request Payout
         </h1>
 
         <Card className="shadow-md border">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><IndianRupee className="w-6 h-6 text-primary"/> Your Available Balance</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-lg sm:text-xl"><IndianRupee className="w-5 h-5 sm:w-6 sm:h-6 text-primary"/> Your Available Balance</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-4xl font-bold text-primary">
+            <p className="text-3xl sm:text-4xl font-bold text-primary">
               {formatCurrency(availableBalance)}
             </p>
           </CardContent>
@@ -270,14 +267,14 @@ export default function PayoutPage() {
         
         <Card>
             <CardHeader>
-                <CardTitle className="flex items-center gap-2"><ListChecks className="w-6 h-6 text-primary"/> Payout Rules & Information</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-lg sm:text-xl"><ListChecks className="w-5 h-5 sm:w-6 sm:h-6 text-primary"/> Payout Rules & Information</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground space-y-2">
                 <p><strong>Minimum Payout:</strong> You need at least {formatCurrency(MIN_PAYOUT_AMOUNT)} in confirmed cashback to request a payout.</p>
                 <p><strong>Source:</strong> Payouts are made from your 'Available Cashback Balance'.</p>
-                <p><strong>Processing Time:</strong> Requests are typically processed within 3-5 business days.</p>
+                <p><strong>Processing Time:</strong> Requests are typically processed within 3-5 business days after admin approval.</p>
                 <p><strong>Accuracy:</strong> Please ensure your payout details are correct to avoid delays.</p>
-                <p><strong>Important:</strong> When your payout is processed and marked as 'Paid' by an admin, specific confirmed transactions from your history will be linked to this payout request to reconcile the amount.</p>
+                <p><strong>Important:</strong> When your payout is marked as 'Paid' by an admin, specific confirmed transactions from your history will be linked to this payout request to reconcile the amount.</p>
             </CardContent>
         </Card>
 
@@ -302,7 +299,7 @@ export default function PayoutPage() {
         {canRequest && (
           <Card className="shadow-md border">
             <CardHeader>
-              <CardTitle>Payout Details</CardTitle>
+              <CardTitle className="text-lg sm:text-xl">Payout Details</CardTitle>
               <CardDescription>Select your preferred method and provide details. Requested amount must be between {formatCurrency(MIN_PAYOUT_AMOUNT)} and {formatCurrency(availableBalance)}.</CardDescription>
             </CardHeader>
             <CardContent>
@@ -330,14 +327,14 @@ export default function PayoutPage() {
                       <RadioGroup
                         onValueChange={field.onChange}
                         value={field.value}
-                        className="grid grid-cols-1 sm:grid-cols-3 gap-4"
+                        className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4"
                         aria-label="Payout Method"
                       >
                         {(['bank_transfer', 'paypal', 'gift_card'] as PayoutMethod[]).map((method) => (
                           <Label
                             key={method}
                             htmlFor={`payout-settings-${method}`}
-                            className={`flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer ${
+                            className={`flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 sm:p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer ${
                               field.value === method ? "border-primary ring-2 ring-primary" : ""
                             }`}
                           >
@@ -379,9 +376,9 @@ export default function PayoutPage() {
                   {errors.payoutDetail && <p className="text-sm text-destructive mt-1">{errors.payoutDetail.message}</p>}
                 </div>
 
-                <Button type="submit" disabled={isSubmitting || !canRequest || !isFormValid || !isDirty} className="w-full">
+                <Button type="submit" disabled={isSubmitting || !canRequest || !isFormValid || !isDirty} className="w-full text-base py-3">
                   {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4"/>}
-                  Request Payout of {formatCurrency(requestedAmount || 0)}
+                  Request Payout of {formatCurrency(requestedPayoutAmount || 0)}
                 </Button>
               </form>
             </CardContent>

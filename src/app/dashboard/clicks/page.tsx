@@ -1,3 +1,5 @@
+
+// src/app/dashboard/clicks/page.tsx
 "use client";
 
 import * as React from 'react';
@@ -81,8 +83,10 @@ export default function ClickHistoryPage() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const fetchClicks = useCallback(async (isLoadMoreOperation = false, docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null) => {
+  const fetchClicks = useCallback(async (isLoadMoreOperation = false) => {
     let isMounted = true;
+    const docToStartAfter = isLoadMoreOperation ? lastVisible : null;
+
     if (!user) {
       if(isMounted) {
         if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
@@ -155,29 +159,29 @@ export default function ClickHistoryPage() {
       }
     }
     return () => { isMounted = false; };
-  }, [user]);
+  }, [user, lastVisible, hasMore, loadingMore]); // Added dependencies
 
   useEffect(() => {
     if (user && !authLoading) {
-      fetchClicks(false, null);
+      fetchClicks(false);
     } else if (!authLoading && !user) {
       router.push('/login');
     }
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, authLoading, router]); // Removed fetchClicks to avoid potential loops if it's not stable enough
+  }, [user, authLoading, router, fetchClicks]);
 
   const handleLoadMore = () => {
-    if (!loadingMore && hasMore && lastVisible) {
-      fetchClicks(true, lastVisible);
+    if (!loadingMore && hasMore) { // Removed lastVisible check here, fetchClicks handles it
+      fetchClicks(true);
     }
   };
 
   if (authLoading || (loading && clicks.length === 0 && !pageError)) {
-    return <ClickHistoryTableSkeleton />;
+    return <ProtectedRoute><ClickHistoryTableSkeleton /></ProtectedRoute>;
   }
 
   if (!user && !authLoading) {
     return (
+      <ProtectedRoute>
         <Alert variant="destructive" className="max-w-md mx-auto">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Authentication Required</AlertTitle>
@@ -186,14 +190,15 @@ export default function ClickHistoryPage() {
                 <Button variant="link" className="ml-2 p-0 h-auto" onClick={() => router.push('/login')}>Go to Login</Button>
             </AlertDescription>
         </Alert>
+      </ProtectedRoute>
     );
   }
 
   return (
     <ProtectedRoute>
         <div className="space-y-6">
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-            <MousePointerClick className="w-7 h-7" /> Click History
+        <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+            <MousePointerClick className="w-6 h-6 sm:w-7 sm:h-7" /> Click History
         </h1>
 
         {pageError && (
@@ -210,7 +215,7 @@ export default function ClickHistoryPage() {
             <CardDescription>View the stores and offers you recently clicked on. Clicks are retained for 90 days.</CardDescription>
             </CardHeader>
             <CardContent>
-            {loading && clicks.length === 0 ? (
+            {loading && clicks.length === 0 ? ( 
                 <ClickHistoryTableSkeleton />
             ) : !loading && clicks.length === 0 && !pageError ? (
                 <div className="text-center py-16 text-muted-foreground">
@@ -224,31 +229,31 @@ export default function ClickHistoryPage() {
                 <Table>
                     <TableHeader>
                     <TableRow>
-                        <TableHead>Store</TableHead>
-                        <TableHead>Item Clicked</TableHead>
-                        <TableHead>Clicked At</TableHead>
-                        <TableHead>Link Clicked</TableHead>
-                        <TableHead className="text-right">Click ID</TableHead>
+                        <TableHead className="min-w-[150px]">Store</TableHead>
+                        <TableHead className="min-w-[200px]">Item Clicked</TableHead>
+                        <TableHead className="min-w-[180px]">Clicked At</TableHead>
+                        <TableHead className="min-w-[200px]">Link Clicked</TableHead>
+                        <TableHead className="text-right min-w-[120px]">Click ID</TableHead>
                     </TableRow>
                     </TableHeader>
                     <TableBody>
                     {clicks.map((click) => (
                         <TableRow key={click.id}>
-                        <TableCell className="font-medium">{click.storeName || click.storeId || 'N/A'}</TableCell>
-                        <TableCell>
+                        <TableCell className="font-medium truncate" title={click.storeName || click.storeId || undefined}>{click.storeName || click.storeId || 'N/A'}</TableCell>
+                        <TableCell className="truncate" title={click.productId ? `Product: ${click.productName || click.productId}` : click.couponId ? `Coupon ID: ${click.couponId}` : 'Store Visit'}>
                             {click.productId ? `Product: ${click.productName || click.productId}` :
-                            click.couponId ? `Coupon: ${click.couponId}` :
+                            click.couponId ? `Coupon: ${click.couponId}` : 
                             'Store Visit'}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">{click.timestamp ? format(new Date(click.timestamp), 'PPp') : 'N/A'}</TableCell>
                         <TableCell>
                             <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs">
-                                <a href={click.affiliateLink} target="_blank" rel="noopener noreferrer" title={click.affiliateLink} className="truncate block max-w-[200px]">
+                                <a href={click.affiliateLink} target="_blank" rel="noopener noreferrer" title={click.affiliateLink} className="truncate block max-w-[200px] sm:max-w-xs md:max-w-sm">
                                     {click.affiliateLink || 'N/A'} <ExternalLink className="h-3 w-3 ml-1 inline-block align-middle"/>
                                 </a>
                             </Button>
                         </TableCell>
-                        <TableCell className="font-mono text-xs truncate max-w-[100px] text-right">{click.clickId}</TableCell>
+                        <TableCell className="font-mono text-xs truncate text-right" title={click.clickId}>{click.clickId}</TableCell>
                         </TableRow>
                     ))}
                     </TableBody>
@@ -257,7 +262,7 @@ export default function ClickHistoryPage() {
             )}
             {hasMore && !loading && clicks.length > 0 &&(
                 <div className="mt-6 text-center">
-                <Button onClick={handleLoadMore} disabled={loadingMore}>
+                <Button onClick={handleLoadMore} disabled={loadingMore || loading}>
                     {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Load More Clicks
                 </Button>

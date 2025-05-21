@@ -1,3 +1,5 @@
+
+// src/app/admin/users/page.tsx
 "use client";
 
 import * as React from 'react';
@@ -18,7 +20,7 @@ import {
   QueryDocumentSnapshot,
   Timestamp
 } from 'firebase/firestore';
-import { db, firebaseInitializationError, auth as firebaseAuthService } from '@/lib/firebase/config'; // Ensure firebaseAuthService is correctly imported
+import { db, firebaseInitializationError, auth as firebaseAuthService } from '@/lib/firebase/config';
 import type { UserProfile } from '@/lib/types';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from "@/hooks/use-toast";
@@ -51,7 +53,7 @@ import {
 } from "@/components/ui/dialog";
 import { useDebounce } from '@/hooks/use-debounce';
 import AdminGuard from '@/components/guards/admin-guard';
-import { safeToDate } from '@/lib/utils';
+import { safeToDate, formatCurrency } from '@/lib/utils';
 
 const USERS_PER_PAGE = 20;
 
@@ -96,7 +98,7 @@ export default function AdminUsersPage() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const { toast } = useToast();
-  const { createOrUpdateUserProfile, fetchUserProfile } = useAuth();
+  const { updateUserProfileData, fetchUserProfile } = useAuth(); // Use from useAuth
 
   const [searchTermInput, setSearchTermInput] = useState('');
   const debouncedSearchTerm = useDebounce(searchTermInput, 500);
@@ -105,6 +107,8 @@ export default function AdminUsersPage() {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [newRole, setNewRole] = useState<'user' | 'admin'>('user');
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+
 
   const fetchUsers = useCallback(async (
     isLoadMoreOperation: boolean,
@@ -112,12 +116,12 @@ export default function AdminUsersPage() {
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
   ) => {
     let isMounted = true;
+    if (!isMounted) return; // Early exit if component unmounted
+
     if (firebaseInitializationError || !db) {
-      if (isMounted) {
-        setError(firebaseInitializationError || "Database connection not available.");
-        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
-        setHasMore(false);
-      }
+      setError(firebaseInitializationError || "Database connection not available.");
+      if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+      setHasMore(false);
       return;
     }
 
@@ -126,10 +130,15 @@ export default function AdminUsersPage() {
       setUsers([]);
       setLastVisible(null);
       setHasMore(true);
+      setError(null);
     } else {
+      if (!docToStartAfter && isLoadMoreOperation) { // Prevent load more if no cursor
+         setLoadingMore(false);
+         return;
+      }
       setLoadingMore(true);
     }
-    if (!isLoadMoreOperation) setError(null);
+    
     setIsSearching(currentSearchTerm !== '');
 
     try {
@@ -137,12 +146,9 @@ export default function AdminUsersPage() {
       const constraints: QueryConstraint[] = [];
 
       if (currentSearchTerm) {
-        // Basic search by email or displayName. For robust search, consider Algolia/Typesense.
-        // This is a simplified approach; Firestore isn't ideal for full-text search.
-        constraints.push(orderBy('email')); // Order by a field you search on
+        constraints.push(orderBy('email')); 
         constraints.push(where('email', '>=', currentSearchTerm));
         constraints.push(where('email', '<=', currentSearchTerm + '\uf8ff'));
-        // Could add more where clauses for displayName if needed, but complex.
       } else {
         constraints.push(orderBy('createdAt', 'desc'));
       }
@@ -167,7 +173,6 @@ export default function AdminUsersPage() {
       });
 
       if (isMounted) {
-        // If searching, filter more precisely client-side
         let finalUsers = usersData;
         if (currentSearchTerm) {
           finalUsers = usersData.filter(user =>
@@ -176,14 +181,9 @@ export default function AdminUsersPage() {
           );
         }
 
-        if (isLoadMoreOperation) {
-          setUsers(prev => [...prev, ...finalUsers]);
-        } else {
-          setUsers(finalUsers);
-        }
-        const newLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
-        setLastVisible(newLastVisible);
-        setHasMore(finalUsers.length === USERS_PER_PAGE && querySnapshot.docs.length === USERS_PER_PAGE); // More accurate hasMore
+        setUsers(prev => isLoadMoreOperation ? [...prev, ...finalUsers] : finalUsers);
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+        setHasMore(finalUsers.length === USERS_PER_PAGE && querySnapshot.docs.length === USERS_PER_PAGE);
       }
     } catch (err) {
       console.error("Error fetching users:", err);
@@ -205,8 +205,11 @@ export default function AdminUsersPage() {
     fetchUsers(false, debouncedSearchTerm, null);
   }, [debouncedSearchTerm, fetchUsers]);
 
-  const handleSearchSubmit = (e: React.FormEvent) => e.preventDefault();
-
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    fetchUsers(false, debouncedSearchTerm, null); // Trigger fetch with current term
+  };
+  
   const handleLoadMore = () => {
     if (!loadingMore && hasMore && lastVisible) {
       fetchUsers(true, debouncedSearchTerm, lastVisible);
@@ -219,22 +222,13 @@ export default function AdminUsersPage() {
   };
 
   const handleSaveRole = async () => {
-    if (!editingUser || !db || !firebaseAuthService) return;
+    if (!editingUser || !db || !firebaseAuthService) {
+      toast({ variant: "destructive", title: "Error", description: "Required user data or services missing." });
+      return;
+    }
     setIsSaving(true);
     try {
-      // Fetch the Firebase Auth user to pass to createOrUpdateUserProfile
-      // This step is a bit indirect; ideally, you'd have a dedicated admin SDK function
-      // to update roles. But using existing createOrUpdateUserProfile for consistency.
-      // Note: This won't work if the admin is trying to change their OWN role via this UI.
-      // For robust role management, Firebase Admin SDK in a backend function is better.
-
-      // For client-side updates of specific fields like 'role' by an admin:
-      const userDocRef = doc(db, 'users', editingUser.uid);
-      await updateDoc(userDocRef, {
-        role: newRole,
-        updatedAt: serverTimestamp()
-      });
-
+      await updateUserProfileData(editingUser.uid, { role: newRole });
       setUsers(prev => prev.map(u => u.uid === editingUser.uid ? { ...u, role: newRole, updatedAt: new Date() } : u));
       toast({ title: "User Role Updated", description: `${editingUser.displayName || editingUser.email}'s role set to ${newRole}.` });
       setEditingUser(null);
@@ -249,14 +243,10 @@ export default function AdminUsersPage() {
 
   const handleToggleDisable = async (userToUpdate: UserProfile) => {
     if (!db) return;
-    setIsSaving(true); // Use isSaving to indicate any update operation
+    setUpdatingUserId(userToUpdate.uid);
     try {
-      const userDocRef = doc(db, 'users', userToUpdate.uid);
       const newDisabledState = !userToUpdate.isDisabled;
-      await updateDoc(userDocRef, {
-        isDisabled: newDisabledState,
-        updatedAt: serverTimestamp()
-      });
+      await updateUserProfileData(userToUpdate.uid, { isDisabled: newDisabledState });
       setUsers(prev => prev.map(u => u.uid === userToUpdate.uid ? { ...u, isDisabled: newDisabledState, updatedAt: new Date() } : u));
       toast({ title: `User Account ${newDisabledState ? 'Disabled' : 'Enabled'}`, description: `${userToUpdate.displayName || userToUpdate.email}'s account status updated.` });
     } catch (err) {
@@ -264,18 +254,18 @@ export default function AdminUsersPage() {
       const errorMsg = err instanceof Error ? err.message : "Could not update user status.";
       toast({ variant: "destructive", title: "Update Failed", description: errorMsg });
     } finally {
-      setIsSaving(false);
+      setUpdatingUserId(null);
     }
   };
 
   if (loading && users.length === 0 && !error) {
-    return <UsersTableSkeleton />;
+    return <AdminGuard><UsersTableSkeleton /></AdminGuard>;
   }
 
   return (
     <AdminGuard>
       <div className="space-y-6">
-        <h1 className="text-3xl font-bold">Manage Users</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold">Manage Users</h1>
 
         {error && (
           <Alert variant="destructive">
@@ -325,36 +315,36 @@ export default function AdminUsersPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Display Name</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead>Cashback Balance</TableHead>
-                      <TableHead>Joined</TableHead>
-                      <TableHead className="text-center">Status (Enabled)</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="min-w-[150px]">Display Name</TableHead>
+                      <TableHead className="min-w-[200px]">Email</TableHead>
+                      <TableHead className="min-w-[100px]">Role</TableHead>
+                      <TableHead className="min-w-[150px]">Cashback Balance</TableHead>
+                      <TableHead className="min-w-[120px]">Joined</TableHead>
+                      <TableHead className="text-center min-w-[100px]">Status</TableHead>
+                      <TableHead className="text-right min-w-[120px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {users.map((userItem) => (
                       <TableRow key={userItem.uid} className={userItem.isDisabled ? 'opacity-50 bg-muted/30' : ''}>
-                        <TableCell className="font-medium">{userItem.displayName || 'N/A'}</TableCell>
-                        <TableCell>{userItem.email}</TableCell>
+                        <TableCell className="font-medium truncate" title={userItem.displayName || undefined}>{userItem.displayName || 'N/A'}</TableCell>
+                        <TableCell className="truncate" title={userItem.email || undefined}>{userItem.email}</TableCell>
                         <TableCell>
-                          <Badge variant={userItem.role === 'admin' ? 'destructive' : 'secondary'} className="capitalize">
+                          <Badge variant={userItem.role === 'admin' ? 'destructive' : 'secondary'} className="capitalize whitespace-nowrap">
                             {userItem.role === 'admin' ? <ShieldCheck className="mr-1 h-3 w-3"/> : <UserIcon className="mr-1 h-3 w-3"/>}
                             {userItem.role}
                           </Badge>
                         </TableCell>
-                        <TableCell>₹{userItem.cashbackBalance.toFixed(2)}</TableCell>
-                        <TableCell>{userItem.createdAt ? format(new Date(userItem.createdAt), 'PP') : 'N/A'}</TableCell>
+                        <TableCell>{formatCurrency(userItem.cashbackBalance)}</TableCell>
+                        <TableCell className="whitespace-nowrap">{userItem.createdAt ? format(new Date(userItem.createdAt), 'PP') : 'N/A'}</TableCell>
                         <TableCell className="text-center">
                           <Switch
                             checked={!userItem.isDisabled}
                             onCheckedChange={() => handleToggleDisable(userItem)}
-                            disabled={isSaving}
+                            disabled={updatingUserId === userItem.uid}
                             aria-label={userItem.isDisabled ? 'Enable user account' : 'Disable user account'}
                           />
-                          {isSaving && editingUser?.uid === userItem.uid && <Loader2 className="h-4 w-4 animate-spin ml-2 inline-block" />}
+                          {updatingUserId === userItem.uid && <Loader2 className="h-4 w-4 animate-spin ml-2 inline-block" />}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm" onClick={() => openEditDialog(userItem)} disabled={isSaving}>
@@ -369,7 +359,7 @@ export default function AdminUsersPage() {
             )}
             {hasMore && !loading && users.length > 0 && (
               <div className="mt-6 text-center">
-                <Button onClick={handleLoadMore} disabled={loadingMore}>
+                <Button onClick={handleLoadMore} disabled={loadingMore || loading}>
                   {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Load More Users
                 </Button>
