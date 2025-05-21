@@ -6,8 +6,7 @@ service cloud.firestore {
 
     // Helper function to check if the user is an admin
     function isAdmin() {
-      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     // Helper function to check if the user is authenticated
@@ -23,46 +22,55 @@ service cloud.firestore {
     // Users Collection
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid; // User creates their own profile
 
-      // Users can update their displayName, photoURL, and payoutDetails.
-      // They can also update their cashbackBalance (decrement only) and lastPayoutRequestAt
-      // specifically when making a payout request.
-      // Admins can update any field.
+      // User can update their own displayName, photoURL, payoutDetails, and updatedAt.
+      // User can also update cashbackBalance (decrement only) and lastPayoutRequestAt during payout request.
+      // Admin can update any field.
       allow update: if (
-                      isOwner(userId) &&
-                      // Fields users ARE allowed to change directly
-                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'payoutDetails', 'updatedAt']) ||
-                       (request.resource.data.diff(resource.data).affectedKeys().hasAll(['cashbackBalance', 'lastPayoutRequestAt', 'updatedAt']) && // Payout request specific update
-                        request.resource.data.cashbackBalance < resource.data.cashbackBalance && // Ensure balance is being decremented
-                        request.resource.data.diff(resource.data).affectedKeys().size() == 3 // Only these three fields are changing
-                       )
-                      ) &&
-                      // Fields users are NOT allowed to change directly
-                      request.resource.data.uid == resource.data.uid &&
-                      request.resource.data.email == resource.data.email &&
-                      request.resource.data.role == resource.data.role &&
-                      request.resource.data.isDisabled == resource.data.isDisabled &&
-                      request.resource.data.pendingCashback == resource.data.pendingCashback &&
-                      request.resource.data.lifetimeCashback == resource.data.lifetimeCashback &&
-                      request.resource.data.referralCode == resource.data.referralCode &&
-                      request.resource.data.referralCount == resource.data.referralCount &&
-                      request.resource.data.referralBonusEarned == resource.data.referralBonusEarned &&
-                      request.resource.data.referredBy == resource.data.referredBy &&
-                      request.resource.data.createdAt.toMillis() == resource.data.createdAt.toMillis() // Compare timestamps safely
-                    ) || isAdmin();
-
-      allow delete: if false; // Prevent accidental deletion
+        isAdmin() ||
+        (isOwner(userId) &&
+          // Fields that user CANNOT change directly (must match existing or not be in request)
+          request.resource.data.uid == resource.data.uid &&
+          request.resource.data.email == resource.data.email &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.isDisabled == resource.data.isDisabled &&
+          request.resource.data.referralCode == resource.data.referralCode &&
+          request.resource.data.referredBy == resource.data.referredBy &&
+          // For balance fields, user can only DECREMENT cashbackBalance (during payout)
+          // and other balances should not be changed by user directly here.
+          // Admin path will handle increments based on transactions.
+          (request.resource.data.cashbackBalance <= resource.data.cashbackBalance || request.resource.data.cashbackBalance == nullIfCreatingField('cashbackBalance')) &&
+          (request.resource.data.pendingCashback == resource.data.pendingCashback || request.resource.data.pendingCashback == nullIfCreatingField('pendingCashback')) &&
+          (request.resource.data.lifetimeCashback == resource.data.lifetimeCashback || request.resource.data.lifetimeCashback == nullIfCreatingField('lifetimeCashback')) &&
+          (request.resource.data.referralCount == resource.data.referralCount || request.resource.data.referralCount == nullIfCreatingField('referralCount')) &&
+          (request.resource.data.referralBonusEarned == resource.data.referralBonusEarned || request.resource.data.referralBonusEarned == nullIfCreatingField('referralBonusEarned'))
+          // createdAt should not be updatable after creation
+          // && (request.resource.data.createdAt == resource.data.createdAt || resource.data.createdAt == null)
+          // Ensure this expression correctly evaluates if createdAt is already a Timestamp
+           && (compareTimestamps(request.resource.data.createdAt, resource.data.createdAt))
+        )
+      );
+      allow delete: if false; // Prevent direct deletion
     }
+
+    // Helper for checking if a field is being created (value is not null, but old value is null)
+    function nullIfCreatingField(fieldName) {
+      return !(fieldName in resource.data) ? null : resource.data[fieldName];
+    }
+
+    // Helper function to compare timestamps (needed because direct == on timestamps can be tricky)
+    function compareTimestamps(ts1, ts2) {
+      if (ts1 == null && ts2 == null) return true;
+      if (ts1 == null || ts2 == null) return false; // if one is null and other isn't, they aren't equal
+      // If both are timestamps, compare their seconds and nanoseconds
+      if (ts1.seconds == ts2.seconds && ts1.nanoseconds == ts2.nanoseconds) return true;
+      return false; // default to not equal if not matching above criteria or different types
+    }
+
 
     // Stores Collection
     match /stores/{storeId} {
-      allow read: if resource.data.isActive == true || isAdmin();
-      allow create, update, delete: if isAdmin();
-    }
-
-    // Products Collection
-    match /products/{productId} {
       allow read: if resource.data.isActive == true || isAdmin();
       allow create, update, delete: if isAdmin();
     }
@@ -85,32 +93,38 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // Products Collection
+    match /products/{productId} {
+        allow read: if resource.data.isActive == true || isAdmin();
+        allow create, update, delete: if isAdmin();
+    }
+
     // Clicks Collection
     match /clicks/{clickId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
       allow create: if isAuthenticated() &&
                        request.resource.data.userId == request.auth.uid &&
                        request.resource.data.clickId == clickId; // Ensure clickId in data matches doc ID
-      allow read: if (isOwner(resource.data.userId)
-                      // Optional: Allow users to read their clicks for a limited time (e.g., 90 days)
-                      // && request.time < resource.data.timestamp + duration.value(90, 'd')
-                     ) || isAdmin();
       allow update, delete: if isAdmin();
     }
 
     // Transactions Collection
     match /transactions/{transactionId} {
       allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow create: if isAdmin(); // Typically created by admin or backend function
-      allow update: if isAdmin(); // Status updates, notes etc.
+      allow create: if isAdmin(); // Typically created by admin or trusted backend
+      allow update: if isAdmin(); // Status updates, etc.
       allow delete: if isAdmin();
     }
 
     // PayoutRequests Collection
     match /payoutRequests/{requestId} {
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow update: if isAdmin(); // Admins update status, adminNotes etc.
+      // User creates their own request; userId in data must match auth.uid
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      // Admin updates status, notes, etc.
+      allow update: if isAdmin();
       allow delete: if isAdmin();
     }
   }
 }
+    
