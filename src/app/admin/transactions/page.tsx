@@ -23,7 +23,6 @@ import {
   QueryDocumentSnapshot,
   Timestamp,
   runTransaction,
-  writeBatch,
   getDoc,
   increment
 } from 'firebase/firestore';
@@ -76,8 +75,8 @@ const transactionFormSchema = z.object({
   productDetails: z.string().optional().nullable(),
   transactionDate: z.date({ required_error: "Transaction date is required."}),
   saleAmount: z.number({ required_error: "Sale amount is required."}).min(0, "Sale amount must be non-negative."),
-  cashbackAmount: z.number({ required_error: "Cashback amount is required."}).min(0, "Cashback amount must be non-negative."),
-  status: z.enum(['pending', 'confirmed', 'rejected', 'cancelled', 'awaiting_payout', 'paid'] as [CashbackStatus, ...CashbackStatus[]], { required_error: "Status is required."}),
+  cashbackAmount: z.number({ required_error: "Cashback amount is required."}).min(0, "Cashback amount must be non-negative."), // This is initialCashbackAmount
+  status: z.enum(['pending', 'confirmed', 'rejected', 'cancelled'] as [CashbackStatus, ...CashbackStatus[]], { required_error: "Status is required."}), // Admin can only set these initial statuses
   adminNotes: z.string().optional().nullable(),
   notesToUser: z.string().optional().nullable(),
   rejectionReason: z.string().optional().nullable(),
@@ -128,12 +127,12 @@ function TransactionsTableSkeleton() {
 
 const getStatusVariant = (status: CashbackStatus): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
-    case 'confirmed': return 'default';
-    case 'paid': return 'secondary';
-    case 'pending': return 'outline';
-    case 'awaiting_payout': return 'default';
+    case 'confirmed': return 'default'; // Green-like
+    case 'paid': return 'secondary'; // Blue/Purple-like
+    case 'pending': return 'outline'; // Yellow-like
+    case 'awaiting_payout': return 'default'; // Can be similar to confirmed or a different shade
     case 'rejected':
-    case 'cancelled': return 'destructive';
+    case 'cancelled': return 'destructive'; // Red-like
     default: return 'outline';
   }
 };
@@ -170,7 +169,7 @@ export default function AdminTransactionsPage() {
   const [editingTransaction, setEditingTransaction] = useState<TransactionWithUser | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const [currentEditStatus, setCurrentEditStatus] = useState<CashbackStatus>('pending');
+  // State for the edit/manage dialog's editable fields
   const [currentEditAdminNotes, setCurrentEditAdminNotes] = useState('');
   const [currentEditNotesToUser, setCurrentEditNotesToUser] = useState('');
   const [currentEditRejectionReason, setCurrentEditRejectionReason] = useState('');
@@ -241,6 +240,7 @@ export default function AdminTransactionsPage() {
       userEmail: userCache[transaction.userId]?.email,
       storeName: transaction.storeName || storeCache[transaction.storeId]?.name || transaction.storeId,
     }));
+     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userCache, storeCache, toast]);
 
   const fetchTransactions = useCallback(async (
@@ -290,6 +290,7 @@ export default function AdminTransactionsPage() {
 
       const q = query(transactionsCollectionRef, ...constraints);
       const querySnapshot = await getDocs(q);
+      console.log(`ADMIN_TX: Fetched ${querySnapshot.size} raw transactions.`);
 
       const rawTransactionsData = querySnapshot.docs.map(docSnap => ({
         id: docSnap.id,
@@ -307,6 +308,7 @@ export default function AdminTransactionsPage() {
         setTransactions(prev => loadMoreOperation ? [...prev, ...transactionsWithDetails] : transactionsWithDetails);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(querySnapshot.docs.length === TRANSACTIONS_PER_PAGE && transactionsWithDetails.length > 0);
+        console.log(`ADMIN_TX: Processed ${transactionsWithDetails.length} transactions. HasMore: ${querySnapshot.docs.length === TRANSACTIONS_PER_PAGE && transactionsWithDetails.length > 0}`);
       }
 
     } catch (err) {
@@ -328,7 +330,8 @@ export default function AdminTransactionsPage() {
 
   useEffect(() => {
     fetchTransactions(false, null);
-  }, [fetchTransactions]);
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterStatus, debouncedSearchTerm]); // Removed fetchTransactions
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -352,10 +355,10 @@ export default function AdminTransactionsPage() {
 
   const openEditDialog = (transaction: TransactionWithUser) => {
     setEditingTransaction(transaction);
-    setCurrentEditStatus(transaction.status);
     setCurrentEditAdminNotes(transaction.adminNotes || '');
     setCurrentEditNotesToUser(transaction.notesToUser || '');
     setCurrentEditRejectionReason(transaction.rejectionReason || '');
+    // Note: status change itself is handled by Approve/Reject buttons, not a Select here for pending.
     setIsEditDialogOpen(true);
   };
 
@@ -389,13 +392,13 @@ export default function AdminTransactionsPage() {
                 productDetails: data.productDetails || null,
                 transactionDate: Timestamp.fromDate(data.transactionDate),
                 saleAmount: data.saleAmount,
-                initialCashbackAmount: data.cashbackAmount,
+                initialCashbackAmount: data.cashbackAmount, // Use form's cashbackAmount as initial
                 finalSaleAmount: data.saleAmount, 
-                finalCashbackAmount: data.cashbackAmount,
+                finalCashbackAmount: data.cashbackAmount, // Default finalCashback to initial
                 currency: 'INR',
                 status: data.status,
-                confirmationDate: (data.status === 'confirmed' || data.status === 'awaiting_payout' || data.status === 'paid') ? serverTimestamp() : null,
-                paidDate: data.status === 'paid' ? serverTimestamp() : null,
+                confirmationDate: (data.status === 'confirmed') ? serverTimestamp() : null,
+                paidDate: null, // Paid status is handled by payout flow
                 payoutId: null,
                 reportedDate: serverTimestamp(),
                 rejectionReason: (data.status === 'rejected' || data.status === 'cancelled') ? data.rejectionReason : null,
@@ -407,6 +410,7 @@ export default function AdminTransactionsPage() {
             firestoreTransaction.set(newTransactionRef, transactionDataToSave);
             console.log(`ADMIN_TX: Created new transaction ${newTransactionRef.id} with status ${data.status}`);
 
+            // Update user balances based on initial status
             const userProfileUpdates: Record<string, any> = { updatedAt: serverTimestamp() };
             if (data.status === 'pending') {
                 userProfileUpdates.pendingCashback = increment(data.cashbackAmount);
@@ -414,9 +418,10 @@ export default function AdminTransactionsPage() {
                 userProfileUpdates.cashbackBalance = increment(data.cashbackAmount);
                 userProfileUpdates.lifetimeCashback = increment(data.cashbackAmount);
             }
-            if (Object.keys(userProfileUpdates).length > 1) { // only update if more than just updatedAt
+            // Only update if there are balance changes
+            if (data.status === 'pending' || data.status === 'confirmed') {
                 firestoreTransaction.update(userDocRef, userProfileUpdates);
-                console.log(`ADMIN_TX: User ${data.userId} balances updated for new transaction.`);
+                console.log(`ADMIN_TX: User ${data.userId} balances updated for new transaction. Pending: ${data.status === 'pending' ? data.cashbackAmount : 0}, Confirmed: ${data.status === 'confirmed' ? data.cashbackAmount : 0}`);
             }
         });
         toast({ title: "Transaction Logged", description: `New transaction for user ${data.userId} has been logged.` });
@@ -461,7 +466,7 @@ export default function AdminTransactionsPage() {
             updatedAt: serverTimestamp(),
             adminNotes: currentEditAdminNotes || null,
             notesToUser: currentEditNotesToUser || null,
-            rejectionReason: null, // Clear any previous rejection reason
+            rejectionReason: null, 
         });
         
         firestoreTransaction.update(userRef, {
@@ -470,11 +475,11 @@ export default function AdminTransactionsPage() {
             lifetimeCashback: increment(cashbackAmount),
             updatedAt: serverTimestamp()
         });
-        console.log(`ADMIN_TX: Approved transaction ${editingTransaction.id}. User ${editingTransaction.userId} balances updated.`);
+        console.log(`ADMIN_TX: Approved transaction ${editingTransaction.id}. User ${editingTransaction.userId} balances updated. Cashback: ${cashbackAmount}`);
       });
 
       toast({ title: "Transaction Approved", description: `Transaction ${editingTransaction.id} status changed to Confirmed.` });
-      fetchTransactions(false, null);
+      fetchTransactions(false, null); // Refresh list
       setIsEditDialogOpen(false);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Could not approve transaction.";
@@ -518,18 +523,19 @@ export default function AdminTransactionsPage() {
             updatedAt: serverTimestamp(),
             adminNotes: currentEditAdminNotes || null,
             notesToUser: currentEditNotesToUser || null,
-            confirmationDate: null, // Clear confirmation date
+            confirmationDate: null, 
         });
         
         firestoreTransaction.update(userRef, {
-            pendingCashback: increment(-cashbackAmount),
+            pendingCashback: increment(-cashbackAmount), // Decrement pending cashback
             updatedAt: serverTimestamp()
+            // No change to cashbackBalance or lifetimeCashback
         });
-        console.log(`ADMIN_TX: Rejected transaction ${editingTransaction.id}. User ${editingTransaction.userId} pendingCashback updated.`);
+        console.log(`ADMIN_TX: Rejected transaction ${editingTransaction.id}. User ${editingTransaction.userId} pendingCashback updated by -${cashbackAmount}. Rejection reason: ${currentEditRejectionReason.trim()}`);
       });
 
       toast({ title: "Transaction Rejected", description: `Transaction ${editingTransaction.id} status changed to Rejected.` });
-      fetchTransactions(false, null);
+      fetchTransactions(false, null); // Refresh list
       setIsEditDialogOpen(false);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Could not reject transaction.";
@@ -541,9 +547,14 @@ export default function AdminTransactionsPage() {
     }
   };
   
+  // Handler for updating notes on an already processed transaction
   const handleUpdateNotes = async () => {
     if (!editingTransaction || !editingTransaction.id || !db) {
         toast({ variant: "destructive", title: "Error", description: "No transaction selected or DB error." });
+        return;
+    }
+    if (editingTransaction.status === 'pending') {
+        toast({ variant: "info", title: "Action Not Allowed", description: "Please approve or reject pending transactions first." });
         return;
     }
     setIsSaving(true);
@@ -556,7 +567,7 @@ export default function AdminTransactionsPage() {
             updatedAt: serverTimestamp()
         });
         toast({ title: "Transaction Notes Updated" });
-        fetchTransactions(false, null);
+        fetchTransactions(false, null); // Refresh list
         setIsEditDialogOpen(false);
     } catch (err) {
         const errorMsg = err instanceof Error ? err.message : "Could not update notes.";
@@ -607,7 +618,7 @@ export default function AdminTransactionsPage() {
                 </SelectContent>
               </Select>
               {filterType === 'status' && (
-                <Select value={filterStatus} onValueChange={(value) => { setFilterStatus(value as CashbackStatus | 'all'); fetchTransactions(false, null); }}>
+                <Select value={filterStatus} onValueChange={(value) => { setFilterStatus(value as CashbackStatus | 'all'); }}>
                   <SelectTrigger><SelectValue placeholder="Select Status" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Statuses</SelectItem>
@@ -825,31 +836,32 @@ export default function AdminTransactionsPage() {
           </DialogContent>
         </Dialog>
 
+        {/* Edit/Manage Transaction Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={(isOpen) => {
-            if (!isOpen) setEditingTransaction(null); // Clear editing transaction on close
+            if (!isOpen) setEditingTransaction(null);
             setIsEditDialogOpen(isOpen);
         }}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Manage Transaction</DialogTitle>
-              <DialogDescription>
-                ID: {editingTransaction?.id} <br/>
-                User: {editingTransaction?.userDisplayName || editingTransaction?.userId}
-              </DialogDescription>
+              {editingTransaction && (
+                <DialogDescription>
+                  ID: {editingTransaction.id} <br/>
+                  User: {editingTransaction.userDisplayName || editingTransaction.userId} ({editingTransaction.userEmail || 'N/A'}) <br/>
+                  Store: {editingTransaction.storeName || editingTransaction.storeId} | Order ID: {editingTransaction.orderId || 'N/A'} <br/>
+                  Sale: {formatCurrency(editingTransaction.finalSaleAmount ?? editingTransaction.saleAmount)} | Cashback: {formatCurrency(editingTransaction.finalCashbackAmount ?? editingTransaction.initialCashbackAmount ?? 0)} <br/>
+                  Current Status: <Badge variant={getStatusVariant(editingTransaction.status)} className="capitalize">{editingTransaction.status}</Badge>
+                </DialogDescription>
+              )}
             </DialogHeader>
             {editingTransaction && (
               <div className="space-y-4 py-4">
-                <p className="text-sm"><strong>Store:</strong> {editingTransaction.storeName}</p>
-                <p className="text-sm"><strong>Order ID:</strong> {editingTransaction.orderId || 'N/A'}</p>
-                <p className="text-sm"><strong>Sale:</strong> {formatCurrency(editingTransaction.finalSaleAmount ?? editingTransaction.saleAmount)} | <strong>Cashback:</strong> {formatCurrency(editingTransaction.finalCashbackAmount ?? editingTransaction.initialCashbackAmount ?? 0)}</p>
-                <p className="text-sm"><strong>Current Status:</strong> <Badge variant={getStatusVariant(editingTransaction.status)}>{editingTransaction.status}</Badge></p>
-                <hr/>
                 <div>
                   <Label htmlFor="editAdminNotes">Admin Notes</Label>
                   <Textarea id="editAdminNotes" value={currentEditAdminNotes} onChange={(e) => setCurrentEditAdminNotes(e.target.value)} disabled={isSaving} />
                 </div>
                 <div>
-                  <Label htmlFor="editNotesToUser">Notes for User</Label>
+                  <Label htmlFor="editNotesToUser">Notes for User (will be visible in their history)</Label>
                   <Textarea id="editNotesToUser" value={currentEditNotesToUser} onChange={(e) => setCurrentEditNotesToUser(e.target.value)} disabled={isSaving} />
                 </div>
 

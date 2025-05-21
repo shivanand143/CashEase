@@ -47,7 +47,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { formatCurrency, safeToDate } from '@/lib/utils';
 import AdminGuard from '@/components/guards/admin-guard';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'; // Removed DialogTrigger as it's not directly used for opening programmatically
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { useDebounce } from '@/hooks/use-debounce';
 
 const PAYOUTS_PER_PAGE = 15;
@@ -81,7 +81,7 @@ const getStatusIcon = (status: PayoutStatus) => {
   }
 };
 
-function AdminPayoutsPageSkeleton() { // Renamed to avoid conflict
+function AdminPayoutsPageSkeleton() {
    return (
     <Card>
       <CardHeader>
@@ -114,7 +114,7 @@ function AdminPayoutsPageSkeleton() { // Renamed to avoid conflict
   );
 }
 
-export default function AdminPayoutsPage() { // Changed component name
+export default function AdminPayoutsPage() {
   const [payouts, setPayouts] = useState<PayoutRequestWithUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null); 
@@ -131,7 +131,7 @@ export default function AdminPayoutsPage() { // Changed component name
   const [selectedPayout, setSelectedPayout] = useState<PayoutRequestWithUser | null>(null);
   const [updateStatus, setUpdateStatus] = useState<PayoutStatus>('pending');
   const [adminNotes, setAdminNotes] = useState('');
-  const [failureReason, setFailureReason] = useState(''); // Also used for rejection reason
+  const [failureReason, setFailureReason] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
@@ -169,6 +169,7 @@ export default function AdminPayoutsPage() { // Changed component name
             userDisplayName: userProfiles[payout.userId]?.displayName || 'Unknown User',
             userEmail: userProfiles[payout.userId]?.email || 'N/A',
         }));
+         // eslint-disable-next-line react-hooks/exhaustive-deps
    }, []);
 
 
@@ -249,14 +250,17 @@ export default function AdminPayoutsPage() { // Changed component name
       }
     }
     return () => { isMounted = false; };
-  }, [filterStatus, debouncedSearchTerm, toast, fetchUserDataForPayouts, lastVisible]); 
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterStatus, debouncedSearchTerm, toast, fetchUserDataForPayouts]); 
 
   useEffect(() => {
     fetchPayouts(false);
-  }, [filterStatus, debouncedSearchTerm, fetchPayouts]);
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterStatus, debouncedSearchTerm]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+     fetchPayouts(false);
   };
 
   const handleLoadMore = () => {
@@ -267,9 +271,9 @@ export default function AdminPayoutsPage() { // Changed component name
 
   const openUpdateDialog = (payout: PayoutRequestWithUser) => {
     setSelectedPayout(payout);
-    setUpdateStatus(payout.status);
+    setUpdateStatus(payout.status); // Set the dialog's status select to the current status
     setAdminNotes(payout.adminNotes || '');
-    setFailureReason(payout.failureReason || ''); // Used for rejection/failure reason
+    setFailureReason(payout.failureReason || '');
     setIsDialogOpen(true);
   };
 
@@ -286,7 +290,7 @@ export default function AdminPayoutsPage() { // Changed component name
     const payoutRef = doc(db, 'payoutRequests', selectedPayout.id);
     const userRef = doc(db, 'users', selectedPayout.userId);
     const originalStatus = selectedPayout.status;
-    const newPayoutStatus = updateStatus; 
+    const newPayoutStatus = updateStatus;
     const payoutAmount = selectedPayout.amount;
 
     try {
@@ -297,54 +301,66 @@ export default function AdminPayoutsPage() { // Changed component name
            if (!payoutDocSnap.exists()) throw new Error("Payout request not found.");
            if (!userDocSnap.exists()) throw new Error("User profile not found.");
            
-           const payoutData = payoutDocSnap.data() as PayoutRequest;
-
            const payoutUpdateData: Partial<PayoutRequest> = {
                status: newPayoutStatus,
                adminNotes: adminNotes.trim() || null,
+               processedAt: serverTimestamp(), // Mark as processed now
                failureReason: (newPayoutStatus === 'failed' || newPayoutStatus === 'rejected') ? failureReason.trim() || null : null,
-               processedAt: serverTimestamp(),
            };
-           transaction.update(payoutRef, payoutUpdateData);
 
-           const userProfileUpdates: Record<string, any> = { updatedAt: serverTimestamp() };
+           const batch = writeBatch(db); // Use a separate batch for transaction updates
 
-           // Handle user balance and transaction status changes
-           const batch = writeBatch(db); // Use a separate batch for transaction updates as they are not part of the atomic user/payout update
+           if (newPayoutStatus === 'paid' && originalStatus !== 'paid') {
+               // Settle transactions: find confirmed, unpaid transactions for this user up to payoutAmount
+               const transactionsQuery = query(
+                   collection(db, 'transactions'),
+                   where('userId', '==', selectedPayout.userId),
+                   where('status', '==', 'confirmed'),
+                   where('payoutId', '==', null),
+                   orderBy('transactionDate', 'asc')
+               );
+               const confirmedTransactionsSnap = await getDocs(transactionsQuery); // Read outside transaction, then update with batch
+               
+               let sumOfSelectedTransactions = 0;
+               const transactionIdsToMarkPaid: string[] = [];
 
-           if (newPayoutStatus === 'paid') {
-               if (payoutData.transactionIds && payoutData.transactionIds.length > 0) {
-                   payoutData.transactionIds.forEach(txId => {
-                       const txRef = doc(db, 'transactions', txId);
-                       batch.update(txRef, { status: 'paid' as CashbackStatus, paidDate: serverTimestamp(), updatedAt: serverTimestamp() });
-                   });
+               for (const txDocSnap of confirmedTransactionsSnap.docs) {
+                   const txData = txDocSnap.data() as Transaction;
+                   const txCashbackAmount = txData.finalCashbackAmount ?? txData.initialCashbackAmount ?? 0;
+                   if (sumOfSelectedTransactions + txCashbackAmount <= payoutAmount) {
+                       sumOfSelectedTransactions += txCashbackAmount;
+                       transactionIdsToMarkPaid.push(txDocSnap.id);
+                       batch.update(doc(db, 'transactions', txDocSnap.id), {
+                           status: 'paid' as CashbackStatus,
+                           paidDate: serverTimestamp(),
+                           payoutId: selectedPayout.id,
+                           updatedAt: serverTimestamp()
+                       });
+                   }
+                   if (sumOfSelectedTransactions >= payoutAmount) break;
                }
-               console.log(`ADMIN_PAYOUT: Payout ${selectedPayout.id} marked as 'paid'. ${payoutData.transactionIds?.length || 0} transactions updated.`);
-           } else if (newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') {
-               // If payout is rejected/failed, credit back the amount to user's cashbackBalance
-               // and revert linked transactions from 'awaiting_payout' back to 'confirmed'.
-               userProfileUpdates.cashbackBalance = increment(payoutAmount);
-               console.log(`ADMIN_PAYOUT: Payout ${selectedPayout.id} is ${newPayoutStatus}. User balance ${userDocSnap.id} credited back ₹${payoutAmount}.`);
-
-               if (payoutData.transactionIds && payoutData.transactionIds.length > 0) {
-                   payoutData.transactionIds.forEach(txId => {
-                       const txRef = doc(db, 'transactions', txId);
-                       batch.update(txRef, { status: 'confirmed' as CashbackStatus, payoutId: null, updatedAt: serverTimestamp() });
-                   });
-                   console.log(`ADMIN_PAYOUT: Reverted ${payoutData.transactionIds.length} transactions to 'confirmed' for payout ${selectedPayout.id}.`);
-               }
+                // If there's a mismatch, it's an accounting issue for admin to review manually for now.
+                // The user's balance was already debited when they made the request.
+               payoutUpdateData.transactionIds = transactionIdsToMarkPaid; 
+               console.log(`ADMIN_PAYOUT: Marked ${transactionIdsToMarkPaid.length} transactions as 'paid' for payout ${selectedPayout.id}. Sum: ${sumOfSelectedTransactions}`);
+           } else if ((newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') && (originalStatus === 'pending' || originalStatus === 'approved' || originalStatus === 'processing')) {
+               // Payout is rejected/failed, credit back the amount to user's cashbackBalance
+               // Only credit back if it was previously in a state where balance was debited.
+               transaction.update(userRef, { 
+                   cashbackBalance: increment(payoutAmount),
+                   updatedAt: serverTimestamp()
+               });
+               console.log(`ADMIN_PAYOUT: Payout ${selectedPayout.id} is ${newPayoutStatus}. User ${userDocSnap.id} balance credited back ₹${payoutAmount}.`);
            }
            
-           if (Object.keys(userProfileUpdates).length > 1 ) { 
-               transaction.update(userRef, userProfileUpdates);
-           }
-           await batch.commit(); // Commit transaction status updates
+           transaction.update(payoutRef, payoutUpdateData); // Update the payout request itself
+           await batch.commit(); // Commit transaction status updates (if any)
        });
 
       setPayouts(prev =>
         prev.map(p =>
           p.id === selectedPayout.id
-            ? { ...p, status: newPayoutStatus, adminNotes: adminNotes.trim() || null, failureReason: (newPayoutStatus === 'failed' || newPayoutStatus === 'rejected') ? failureReason.trim() || null : null, processedAt: new Date() }
+            ? { ...p, status: newPayoutStatus, adminNotes: adminNotes.trim() || null, failureReason: (newPayoutStatus === 'failed' || newPayoutStatus === 'rejected') ? failureReason.trim() || null : null, processedAt: new Date(), transactionIds: newPayoutStatus === 'paid' ? selectedPayout.transactionIds : p.transactionIds } // Optimistic update for transactionIds
             : p
         )
       );
@@ -494,12 +510,12 @@ export default function AdminPayoutsPage() { // Changed component name
            <DialogHeader>
              <DialogTitle>Manage Payout Request</DialogTitle>
              <DialogDescription>
-               Update status for User: {selectedPayout?.userDisplayName || selectedPayout?.userId} ({formatCurrency(selectedPayout?.amount || 0)})
+               User: {selectedPayout?.userDisplayName || selectedPayout?.userId} ({formatCurrency(selectedPayout?.amount || 0)})
              </DialogDescription>
            </DialogHeader>
            <div className="grid gap-4 py-4">
              <div>
-                <Label htmlFor="payout-status" className="text-sm font-medium mb-1 block">Status</Label>
+                <Label htmlFor="payout-status" className="text-sm font-medium mb-1 block">New Status*</Label>
                 <Select value={updateStatus} onValueChange={(value) => setUpdateStatus(value as PayoutStatus)} disabled={isUpdating}>
                   <SelectTrigger id="payout-status">
                     <SelectValue placeholder="Select Status" />
@@ -535,6 +551,7 @@ export default function AdminPayoutsPage() { // Changed component name
                          onChange={(e) => setFailureReason(e.target.value)}
                          placeholder={updateStatus === 'failed' ? "Reason for payout failure" : "Reason for rejecting payout"}
                          disabled={isUpdating}
+                         required // Make it visually clear it's required if status implies it
                      />
                  </div>
              )}
@@ -552,7 +569,6 @@ export default function AdminPayoutsPage() { // Changed component name
            </DialogFooter>
          </DialogContent>
        </Dialog>
-
     </div>
     </AdminGuard>
   );

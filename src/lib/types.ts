@@ -46,7 +46,7 @@ export interface Transaction {
   reportedDate?: Date | Timestamp; // Date admin/system reported/entered it
   saleAmount: number; // Initial sale amount reported
   cashbackRateApplied?: string | null; // e.g., "5%" or "₹50 Flat"
-  initialCashbackAmount?: number; // Calculated or manually entered
+  initialCashbackAmount: number; // Calculated or manually entered
   finalSaleAmount?: number | null; // Updated by admin for adjustments
   finalCashbackAmount?: number | null; // Updated by admin
   currency?: string; // e.g., "INR"
@@ -103,7 +103,7 @@ export interface Store {
   terms?: string | null;
   isFeatured: boolean;
   isActive: boolean;
-  isTodaysDeal?: boolean; // Store can be a "Today's Deal" feature
+  isTodaysDeal?: boolean;
   dataAiHint?: string | null;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
@@ -169,7 +169,7 @@ export interface Product {
   specifications?: Record<string, string>;
   isActive: boolean;
   isFeatured?: boolean;
-  isTodaysPick?: boolean; // Product can be a "Today's Pick"
+  isTodaysPick?: boolean;
   dataAiHint?: string | null;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
@@ -184,7 +184,7 @@ export interface PayoutRequest {
   processedAt?: Date | Timestamp | null;
   paymentMethod: PayoutMethod;
   paymentDetails: PayoutDetails;
-  transactionIds: string[]; // IDs of transactions covered by this payout
+  transactionIds: string[]; // IDs of transactions covered by this payout when admin marks as 'paid'
   adminNotes?: string | null;
   failureReason?: string | null;
 }
@@ -207,7 +207,5 @@ export interface ProductFormValues extends Omit<Product, 'id' | 'createdAt' | 'u
 export interface TransactionFormValues extends Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'confirmationDate' | 'paidDate' | 'payoutId' | 'reportedDate' | 'cashbackRateApplied' | 'initialCashbackAmount' | 'finalSaleAmount' | 'finalCashbackAmount' | 'currency' > {
     transactionDate: Date; // Ensure transactionDate is always a Date for the form
     saleAmount: number;
-    cashbackAmount: number;
+    cashbackAmount: number; // This will be used as initialCashbackAmount
 }
-
-    
