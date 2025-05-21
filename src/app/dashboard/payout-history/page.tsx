@@ -1,3 +1,4 @@
+
 // src/app/dashboard/payout-history/page.tsx
 "use client";
 
@@ -33,10 +34,9 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { formatCurrency, safeToDate } from '@/lib/utils';
 import { format } from 'date-fns';
-import { AlertCircle, History, Loader2, Info, ReceiptText, CheckCircle, XCircle, Hourglass, Eye } from 'lucide-react';
+import { AlertCircle, History, Loader2, Info, ReceiptText, CheckCircle, XCircle, Hourglass } from 'lucide-react';
 import ProtectedRoute from '@/components/guards/protected-route';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
-
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const PAYOUTS_PER_PAGE = 15;
 
@@ -64,7 +64,6 @@ const getStatusIcon = (status: PayoutStatus) => {
   }
 };
 
-
 function PayoutHistoryTableSkeleton() {
   return (
     <Card>
@@ -78,7 +77,7 @@ function PayoutHistoryTableSkeleton() {
             <TableHeader>
               <TableRow>
                 {Array.from({ length: 7 }).map((_, index) => (
-                  <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead>
+                  <TableHead key={index} className="min-w-[120px]"><Skeleton className="h-5 w-full" /></TableHead>
                 ))}
               </TableRow>
             </TableHeader>
@@ -102,41 +101,33 @@ export default function PayoutHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [payouts, setPayouts] = React.useState<PayoutRequest[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [pageLoading, setPageLoading] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const isMountedRef = React.useRef(true);
 
-  const [isFullTextDialogOpen, setIsFullTextDialogOpen] = React.useState(false);
-  const [fullTextContent, setFullTextContent] = React.useState<{ title: string; content: string | null | undefined }>({ title: '', content: '' });
-
-  const showFullText = (title: string, content: string | null | undefined) => {
-    setFullTextContent({ title, content: content || "No details available." });
-    setIsFullTextDialogOpen(true);
-  };
-
-  const fetchPayouts = React.useCallback(async (isLoadMoreOp: boolean = false, docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null) => {
-    if (!user || !isMountedRef.current) return;
-
-    if (firebaseInitializationError || !db) {
-      setPageError(firebaseInitializationError || "Database not available.");
-      if (!isLoadMoreOp) setLoading(false); else setLoadingMore(false);
-      setHasMore(false);
+  const fetchInitialPayouts = React.useCallback(async () => {
+    if (!user || !isMountedRef.current) {
+      if(isMountedRef.current) setPageLoading(false);
       return;
     }
 
-    if (!isLoadMoreOp) {
-      setLoading(true);
-      setPayouts([]);
-      setLastVisible(null);
-      setHasMore(true);
-      setPageError(null);
-    } else {
-      if (!docToStartAfter) { setLoadingMore(false); return; }
-      setLoadingMore(true);
+    if (firebaseInitializationError || !db) {
+      if (isMountedRef.current) {
+        setPageError(firebaseInitializationError || "Database not available.");
+        setPageLoading(false);
+        setHasMore(false);
+      }
+      return;
     }
+    
+    setPageLoading(true);
+    setPayouts([]);
+    setLastVisible(null);
+    setHasMore(true);
+    setPageError(null);
 
     try {
       const payoutsCollection = collection(db, 'payoutRequests');
@@ -145,9 +136,6 @@ export default function PayoutHistoryPage() {
         orderBy('requestedAt', 'desc'),
         limit(PAYOUTS_PER_PAGE)
       ];
-      if (isLoadMoreOp && docToStartAfter) {
-        qConstraints.push(startAfter(docToStartAfter));
-      }
       const q = query(payoutsCollection, ...qConstraints);
       const querySnapshot = await getDocs(q);
 
@@ -162,7 +150,7 @@ export default function PayoutHistoryPage() {
       });
 
       if (isMountedRef.current) {
-        setPayouts(prev => isLoadMoreOp ? [...prev, ...newPayoutsData] : newPayoutsData);
+        setPayouts(newPayoutsData);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(newPayoutsData.length === PAYOUTS_PER_PAGE);
       }
@@ -173,37 +161,75 @@ export default function PayoutHistoryPage() {
       }
     } finally {
       if (isMountedRef.current) {
-        if (!isLoadMoreOp) setLoading(false); else setLoadingMore(false);
+        setPageLoading(false);
       }
     }
   }, [user]);
 
+  const handleLoadMore = React.useCallback(async () => {
+    if (!user || !lastVisible || !hasMore || loadingMore || !isMountedRef.current) return;
+
+    setLoadingMore(true);
+    setPageError(null);
+
+    try {
+      const payoutsCollection = collection(db, 'payoutRequests');
+      const qConstraints = [
+        where('userId', '==', user.uid),
+        orderBy('requestedAt', 'desc'),
+        startAfter(lastVisible),
+        limit(PAYOUTS_PER_PAGE)
+      ];
+      const q = query(payoutsCollection, ...qConstraints);
+      const querySnapshot = await getDocs(q);
+      const newPayoutsData = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          requestedAt: safeToDate(data.requestedAt as Timestamp | undefined) || new Date(0),
+          processedAt: safeToDate(data.processedAt as Timestamp | undefined),
+        } as PayoutRequest;
+      });
+       if (isMountedRef.current) {
+        setPayouts(prev => [...prev, ...newPayoutsData]);
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+        setHasMore(newPayoutsData.length === PAYOUTS_PER_PAGE);
+      }
+    } catch (err) {
+      if (isMountedRef.current) {
+        const errorMsg = err instanceof Error ? err.message : "Failed to load more payouts.";
+        setPageError(errorMsg);
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoadingMore(false);
+      }
+    }
+  }, [user, lastVisible, hasMore, loadingMore]);
+
   React.useEffect(() => {
     isMountedRef.current = true;
     if (authLoading) {
-      setLoading(true);
+      setPageLoading(true);
       return;
     }
     if (!user) {
-      setLoading(false);
-      router.push('/login?message=Please login to view your payout history.');
+      if(isMountedRef.current) {
+        setPageLoading(false);
+        router.push('/login?message=Please login to view your payout history.');
+      }
     } else {
-      fetchPayouts(false, null);
+      fetchInitialPayouts();
     }
     return () => { isMountedRef.current = false; };
-  }, [user, authLoading, router, fetchPayouts]);
-
-  const handleLoadMore = () => {
-    if (user && !loadingMore && hasMore && lastVisible) {
-      fetchPayouts(true, lastVisible);
-    }
-  };
+  }, [user, authLoading, router, fetchInitialPayouts]);
 
   const maskPaymentDetail = (method: PayoutMethod, detail: string): string => {
     if (!detail) return 'N/A';
     if (method === 'bank_transfer') {
         if (detail.toLowerCase().includes('@') && detail.toLowerCase().includes('upi')) return `UPI: ****${detail.slice(-4)}`;
-        const parts = detail.split(/[\s,-]+/); // Split by space, comma, or hyphen
+        const parts = detail.split(/[\s,-]+/); 
         const lastMeaningfulPart = parts.reverse().find(part => part.length >= 4 && !isNaN(Number(part.slice(-4))));
         if (lastMeaningfulPart) return `A/C: ****${lastMeaningfulPart.slice(-Math.min(4, lastMeaningfulPart.length))}`;
         return `Bank: ****${detail.slice(-Math.min(4, detail.length))}`;
@@ -221,7 +247,8 @@ export default function PayoutHistoryPage() {
     return detail.length > 10 ? `${detail.substring(0,7)}...` : detail;
   };
 
-  if (authLoading || (loading && payouts.length === 0 && !pageError)) {
+
+  if (authLoading || pageLoading) {
     return <ProtectedRoute><PayoutHistoryTableSkeleton /></ProtectedRoute>;
   }
 
@@ -261,9 +288,7 @@ export default function PayoutHistoryPage() {
             <CardDescription>Track the status and details of your cashback withdrawal requests.</CardDescription>
           </CardHeader>
           <CardContent>
-            {loading && payouts.length === 0 ? (
-                <PayoutHistoryTableSkeleton />
-            ): !loading && payouts.length === 0 && !pageError ? (
+            {payouts.length === 0 && !pageError ? (
               <div className="text-center py-16 text-muted-foreground">
                 <Info className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
                 <p className="text-lg mb-2">No payout requests found.</p>
@@ -278,7 +303,7 @@ export default function PayoutHistoryPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="min-w-[180px]">Requested At</TableHead>
-                      <TableHead className="min-w-[100px]">Amount</TableHead>
+                      <TableHead className="min-w-[100px] text-right">Amount</TableHead>
                       <TableHead className="min-w-[120px]">Status</TableHead>
                       <TableHead className="min-w-[120px]">Method</TableHead>
                       <TableHead className="min-w-[180px]">Details</TableHead>
@@ -290,7 +315,7 @@ export default function PayoutHistoryPage() {
                     {payouts.map((payout) => (
                       <TableRow key={payout.id}>
                         <TableCell className="whitespace-nowrap">{payout.requestedAt ? format(new Date(payout.requestedAt), 'PPp') : 'N/A'}</TableCell>
-                        <TableCell className="font-semibold">{formatCurrency(payout.amount)}</TableCell>
+                        <TableCell className="font-semibold text-right">{formatCurrency(payout.amount)}</TableCell>
                         <TableCell>
                           <Badge variant={getStatusVariant(payout.status)} className="capitalize flex items-center gap-1 text-xs whitespace-nowrap">
                             {getStatusIcon(payout.status)}
@@ -298,32 +323,34 @@ export default function PayoutHistoryPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="capitalize">{payout.paymentMethod.replace('_', ' ')}</TableCell>
-                        <TableCell className="text-xs">
-                          <TooltipProvider>
+                        <TableCell className="text-xs truncate max-w-[180px]">
                            <Tooltip>
-                             <TooltipTrigger asChild>
-                                <span 
-                                  className="truncate block max-w-[150px] cursor-pointer hover:text-primary"
-                                  onClick={() => showFullText("Payment Details", payout.paymentDetails.detail)}
-                                >
+                              <TooltipTrigger asChild>
+                                <span className="cursor-default">
                                   {maskPaymentDetail(payout.paymentMethod, payout.paymentDetails.detail)}
                                 </span>
                               </TooltipTrigger>
-                             <TooltipContent><p>{payout.paymentDetails.detail}</p></TooltipContent>
-                           </Tooltip>
-                           </TooltipProvider>
+                              <TooltipContent>
+                                <p className="max-w-xs break-words">{payout.paymentDetails.detail}</p>
+                              </TooltipContent>
+                            </Tooltip>
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           {payout.processedAt ? format(new Date(payout.processedAt), 'PPp') : '-'}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                           <span 
-                              className="truncate block max-w-[200px] cursor-pointer hover:text-primary"
-                              onClick={() => showFullText(payout.failureReason ? "Rejection/Failure Reason" : "Admin Notes", payout.failureReason || payout.adminNotes)}
-                           >
-                             {(payout.failureReason || payout.adminNotes || '-').substring(0,30) }
-                             {(payout.failureReason && payout.failureReason.length > 30) || (payout.adminNotes && payout.adminNotes.length > 30) ? '...' : ''}
-                           </span>
+                        <TableCell className="text-xs text-muted-foreground truncate max-w-[200px]">
+                           <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-default">
+                                    {(payout.failureReason || payout.adminNotes || '-')}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                 <p className="max-w-xs break-words">
+                                    {payout.failureReason ? `Reason: ${payout.failureReason}` : payout.adminNotes || 'No notes'}
+                                 </p>
+                              </TooltipContent>
+                            </Tooltip>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -332,9 +359,9 @@ export default function PayoutHistoryPage() {
               </div>
             )}
 
-            {hasMore && !loading && payouts.length > 0 && (
+            {hasMore && payouts.length > 0 && (
               <div className="mt-6 text-center">
-                <Button onClick={handleLoadMore} disabled={loadingMore || loading}>
+                <Button onClick={handleLoadMore} disabled={loadingMore || pageLoading}>
                   {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Load More Payouts
                 </Button>
@@ -344,21 +371,6 @@ export default function PayoutHistoryPage() {
           </CardContent>
         </Card>
       </div>
-      <Dialog open={isFullTextDialogOpen} onOpenChange={setIsFullTextDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{fullTextContent.title}</DialogTitle>
-          </DialogHeader>
-          <div className="py-4 max-h-[60vh] overflow-y-auto">
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap break-all">{fullTextContent.content}</p>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline">Close</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </ProtectedRoute>
   );
 }

@@ -1,3 +1,4 @@
+
 // src/app/dashboard/clicks/page.tsx
 "use client";
 
@@ -33,10 +34,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { safeToDate } from '@/lib/utils';
 import { format } from 'date-fns';
-import { AlertCircle, Loader2, MousePointerClick, ExternalLink, Eye } from 'lucide-react';
+import { AlertCircle, Loader2, MousePointerClick, ExternalLink } from 'lucide-react';
 import ProtectedRoute from '@/components/guards/protected-route';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 
 const CLICKS_PER_PAGE = 20;
 
@@ -53,7 +53,7 @@ function ClickHistoryTableSkeleton() {
             <TableHeader>
                 <TableRow>
                 {Array.from({ length: 5 }).map((_, index) => (
-                    <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead>
+                    <TableHead key={index} className="min-w-[120px]"><Skeleton className="h-5 w-full" /></TableHead>
                 ))}
                 </TableRow>
             </TableHeader>
@@ -77,41 +77,33 @@ export default function ClickHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [clicks, setClicks] = React.useState<Click[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [pageLoading, setPageLoading] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const isMountedRef = React.useRef(true);
 
-  const [isFullTextDialogOpen, setIsFullTextDialogOpen] = React.useState(false);
-  const [fullTextContent, setFullTextContent] = React.useState<{ title: string; content: string | null | undefined }>({ title: '', content: '' });
-
-  const showFullText = (title: string, content: string | null | undefined) => {
-    setFullTextContent({ title, content: content || "No details available." });
-    setIsFullTextDialogOpen(true);
-  };
-
-  const fetchClicks = React.useCallback(async (isLoadMoreOp: boolean = false, docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null) => {
-    if (!user || !isMountedRef.current) return;
-
-    if (firebaseInitializationError || !db) {
-      setPageError(firebaseInitializationError || "Database not available.");
-      if (!isLoadMoreOp) setLoading(false); else setLoadingMore(false);
-      setHasMore(false);
+  const fetchInitialClicks = React.useCallback(async () => {
+    if (!user || !isMountedRef.current) {
+      if (isMountedRef.current) setPageLoading(false);
       return;
     }
 
-    if (!isLoadMoreOp) {
-      setLoading(true);
-      setClicks([]);
-      setLastVisible(null);
-      setHasMore(true);
-      setPageError(null);
-    } else {
-      if (!docToStartAfter) { setLoadingMore(false); return; }
-      setLoadingMore(true);
+    if (firebaseInitializationError || !db) {
+      if (isMountedRef.current) {
+        setPageError(firebaseInitializationError || "Database not available.");
+        setPageLoading(false);
+        setHasMore(false);
+      }
+      return;
     }
+
+    setPageLoading(true);
+    setClicks([]);
+    setLastVisible(null);
+    setHasMore(true);
+    setPageError(null);
 
     try {
       const clicksCollection = collection(db, 'clicks');
@@ -120,9 +112,6 @@ export default function ClickHistoryPage() {
         orderBy('timestamp', 'desc'),
         limit(CLICKS_PER_PAGE)
       ];
-      if (isLoadMoreOp && docToStartAfter) {
-        qConstraints.push(startAfter(docToStartAfter));
-      }
       const q = query(clicksCollection, ...qConstraints);
       const querySnapshot = await getDocs(q);
 
@@ -136,7 +125,7 @@ export default function ClickHistoryPage() {
       });
 
       if(isMountedRef.current) {
-        setClicks(prev => isLoadMoreOp ? [...prev, ...clicksData] : clicksData);
+        setClicks(clicksData);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(clicksData.length === CLICKS_PER_PAGE);
       }
@@ -147,37 +136,76 @@ export default function ClickHistoryPage() {
       }
     } finally {
       if(isMountedRef.current) {
-        if (!isLoadMoreOp) setLoading(false); else setLoadingMore(false);
+        setPageLoading(false);
       }
     }
   }, [user]);
 
+  const handleLoadMore = React.useCallback(async () => {
+    if (!user || !lastVisible || !hasMore || loadingMore || !isMountedRef.current) return;
+
+    setLoadingMore(true);
+    setPageError(null);
+
+    try {
+      const clicksCollection = collection(db, 'clicks');
+      const qConstraints = [
+        where('userId', '==', user.uid),
+        orderBy('timestamp', 'desc'),
+        startAfter(lastVisible),
+        limit(CLICKS_PER_PAGE)
+      ];
+      const q = query(clicksCollection, ...qConstraints);
+      const querySnapshot = await getDocs(q);
+      const clicksData = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          timestamp: safeToDate(data.timestamp as Timestamp | undefined) || new Date(0),
+        } as Click;
+      });
+      if(isMountedRef.current) {
+        setClicks(prev => [...prev, ...clicksData]);
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+        setHasMore(clicksData.length === CLICKS_PER_PAGE);
+      }
+    } catch (err) {
+      if(isMountedRef.current) {
+        const errorMsg = err instanceof Error ? err.message : "Failed to load more clicks.";
+        setPageError(errorMsg);
+      }
+    } finally {
+      if(isMountedRef.current) {
+        setLoadingMore(false);
+      }
+    }
+  }, [user, lastVisible, hasMore, loadingMore]);
+
+
   React.useEffect(() => {
     isMountedRef.current = true;
     if (authLoading) {
-      setLoading(true);
+      setPageLoading(true); // Keep showing skeleton if auth is loading
       return;
     }
     if (!user) {
-      setLoading(false);
-      router.push('/login?message=Please login to view your click history.');
+      if (isMountedRef.current) {
+        setPageLoading(false); // Stop loading, ProtectedRoute will redirect
+        router.push('/login?message=Please login to view your click history.');
+      }
     } else {
-      fetchClicks(false, null);
+      fetchInitialClicks();
     }
     return () => { isMountedRef.current = false; };
-  }, [user, authLoading, router, fetchClicks]);
+  }, [user, authLoading, router, fetchInitialClicks]);
 
-  const handleLoadMore = () => {
-    if (user && !loadingMore && hasMore && lastVisible) {
-      fetchClicks(true, lastVisible);
-    }
-  };
-
-  if (authLoading || (loading && clicks.length === 0 && !pageError)) {
+  if (authLoading || pageLoading) {
     return <ProtectedRoute><ClickHistoryTableSkeleton /></ProtectedRoute>;
   }
 
   if (!user && !authLoading) {
+    // Should be handled by ProtectedRoute redirect
     return (
       <ProtectedRoute>
         <Alert variant="destructive" className="max-w-md mx-auto">
@@ -213,9 +241,7 @@ export default function ClickHistoryPage() {
             <CardDescription>View the stores and offers you recently clicked on. Clicks are retained for 90 days.</CardDescription>
             </CardHeader>
             <CardContent>
-            {loading && clicks.length === 0 ? (
-                <ClickHistoryTableSkeleton />
-            ) : !loading && clicks.length === 0 && !pageError ? (
+            {clicks.length === 0 && !pageError ? (
                 <div className="text-center py-16 text-muted-foreground">
                 <p className="mb-4">You haven't clicked on any offers yet, or your clicks are older than 90 days.</p>
                 <Button asChild>
@@ -237,59 +263,29 @@ export default function ClickHistoryPage() {
                     <TableBody>
                     {clicks.map((click) => (
                         <TableRow key={click.id}>
-                        <TableCell className="font-medium">
-                          <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild><span className="truncate block max-w-[150px]">{click.storeName || click.storeId || 'N/A'}</span></TooltipTrigger>
-                            <TooltipContent><p>{click.storeName || click.storeId || 'N/A'}</p></TooltipContent>
-                          </Tooltip>
-                          </TooltipProvider>
+                        <TableCell className="font-medium truncate max-w-[150px]" title={click.storeName || click.storeId || 'N/A'}>
+                            {click.storeName || click.storeId || 'N/A'}
                         </TableCell>
-                        <TableCell>
-                          <TooltipProvider>
-                           <Tooltip>
-                             <TooltipTrigger asChild>
-                              <span className="truncate block max-w-[200px]">
-                                {click.productId ? `Product: ${click.productName || click.productId}` :
-                                click.couponId ? `Coupon: ${click.couponId}` :
-                                'Store Visit'}
-                              </span>
-                             </TooltipTrigger>
-                             <TooltipContent>
-                              <p>
-                                {click.productId ? `Product: ${click.productName || click.productId}` :
-                                click.couponId ? `Coupon: ${click.couponId}` :
-                                'Store Visit'}
-                              </p>
-                             </TooltipContent>
-                           </Tooltip>
-                           </TooltipProvider>
+                        <TableCell className="truncate max-w-[200px]" title={click.productId ? `Product: ${click.productName || click.productId}` : click.couponId ? `Coupon ID: ${click.couponId}` : 'Store Visit'}>
+                            {click.productId ? `Product: ${click.productName || click.productId}` :
+                            click.couponId ? `Coupon: ${click.couponId}` : 
+                            'Store Visit'}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">{click.timestamp ? format(new Date(click.timestamp), 'PPp') : 'N/A'}</TableCell>
                         <TableCell className="text-xs">
-                            {(click.affiliateLink && click.affiliateLink.length > 40) ? (
-                                <span 
-                                className="truncate block max-w-[200px] sm:max-w-xs md:max-w-sm cursor-pointer hover:text-primary"
-                                onClick={() => showFullText("Affiliate Link", click.affiliateLink)}
-                                >
-                                    {click.affiliateLink.substring(0, 40)}...
-                                    <Eye className="inline h-3 w-3 ml-1 opacity-70" />
-                                </span>
-                            ) : (
-                                <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs">
-                                    <a href={click.affiliateLink || '#'} target="_blank" rel="noopener noreferrer" title={click.affiliateLink || undefined} className="truncate block max-w-[200px] sm:max-w-xs md:max-w-sm">
-                                        {click.affiliateLink || 'N/A'} <ExternalLink className="h-3 w-3 ml-1 inline-block align-middle"/>
+                             <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <a href={click.affiliateLink || '#'} target="_blank" rel="noopener noreferrer" className="truncate block max-w-[200px] hover:text-primary">
+                                        {click.affiliateLink || 'N/A'} <ExternalLink className="h-3 w-3 ml-1 inline-block align-middle opacity-70"/>
                                     </a>
-                                </Button>
-                            )}
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p className="max-w-md break-all">{click.affiliateLink || 'No link available'}</p>
+                                </TooltipContent>
+                            </Tooltip>
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-right">
-                          <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild><span className="truncate block max-w-[100px]">{click.clickId}</span></TooltipTrigger>
-                            <TooltipContent><p>{click.clickId}</p></TooltipContent>
-                          </Tooltip>
-                          </TooltipProvider>
+                        <TableCell className="font-mono text-xs text-right truncate max-w-[120px]" title={click.clickId || undefined}>
+                            {click.clickId}
                         </TableCell>
                         </TableRow>
                     ))}
@@ -297,9 +293,9 @@ export default function ClickHistoryPage() {
                 </Table>
                 </div>
             )}
-            {hasMore && !loading && clicks.length > 0 &&(
+            {hasMore && clicks.length > 0 &&(
                 <div className="mt-6 text-center">
-                <Button onClick={handleLoadMore} disabled={loadingMore || loading}>
+                <Button onClick={handleLoadMore} disabled={loadingMore || pageLoading}>
                     {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Load More Clicks
                 </Button>
@@ -309,21 +305,6 @@ export default function ClickHistoryPage() {
             </CardContent>
         </Card>
       </div>
-      <Dialog open={isFullTextDialogOpen} onOpenChange={setIsFullTextDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{fullTextContent.title}</DialogTitle>
-          </DialogHeader>
-          <div className="py-4 max-h-[60vh] overflow-y-auto">
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap break-all">{fullTextContent.content}</p>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline">Close</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </ProtectedRoute>
   );
 }
