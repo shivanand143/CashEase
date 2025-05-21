@@ -14,7 +14,7 @@ import {
   Home,
   User,
   MousePointerClick,
-  ReceiptText // New icon for Payout History
+  ReceiptText 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -26,7 +26,7 @@ const dashboardNavItems = [
   { href: '/dashboard/history', label: 'Cashback History', icon: History },
   { href: '/dashboard/clicks', label: 'Click History', icon: MousePointerClick },
   { href: '/dashboard/payout', label: 'Request Payout', icon: Send },
-  { href: '/dashboard/payout-history', label: 'Payout History', icon: ReceiptText }, // New Link
+  { href: '/dashboard/payout-history', label: 'Payout History', icon: ReceiptText },
   { href: '/dashboard/referrals', label: 'Refer & Earn', icon: Gift },
   { href: '/dashboard/settings', label: 'Account Settings', icon: Settings },
 ];
@@ -39,17 +39,14 @@ export default function DashboardLayout({
   const pathname = usePathname();
 
   const isActive = (href: string) => {
-    // Exact match for dashboard overview, prefix for others
     return href === '/dashboard' ? pathname === href : pathname.startsWith(href);
   };
 
   return (
-    <ProtectedRoute> {/* Wrap the entire layout content */}
-      <div className="flex flex-col md:flex-row gap-8">
-        {/* Sidebar Navigation */}
-        <aside className="w-full md:w-64 shrink-0">
-          <nav className="flex flex-col space-y-1 border rounded-lg p-2 bg-card shadow-sm">
-             {/* Optional: Back to Home link */}
+    <ProtectedRoute> 
+      <div className="flex flex-col md:flex-row gap-6 md:gap-8"> {/* Adjusted gap for responsiveness */}
+        <aside className="w-full md:w-60 lg:w-64 shrink-0"> {/* Slightly reduced width for md, adjust as needed */}
+          <nav className="flex flex-col space-y-1 border rounded-lg p-2 bg-card shadow-sm sticky top-20"> {/* Sticky sidebar */}
              <Button variant="ghost" className="justify-start text-muted-foreground mb-2" asChild>
                <Link href="/">
                  <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
@@ -73,8 +70,7 @@ export default function DashboardLayout({
           </nav>
         </aside>
 
-        {/* Main Content Area */}
-        <main className="flex-1">
+        <main className="flex-1 min-w-0"> {/* Added min-w-0 to prevent flex item from overflowing */}
           {children}
         </main>
       </div>

@@ -42,8 +42,8 @@ const PAYOUTS_PER_PAGE = 15;
 const getStatusVariant = (status: PayoutStatus): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
     case 'approved': return 'default';
-    case 'paid': return 'default'; // Changed from secondary for consistency, green-like
-    case 'processing': return 'secondary'; // Keep secondary for processing/in-progress
+    case 'paid': return 'default'; 
+    case 'processing': return 'secondary'; 
     case 'pending': return 'outline';
     case 'rejected':
     case 'failed': return 'destructive';
@@ -72,7 +72,7 @@ function PayoutHistoryTableSkeleton() {
         <Skeleton className="h-4 w-3/4" />
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto w-full">
           <Table>
             <TableHeader>
               <TableRow>
@@ -101,14 +101,15 @@ export default function PayoutHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [payouts, setPayouts] = React.useState<PayoutRequest[]>([]);
-  const [pageLoading, setPageLoading] = React.useState(true); // Renamed for clarity
+  const [pageLoading, setPageLoading] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
+  const isMountedRef = React.useRef(true);
 
   const fetchInitialPayouts = React.useCallback(async (userId: string) => {
-    let isMounted = true;
+    isMountedRef.current = true;
     setPageLoading(true);
     setPageError(null);
     setPayouts([]);
@@ -116,7 +117,7 @@ export default function PayoutHistoryPage() {
     setHasMore(true);
 
     if (firebaseInitializationError || !db) {
-      if (isMounted) {
+      if (isMountedRef.current) {
         setPageError(firebaseInitializationError || "Database connection not available.");
         setPageLoading(false);
       }
@@ -143,31 +144,30 @@ export default function PayoutHistoryPage() {
         } as PayoutRequest;
       });
 
-      if (isMounted) {
+      if (isMountedRef.current) {
         setPayouts(newPayoutsData);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(newPayoutsData.length === PAYOUTS_PER_PAGE);
       }
     } catch (err) {
-      if (isMounted) {
+      if (isMountedRef.current) {
         const errorMsg = err instanceof Error ? err.message : "Failed to load payout history.";
         setPageError(errorMsg);
       }
     } finally {
-      if (isMounted) {
+      if (isMountedRef.current) {
         setPageLoading(false);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchMorePayouts = React.useCallback(async (userId: string, lastDoc: QueryDocumentSnapshot<DocumentData> | null) => {
     if (!lastDoc) return;
-    let isMounted = true;
+    isMountedRef.current = true;
     setLoadingMore(true);
 
     if (firebaseInitializationError || !db) {
-      if (isMounted) {
+      if (isMountedRef.current) {
         setPageError(firebaseInitializationError || "Database connection not available.");
         setLoadingMore(false);
       }
@@ -195,35 +195,36 @@ export default function PayoutHistoryPage() {
         } as PayoutRequest;
       });
 
-      if (isMounted) {
+      if (isMountedRef.current) {
         setPayouts(prev => [...prev, ...newPayoutsData]);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(newPayoutsData.length === PAYOUTS_PER_PAGE);
       }
     } catch (err) {
-      if (isMounted) {
+      if (isMountedRef.current) {
         const errorMsg = err instanceof Error ? err.message : "Failed to load more payouts.";
         setPageError(errorMsg);
       }
     } finally {
-      if (isMounted) {
+      if (isMountedRef.current) {
         setLoadingMore(false);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   React.useEffect(() => {
+    isMountedRef.current = true;
     if (authLoading) {
-      setPageLoading(true);
+      setPageLoading(true); // Keep loading if auth is still resolving
       return;
     }
     if (!user) {
-      setPageLoading(false);
+      setPageLoading(false); // Stop loading if no user and auth is done
       router.push('/login?message=Please login to view your payout history.');
     } else {
       fetchInitialPayouts(user.uid);
     }
+    return () => { isMountedRef.current = false; };
   }, [user, authLoading, router, fetchInitialPayouts]);
 
   const handleLoadMore = () => {
@@ -305,8 +306,8 @@ export default function PayoutHistoryPage() {
                 </Button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
+              <div className="overflow-x-auto w-full">
+                <Table className="min-w-[900px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="min-w-[180px]">Requested At</TableHead>
@@ -331,19 +332,23 @@ export default function PayoutHistoryPage() {
                         </TableCell>
                         <TableCell className="capitalize">{payout.paymentMethod.replace('_', ' ')}</TableCell>
                         <TableCell className="text-xs">
+                          <TooltipProvider>
                            <Tooltip>
                              <TooltipTrigger asChild><span className="truncate block max-w-[150px]">{maskPaymentDetail(payout.paymentMethod, payout.paymentDetails.detail)}</span></TooltipTrigger>
                              <TooltipContent><p>{payout.paymentDetails.detail}</p></TooltipContent>
                            </Tooltip>
+                           </TooltipProvider>
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           {payout.processedAt ? format(new Date(payout.processedAt), 'PPp') : '-'}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
+                           <TooltipProvider>
                            <Tooltip>
                              <TooltipTrigger asChild><span className="truncate block max-w-[200px]">{payout.status === 'rejected' || payout.status === 'failed' ? payout.failureReason : payout.adminNotes || '-'}</span></TooltipTrigger>
                              <TooltipContent><p>{payout.status === 'rejected' || payout.status === 'failed' ? payout.failureReason : payout.adminNotes || '-'}</p></TooltipContent>
                            </Tooltip>
+                           </TooltipProvider>
                         </TableCell>
                       </TableRow>
                     ))}

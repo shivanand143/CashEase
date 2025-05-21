@@ -48,7 +48,7 @@ function HistoryTableSkeleton() {
         <Skeleton className="h-4 w-2/3" />
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto w-full">
           <Table>
             <TableHeader>
               <TableRow>
@@ -88,7 +88,7 @@ const getStatusVariant = (status: CashbackStatus): "default" | "secondary" | "de
 const getStatusIcon = (status: CashbackStatus) => {
   switch (status) {
     case 'confirmed': return <CheckCircle className="h-3 w-3 text-green-600" />;
-    case 'paid': return <History className="h-3 w-3 text-green-700" />; // Or a specific "paid" icon
+    case 'paid': return <History className="h-3 w-3 text-green-700" />;
     case 'pending': return <Loader2 className="h-3 w-3 animate-spin text-yellow-600" />;
     case 'awaiting_payout': return <History className="h-3 w-3 text-purple-600" />;
     case 'rejected':
@@ -101,14 +101,15 @@ export default function CashbackHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [transactions, setTransactions] = React.useState<Transaction[]>([]);
-  const [pageLoading, setPageLoading] = React.useState(true); // Renamed for clarity
+  const [pageLoading, setPageLoading] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
+  const isMountedRef = React.useRef(true);
 
   const fetchInitialTransactions = React.useCallback(async (userId: string) => {
-    let isMounted = true;
+    isMountedRef.current = true;
     setPageLoading(true);
     setPageError(null);
     setTransactions([]);
@@ -116,7 +117,7 @@ export default function CashbackHistoryPage() {
     setHasMore(true);
 
     if (firebaseInitializationError || !db) {
-      if (isMounted) {
+      if (isMountedRef.current) {
         setPageError(firebaseInitializationError || "Database not available.");
         setPageLoading(false);
       }
@@ -146,31 +147,30 @@ export default function CashbackHistoryPage() {
         } as Transaction;
       });
 
-      if (isMounted) {
+      if (isMountedRef.current) {
         setTransactions(newTransactionsData);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(newTransactionsData.length === TRANSACTIONS_PER_PAGE);
       }
     } catch (err) {
-      if (isMounted) {
+      if (isMountedRef.current) {
         const errorMsg = err instanceof Error ? err.message : "Failed to load transaction history.";
         setPageError(errorMsg);
       }
     } finally {
-      if (isMounted) {
+      if (isMountedRef.current) {
         setPageLoading(false);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Removed user from here as it's passed directly
+  }, []);
 
   const fetchMoreTransactions = React.useCallback(async (userId: string, lastDoc: QueryDocumentSnapshot<DocumentData> | null) => {
     if (!lastDoc) return;
-    let isMounted = true;
+    isMountedRef.current = true;
     setLoadingMore(true);
 
     if (firebaseInitializationError || !db) {
-      if (isMounted) {
+      if (isMountedRef.current) {
         setPageError(firebaseInitializationError || "Database not available.");
         setLoadingMore(false);
       }
@@ -201,25 +201,25 @@ export default function CashbackHistoryPage() {
         } as Transaction;
       });
 
-      if (isMounted) {
+      if (isMountedRef.current) {
         setTransactions(prev => [...prev, ...newTransactionsData]);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(newTransactionsData.length === TRANSACTIONS_PER_PAGE);
       }
     } catch (err) {
-      if (isMounted) {
+      if (isMountedRef.current) {
         const errorMsg = err instanceof Error ? err.message : "Failed to load more transactions.";
         setPageError(errorMsg);
       }
     } finally {
-      if (isMounted) {
+      if (isMountedRef.current) {
         setLoadingMore(false);
       }
     }
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Removed user and lastVisible from here
+  }, []);
 
   React.useEffect(() => {
+    isMountedRef.current = true;
     if (authLoading) {
       setPageLoading(true);
       return;
@@ -230,6 +230,7 @@ export default function CashbackHistoryPage() {
     } else {
       fetchInitialTransactions(user.uid);
     }
+    return () => { isMountedRef.current = false; };
   }, [user, authLoading, router, fetchInitialTransactions]);
 
   const handleLoadMore = () => {
@@ -246,12 +247,12 @@ export default function CashbackHistoryPage() {
     return (
       <ProtectedRoute>
         <Alert variant="destructive" className="max-w-md mx-auto">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Authentication Required</AlertTitle>
-          <AlertDescription>
-            Please log in to view your cashback history.
-            <Button variant="link" className="ml-2 p-0 h-auto" onClick={() => router.push('/login')}>Go to Login</Button>
-          </AlertDescription>
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Authentication Required</AlertTitle>
+            <AlertDescription>
+                Please log in to view your cashback history.
+                <Button variant="link" className="ml-2 p-0 h-auto" onClick={() => router.push('/login')}>Go to Login</Button>
+            </AlertDescription>
         </Alert>
       </ProtectedRoute>
     );
@@ -288,8 +289,8 @@ export default function CashbackHistoryPage() {
                 </Button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
+              <div className="overflow-x-auto w-full">
+                <Table className="min-w-[800px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="min-w-[150px]">Store</TableHead>
@@ -305,16 +306,20 @@ export default function CashbackHistoryPage() {
                     {transactions.map((transaction) => (
                       <TableRow key={transaction.id}>
                         <TableCell className="font-medium">
-                          <Tooltip>
-                            <TooltipTrigger asChild><span className="truncate block max-w-[150px]">{transaction.storeName || transaction.storeId}</span></TooltipTrigger>
-                            <TooltipContent><p>{transaction.storeName || transaction.storeId}</p></TooltipContent>
-                          </Tooltip>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild><span className="truncate block max-w-[150px]">{transaction.storeName || transaction.storeId}</span></TooltipTrigger>
+                              <TooltipContent><p>{transaction.storeName || transaction.storeId}</p></TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </TableCell>
                         <TableCell className="font-mono text-xs">
-                          <Tooltip>
-                            <TooltipTrigger asChild><span className="truncate block max-w-[120px]">{transaction.orderId || 'N/A'}</span></TooltipTrigger>
-                            <TooltipContent><p>{transaction.orderId || 'N/A'}</p></TooltipContent>
-                          </Tooltip>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild><span className="truncate block max-w-[120px]">{transaction.orderId || 'N/A'}</span></TooltipTrigger>
+                              <TooltipContent><p>{transaction.orderId || 'N/A'}</p></TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </TableCell>
                         <TableCell>{formatCurrency(transaction.finalSaleAmount ?? transaction.saleAmount)}</TableCell>
                         <TableCell className="font-semibold text-primary">{formatCurrency(transaction.finalCashbackAmount ?? transaction.initialCashbackAmount ?? 0)}</TableCell>
@@ -326,10 +331,12 @@ export default function CashbackHistoryPage() {
                         </TableCell>
                         <TableCell className="whitespace-nowrap">{transaction.transactionDate ? format(new Date(transaction.transactionDate), 'PP') : 'N/A'}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          <Tooltip>
-                            <TooltipTrigger asChild><span className="truncate block max-w-[200px]">{transaction.notesToUser || '-'}</span></TooltipTrigger>
-                            <TooltipContent><p>{transaction.notesToUser || '-'}</p></TooltipContent>
-                          </Tooltip>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild><span className="truncate block max-w-[200px]">{transaction.notesToUser || '-'}</span></TooltipTrigger>
+                              <TooltipContent><p>{transaction.notesToUser || '-'}</p></TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </TableCell>
                       </TableRow>
                     ))}
