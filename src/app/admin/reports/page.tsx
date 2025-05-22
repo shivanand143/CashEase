@@ -12,9 +12,9 @@ import AdminGuard from '@/components/guards/admin-guard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn, formatCurrency, safeToDate } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { collection, query, where, getDocs, Timestamp, orderBy, getCountFromServer, limit } from 'firebase/firestore'; // Added limit
+import { collection, query, where, getDocs, Timestamp, orderBy, getCountFromServer, limit } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { UserProfile, Transaction, Store, PayoutRequest, CashbackStatus, PayoutStatus } from '@/lib/types';
+import type { UserProfile, Transaction, Store, PayoutRequest, CashbackStatus, PayoutStatus } from '@/lib/types'; // Added CashbackStatus
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
@@ -125,15 +125,12 @@ export default function AdminReportsPage() {
   }, []);
 
   const fetchUserSignupsReport = async (from?: Date, to?: Date): Promise<ReportData> => {
-    if (!db) throw new Error("Database not available");
-    const constraints = [
-      orderBy('createdAt', 'desc'), // Order by creation date for "recent"
-      limit(10) // Limit to 10 recent users for display
-    ];
-    if (from) constraints.unshift(where('createdAt', '>=', Timestamp.fromDate(startOfDay(from))));
-    if (to) constraints.unshift(where('createdAt', '<=', Timestamp.fromDate(endOfDay(to))));
+    if (!db || firebaseInitializationError) throw new Error(firebaseInitializationError || "Database not available");
+    const constraints = [];
+    if (from) constraints.push(where('createdAt', '>=', Timestamp.fromDate(startOfDay(from))));
+    if (to) constraints.push(where('createdAt', '<=', Timestamp.fromDate(endOfDay(to))));
     
-    const usersQuery = query(collection(db, 'users'), ...constraints);
+    const usersQuery = query(collection(db, 'users'), ...constraints, orderBy('createdAt', 'desc'), limit(10));
     const userDocs = await getDocs(usersQuery);
     const recentUsers = userDocs.docs.map(doc => {
         const data = doc.data();
@@ -146,11 +143,10 @@ export default function AdminReportsPage() {
         }
     });
 
-    // Get total count separately
-    const countConstraints = [];
-    if (from) countConstraints.push(where('createdAt', '>=', Timestamp.fromDate(startOfDay(from))));
-    if (to) countConstraints.push(where('createdAt', '<=', Timestamp.fromDate(endOfDay(to))));
-    const countQuery = query(collection(db, 'users'), ...countConstraints);
+    const countQueryConstraints = [];
+    if (from) countQueryConstraints.push(where('createdAt', '>=', Timestamp.fromDate(startOfDay(from))));
+    if (to) countQueryConstraints.push(where('createdAt', '<=', Timestamp.fromDate(endOfDay(to))));
+    const countQuery = query(collection(db, 'users'), ...countQueryConstraints);
     const snapshot = await getCountFromServer(countQuery);
     const totalCount = snapshot.data().count;
 
@@ -169,7 +165,7 @@ export default function AdminReportsPage() {
   };
 
   const fetchTransactionsReport = async (from?: Date, to?: Date): Promise<ReportData> => {
-    if (!db) throw new Error("Database not available");
+    if (!db || firebaseInitializationError) throw new Error(firebaseInitializationError || "Database not available");
     const transactionsRef = collection(db, 'transactions');
     const constraints = [];
     if (from) constraints.push(where('transactionDate', '>=', Timestamp.fromDate(startOfDay(from))));
@@ -183,18 +179,23 @@ export default function AdminReportsPage() {
       totalTransactions: transactions.length,
       totalSaleAmount: transactions.reduce((sum, tx) => sum + (tx.finalSaleAmount ?? tx.saleAmount ?? 0), 0),
       totalCashbackAmount: transactions.reduce((sum, tx) => sum + (tx.finalCashbackAmount ?? tx.initialCashbackAmount ?? 0), 0),
-      byStatus: {} as Record<CashbackStatus, { count: number, totalSale: number, totalCashback: number }>
+      byStatus: {
+        pending: { count: 0, totalSale: 0, totalCashback: 0 },
+        confirmed: { count: 0, totalSale: 0, totalCashback: 0 },
+        rejected: { count: 0, totalSale: 0, totalCashback: 0 },
+        cancelled: { count: 0, totalSale: 0, totalCashback: 0 },
+        awaiting_payout: { count: 0, totalSale: 0, totalCashback: 0 },
+        paid: { count: 0, totalSale: 0, totalCashback: 0 },
+      } as Record<CashbackStatus, { count: number, totalSale: number, totalCashback: number }>
     };
-
-    Object.values(CashbackStatus).forEach(status => { // Initialize all statuses
-        overview.byStatus[status as CashbackStatus] = { count: 0, totalSale: 0, totalCashback: 0 };
-    });
 
     transactions.forEach(tx => {
       const status = tx.status;
-      overview.byStatus[status].count++;
-      overview.byStatus[status].totalSale += (tx.finalSaleAmount ?? tx.saleAmount ?? 0);
-      overview.byStatus[status].totalCashback += (tx.finalCashbackAmount ?? tx.initialCashbackAmount ?? 0);
+      if (overview.byStatus[status]) { // Check if status exists in overview
+        overview.byStatus[status].count++;
+        overview.byStatus[status].totalSale += (tx.finalSaleAmount ?? tx.saleAmount ?? 0);
+        overview.byStatus[status].totalCashback += (tx.finalCashbackAmount ?? tx.initialCashbackAmount ?? 0);
+      }
     });
     
     const statusDetails = Object.entries(overview.byStatus).map(([status, data]) => ({
@@ -223,7 +224,7 @@ export default function AdminReportsPage() {
   };
 
   const fetchStorePerformanceReport = async (from?: Date, to?: Date): Promise<ReportData> => {
-    if (!db) throw new Error("Database not available");
+    if (!db || firebaseInitializationError) throw new Error(firebaseInitializationError ||"Database not available");
     const transactionsRef = collection(db, 'transactions');
     const constraints = [where('status', 'in', ['confirmed', 'paid', 'awaiting_payout'] as CashbackStatus[])];
     if (from) constraints.push(where('transactionDate', '>=', Timestamp.fromDate(startOfDay(from))));
@@ -237,9 +238,17 @@ export default function AdminReportsPage() {
 
     for (const tx of transactions) {
       const storeId = tx.storeId || 'unknown_store';
-      const storeName = tx.storeName || 'Unknown Store';
+      const storeName = tx.storeName || 'Unknown Store'; // Fallback to storeName if available
       if (!storePerformance[storeId]) {
-        storePerformance[storeId] = { name: storeName, count: 0, totalCashback: 0, totalSales: 0 };
+        // Attempt to fetch store name if not on transaction and not cached
+        let currentStoreName = storeName;
+        if (storeName === 'Unknown Store' && storeId !== 'unknown_store') {
+            const storeDoc = await getDoc(doc(db, 'stores', storeId));
+            if (storeDoc.exists()) {
+                currentStoreName = storeDoc.data()?.name || 'Unknown Store';
+            }
+        }
+        storePerformance[storeId] = { name: currentStoreName, count: 0, totalCashback: 0, totalSales: 0 };
       }
       storePerformance[storeId].count++;
       storePerformance[storeId].totalCashback += (tx.finalCashbackAmount ?? tx.initialCashbackAmount ?? 0);
@@ -251,21 +260,19 @@ export default function AdminReportsPage() {
         .map(s => ({
             name: s.name,
             transactionCount: s.count,
-            totalCashbackGenerated: formatCurrency(s.totalCashback),
-            totalSalesValue: formatCurrency(s.totalSales),
+            totalCashbackGenerated: parseFloat(s.totalCashback.toFixed(2)), // Store as number
+            totalSalesValue: parseFloat(s.totalSales.toFixed(2)), // Store as number
         }));
 
-    // Data for bar chart
     const chartData = performanceDetails.slice(0, 10).map(s => ({
-        name: s.name.length > 15 ? s.name.substring(0,12) + '...' : s.name, // Shorten name for chart
-        cashback: parseFloat(s.totalCashbackGenerated.replace(/[^0-9.-]+/g,"")), // Convert currency string to number
+        name: s.name.length > 15 ? s.name.substring(0,12) + '...' : s.name,
+        cashback: s.totalCashbackGenerated, 
     }));
-
 
     return {
       title: "Store Performance (Confirmed/Paid Transactions)",
       description: "Performance of stores based on confirmed/paid transactions within the period.",
-      data: { details: performanceDetails },
+      data: { details: performanceDetails.map(s => ({...s, totalCashbackGenerated: formatCurrency(s.totalCashbackGenerated), totalSalesValue: formatCurrency(s.totalSalesValue) })) }, // Format for display
       columns: [
         { key: "name", header: "Store Name" },
         { key: "transactionCount", header: "Transaction Count" },
@@ -280,7 +287,7 @@ export default function AdminReportsPage() {
   };
   
   const fetchPayoutSummaryReport = async (from?: Date, to?: Date): Promise<ReportData> => {
-    if (!db) throw new Error("Database not available");
+    if (!db || firebaseInitializationError) throw new Error(firebaseInitializationError ||"Database not available");
     const payoutsRef = collection(db, 'payoutRequests');
     const constraints = [];
     if (from) constraints.push(where('requestedAt', '>=', Timestamp.fromDate(startOfDay(from))));
@@ -293,17 +300,22 @@ export default function AdminReportsPage() {
     const overview = {
       totalRequests: payouts.length,
       totalAmountRequested: payouts.reduce((sum, pr) => sum + (pr.amount || 0), 0),
-      byStatus: {} as Record<PayoutStatus, { count: number, totalAmount: number }>
+      byStatus: {
+        pending: { count: 0, totalAmount: 0 },
+        approved: { count: 0, totalAmount: 0 },
+        processing: { count: 0, totalAmount: 0 },
+        paid: { count: 0, totalAmount: 0 },
+        rejected: { count: 0, totalAmount: 0 },
+        failed: { count: 0, totalAmount: 0 },
+      } as Record<PayoutStatus, { count: number, totalAmount: number }>
     };
-
-    Object.values(PayoutStatus).forEach(status => { // Initialize all statuses
-        overview.byStatus[status as PayoutStatus] = { count: 0, totalAmount: 0 };
-    });
 
     payouts.forEach(pr => {
       const status = pr.status;
-      overview.byStatus[status].count++;
-      overview.byStatus[status].totalAmount += (pr.amount || 0);
+      if (overview.byStatus[status]) { // Check if status exists
+        overview.byStatus[status].count++;
+        overview.byStatus[status].totalAmount += (pr.amount || 0);
+      }
     });
 
     const statusDetails = Object.entries(overview.byStatus).map(([status, data]) => ({
@@ -517,3 +529,4 @@ export default function AdminReportsPage() {
     </AdminGuard>
   );
 }
+
