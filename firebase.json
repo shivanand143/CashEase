@@ -31,14 +31,14 @@
     "ui": {
       "enabled": true,
       "port": 4000
+    },
+    "functions": {
+      "port": 5001
     }
-},
-
-
+  },
   "storage": {
     "rules": "storage.rules"
   },
-  
   "functions": [
     {
       "source": "functions",
@@ -50,9 +50,7 @@
         "firebase-debug.*.log",
         "*.local"
       ],
-       "runtime": "nodejs20" 
+      "runtime": "nodejs20"
     }
   ]
 }
-
-  
