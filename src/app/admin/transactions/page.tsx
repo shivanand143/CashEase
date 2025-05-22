@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form'; // Ensure useForm is imported
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
@@ -26,7 +26,7 @@ import {
   increment,
   writeBatch
 } from 'firebase/firestore';
-import { db, firebaseInitializationError } from '@/lib/firebase/config';
+import { db, firebaseInitializationError, auth as firebaseAuthService } from '@/lib/firebase/config';
 import type { Transaction, CashbackStatus, UserProfile, Store, TransactionFormValues as AppTransactionFormValues } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -44,7 +44,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Loader2, Search, Edit, PlusCircle, CheckCircle, XCircle, Info, ListFilter, Calendar as CalendarIconLucide, IndianRupee, ThumbsUp, ThumbsDown, Eye } from 'lucide-react';
+import { AlertCircle, Loader2, Search, Edit, PlusCircle, CheckCircle, XCircle, Info, ListFilter, Calendar as CalendarIconLucide, IndianRupee, ThumbsUp, ThumbsDown, Eye, Briefcase, Link as LinkIcon } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -90,17 +90,6 @@ const transactionFormSchema = z.object({
     path: ["rejectionReason"],
 });
 
-// For the edit dialog, we might use a simpler schema or direct state manipulation for status changes
-const editTransactionStatusSchema = z.object({
-    status: z.enum(['pending', 'confirmed', 'rejected', 'paid', 'cancelled'] as [CashbackStatus, ...CashbackStatus[]]),
-    finalSaleAmount: z.number().min(0).optional().nullable(),
-    finalCashbackAmount: z.number().min(0).optional().nullable(),
-    adminNotes: z.string().optional().nullable(),
-    notesToUser: z.string().optional().nullable(),
-    rejectionReason: z.string().optional().nullable(),
-});
-
-
 interface TransactionWithUser extends Transaction {
   userDisplayName?: string;
   userEmail?: string;
@@ -118,7 +107,7 @@ function TransactionsTableSkeleton() {
           <Table>
             <TableHeader>
               <TableRow>
-                {Array.from({ length: 10 }).map((_, index) => ( // Increased column count
+                {Array.from({ length: 11 }).map((_, index) => ( // Increased column count
                   <TableHead key={index} className="min-w-[120px]"><Skeleton className="h-5 w-full" /></TableHead>
                 ))}
               </TableRow>
@@ -126,7 +115,7 @@ function TransactionsTableSkeleton() {
             <TableBody>
               {Array.from({ length: 10 }).map((_, rowIndex) => (
                 <TableRow key={rowIndex}>
-                  {Array.from({ length: 10 }).map((_, colIndex) => (
+                  {Array.from({ length: 11 }).map((_, colIndex) => (
                     <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell>
                   ))}
                 </TableRow>
@@ -144,7 +133,7 @@ const getStatusVariant = (status: CashbackStatus): "default" | "secondary" | "de
     case 'confirmed': return 'default';
     case 'paid': return 'secondary';
     case 'pending': return 'outline';
-    case 'awaiting_payout': return 'default'; // Assuming this is a positive intermediate step
+    case 'awaiting_payout': return 'default';
     case 'rejected':
     case 'cancelled': return 'destructive';
     default: return 'outline';
@@ -156,7 +145,7 @@ const getStatusIcon = (status: CashbackStatus) => {
     case 'confirmed': return <CheckCircle className="h-3 w-3 text-green-600" />;
     case 'paid': return <IndianRupee className="h-3 w-3 text-blue-600" />;
     case 'pending': return <Loader2 className="h-3 w-3 animate-spin text-yellow-600" />;
-    case 'awaiting_payout': return <Hourglass className="h-3 w-3 text-purple-600" />;
+    case 'awaiting_payout': return <Briefcase className="h-3 w-3 text-purple-600" />; // Changed icon
     case 'rejected':
     case 'cancelled': return <XCircle className="h-3 w-3 text-red-600" />;
     default: return <Info className="h-3 w-3 text-muted-foreground" />;
@@ -184,21 +173,18 @@ export default function AdminTransactionsPage() {
   const [editingTransaction, setEditingTransaction] = React.useState<TransactionWithUser | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
 
-  // States for edit dialog inputs (to manage them outside react-hook-form for simple edits)
-  const [currentEditStatus, setCurrentEditStatus] = React.useState<CashbackStatus>('pending');
-  const [currentEditAdminNotes, setCurrentEditAdminNotes] = React.useState('');
-  const [currentEditNotesToUser, setCurrentEditNotesToUser] = React.useState('');
   const [currentEditRejectionReason, setCurrentEditRejectionReason] = React.useState('');
   const [currentEditFinalSaleAmount, setCurrentEditFinalSaleAmount] = React.useState<number | undefined>(undefined);
   const [currentEditFinalCashbackAmount, setCurrentEditFinalCashbackAmount] = React.useState<number | undefined>(undefined);
-
+  const [currentEditAdminNotes, setCurrentEditAdminNotes] = React.useState<string>('');
+  const [currentEditNotesToUser, setCurrentEditNotesToUser] = React.useState<string>('');
 
   const [userCache, setUserCache] = React.useState<Record<string, Pick<UserProfile, 'displayName' | 'email'>>>({});
   const [storeCache, setStoreCache] = React.useState<Record<string, Pick<Store, 'name'>>>({});
   const isMountedRef = React.useRef(true);
 
-  const addForm = useForm<AppTransactionFormValues>({ // Use AppTransactionFormValues
-    resolver: zodResolver(transactionFormSchema), // Use the correct Zod schema
+  const addForm = useForm<AppTransactionFormValues>({
+    resolver: zodResolver(transactionFormSchema),
     defaultValues: {
       userId: '', storeId: '', storeName: '', orderId: null, clickId: null, conversionId: null,
       productDetails: '', transactionDate: new Date(), saleAmount: 0,
@@ -206,10 +192,8 @@ export default function AdminTransactionsPage() {
     },
   });
 
-  // Fetch User/Store details for display
   const fetchTransactionDetails = React.useCallback(async (rawTransactions: Transaction[]): Promise<TransactionWithUser[]> => {
-    // ... (implementation remains similar to previous, ensure userCache and storeCache are used) ...
-     if (!db || firebaseInitializationError || rawTransactions.length === 0) {
+    if (!db || firebaseInitializationError || rawTransactions.length === 0) {
       return rawTransactions.map(tx => ({ ...tx, userDisplayName: tx.userId, storeName: tx.storeName || tx.storeId }));
     }
     const userIdsToFetch = [...new Set(rawTransactions.map(tx => tx.userId).filter(id => id && !userCache[id]))];
@@ -245,7 +229,8 @@ export default function AdminTransactionsPage() {
         setStoreCache(prev => ({ ...prev, ...newStores }));
       }
     } catch (detailError) {
-      toast({ variant: "destructive", title: "Detail Fetch Error", description: "Could not load some user/store names." });
+      console.warn(`${ADMIN_TX_LOG_PREFIX} Detail Fetch Error:`, detailError);
+      toast({ variant: "destructive", title: "Detail Fetch Warning", description: "Could not load some user/store names." });
     }
     return rawTransactions.map(tx => ({
       ...tx,
@@ -262,15 +247,17 @@ export default function AdminTransactionsPage() {
   ) => {
     if (!isMountedRef.current) return;
     if (!db || firebaseInitializationError) {
-      setPageError(firebaseInitializationError || "DB not ready.");
-      setPageLoading(false); setLoadingMore(false); setHasMore(false);
+      if(isMountedRef.current) {
+        setPageError(firebaseInitializationError || "DB not ready.");
+        setPageLoading(false); setLoadingMore(false); setHasMore(false);
+      }
       return;
     }
 
     if (!loadMoreOp) {
       setPageLoading(true); setTransactions([]); setLastVisible(null); setHasMore(true);
     } else {
-      if (!docToStartAfter) { setLoadingMore(false); return; }
+      if (!docToStartAfter) { if(isMountedRef.current) setLoadingMore(false); return; }
       setLoadingMore(true);
     }
     if(!loadMoreOp) setPageError(null);
@@ -331,8 +318,8 @@ export default function AdminTransactionsPage() {
   React.useEffect(() => {
     isMountedRef.current = true;
     if (authLoading) { setPageLoading(true); return; }
-    if (!adminUser && !authLoading) { setPageLoading(false); return; }
-    fetchTransactions(false, null);
+    if (!adminUser && !authLoading) { setPageLoading(false); return; } // AdminGuard handles redirect
+    fetchTransactions(false);
     return () => { isMountedRef.current = false; };
   }, [authLoading, adminUser, filterStatus, debouncedSearchTerm, fetchTransactions]);
 
@@ -351,7 +338,7 @@ export default function AdminTransactionsPage() {
 
   const openEditDialog = (txItem: TransactionWithUser) => {
     setEditingTransaction(txItem);
-    setCurrentEditStatus(txItem.status);
+    // Set initial values for the dialog's local state (not react-hook-form for this dialog)
     setCurrentEditAdminNotes(txItem.adminNotes || '');
     setCurrentEditNotesToUser(txItem.notesToUser || '');
     setCurrentEditRejectionReason(txItem.rejectionReason || '');
@@ -361,9 +348,8 @@ export default function AdminTransactionsPage() {
   };
 
   const handleAddTransactionSubmit = async (data: AppTransactionFormValues) => {
-    const operation = "handleAddTransactionSubmit";
-    console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Attempting to add transaction:`, "color: blue; font-weight: bold;", "color: black;", data);
-    if (!db) { setPageError("Database not available."); setIsSaving(false); return; }
+    console.log(`${ADMIN_TX_LOG_PREFIX} Attempting to add transaction:`, data);
+    if (!db || firebaseInitializationError) { setPageError("Database not available."); setIsSaving(false); return; }
     setIsSaving(true); setPageError(null);
     
     try {
@@ -385,12 +371,13 @@ export default function AdminTransactionsPage() {
                 orderId: data.orderId || null, clickId: data.clickId || null, conversionId: data.conversionId || null,
                 productDetails: data.productDetails || null, transactionDate: Timestamp.fromDate(data.transactionDate),
                 saleAmount: data.saleAmount, initialCashbackAmount: data.initialCashbackAmount,
-                finalSaleAmount: data.saleAmount, finalCashbackAmount: data.initialCashbackAmount, // Initially same
-                currency: 'INR', status: data.status, confirmationDate: (data.status === 'confirmed') ? serverTimestamp() : null,
-                paidDate: null, payoutId: null, reportedDate: serverTimestamp(),
+                cashbackRateApplied: data.cashbackRateApplied || null,
+                finalSaleAmount: data.saleAmount, finalCashbackAmount: data.initialCashbackAmount,
+                currency: 'INR', status: data.status, confirmationDate: (data.status === 'confirmed') ? serverTimestamp() as Timestamp : null,
+                paidDate: null, payoutId: null, reportedDate: serverTimestamp() as Timestamp,
                 rejectionReason: (data.status === 'rejected' || data.status === 'cancelled') ? data.rejectionReason || null : null,
                 adminNotes: data.adminNotes || null, notesToUser: data.notesToUser || null,
-                createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+                createdAt: serverTimestamp() as Timestamp, updatedAt: serverTimestamp() as Timestamp,
             };
             firestoreTransaction.set(newTransactionRef, transactionDataToSave);
 
@@ -398,13 +385,14 @@ export default function AdminTransactionsPage() {
             if (data.status === 'pending') {
                 userProfileUpdates.pendingCashback = increment(data.initialCashbackAmount);
             } else if (data.status === 'confirmed') {
+                userProfileUpdates.pendingCashback = increment(0); // No change if directly confirmed, assumes it wasn't pending first
                 userProfileUpdates.cashbackBalance = increment(data.initialCashbackAmount);
                 userProfileUpdates.lifetimeCashback = increment(data.initialCashbackAmount);
             }
-             if (Object.keys(userProfileUpdates).length > 1) firestoreTransaction.update(userDocRef, userProfileUpdates);
+            if (Object.keys(userProfileUpdates).length > 1) firestoreTransaction.update(userDocRef, userProfileUpdates);
         });
         toast({ title: "Transaction Logged", description: `New transaction for user ${data.userId} has been logged.` });
-        fetchTransactions(false, null); setIsAddDialogOpen(false); addForm.reset();
+        fetchTransactions(false); setIsAddDialogOpen(false); addForm.reset();
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Could not add transaction.";
       setPageError(errorMsg); toast({ variant: "destructive", title: "Add Failed", description: errorMsg });
@@ -413,92 +401,85 @@ export default function AdminTransactionsPage() {
     }
   };
 
-  const handleTransactionStatusUpdate = async (newStatus: CashbackStatus) => {
-    const operation = "handleTransactionStatusUpdate";
-    if (!editingTransaction || !editingTransaction.id || !db) {
-        toast({ variant: "destructive", title: "Error", description: "No transaction selected or DB error." }); return;
+  const handleApproveTransaction = async () => {
+    if (!editingTransaction || !editingTransaction.id || !db) return;
+    setIsSaving(true); setPageError(null);
+
+    const transactionRef = doc(db, 'transactions', editingTransaction.id);
+    const userRef = doc(db, 'users', editingTransaction.userId);
+    
+    const finalCashbackToCredit = currentEditFinalCashbackAmount ?? editingTransaction.initialCashbackAmount;
+    const finalSaleToRecord = currentEditFinalSaleAmount ?? editingTransaction.saleAmount;
+
+    try {
+      await runTransaction(db, async (firestoreTransaction) => {
+        const userSnap = await firestoreTransaction.get(userRef);
+        if (!userSnap.exists()) throw new Error("User profile not found.");
+        
+        firestoreTransaction.update(transactionRef, {
+          status: 'confirmed' as CashbackStatus,
+          confirmationDate: serverTimestamp(),
+          adminNotes: currentEditAdminNotes.trim() || null,
+          notesToUser: currentEditNotesToUser.trim() || null,
+          finalSaleAmount: finalSaleToRecord,
+          finalCashbackAmount: finalCashbackToCredit,
+          rejectionReason: null, // Clear rejection reason on approval
+          updatedAt: serverTimestamp(),
+        });
+
+        firestoreTransaction.update(userRef, {
+          pendingCashback: increment(-(editingTransaction.initialCashbackAmount || 0)), // Debit original pending amount
+          cashbackBalance: increment(finalCashbackToCredit),
+          lifetimeCashback: increment(finalCashbackToCredit),
+          updatedAt: serverTimestamp(),
+        });
+      });
+      toast({ title: "Transaction Approved", description: `Cashback credited to user ${editingTransaction.userId}.` });
+      fetchTransactions(false); setIsEditDialogOpen(false);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Could not approve transaction.";
+      setPageError(errorMsg); toast({ variant: "destructive", title: "Approval Failed", description: errorMsg });
+    } finally {
+      setIsSaving(false);
     }
-    if ((newStatus === 'rejected' || newStatus === 'cancelled') && !currentEditRejectionReason.trim()) {
-        toast({ variant: "destructive", title: "Input Required", description: "Reason is required for rejection/cancellation." }); return;
+  };
+
+  const handleRejectTransaction = async () => {
+    if (!editingTransaction || !editingTransaction.id || !db || !currentEditRejectionReason.trim()) {
+      toast({variant: "destructive", title: "Rejection Reason Required", description: "Please provide a reason for rejecting."});
+      return;
     }
     setIsSaving(true); setPageError(null);
 
     const transactionRef = doc(db, 'transactions', editingTransaction.id);
     const userRef = doc(db, 'users', editingTransaction.userId);
-    const originalStatus = editingTransaction.status;
-    const originalInitialCashback = editingTransaction.initialCashbackAmount || 0;
-    const originalFinalCashback = editingTransaction.finalCashbackAmount ?? originalInitialCashback;
-    
-    // Use current values from state for final amounts if admin modified them
-    const newFinalSaleAmount = currentEditFinalSaleAmount ?? editingTransaction.finalSaleAmount ?? editingTransaction.saleAmount;
-    const newFinalCashbackAmount = currentEditFinalCashbackAmount ?? editingTransaction.finalCashbackAmount ?? originalInitialCashback;
-
-    console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Updating Tx ID: ${editingTransaction.id} from ${originalStatus} to ${newStatus}. OriginalCB: ${originalInitialCashback}, NewFinalCB: ${newFinalCashbackAmount}`, "color: blue; font-weight: bold;", "color: black;");
 
     try {
       await runTransaction(db, async (firestoreTransaction) => {
-        const transactionSnap = await firestoreTransaction.get(transactionRef);
         const userSnap = await firestoreTransaction.get(userRef);
-        if (!transactionSnap.exists()) throw new Error("Transaction not found.");
         if (!userSnap.exists()) throw new Error("User profile not found.");
-        
-        const currentTransactionData = transactionSnap.data() as Transaction; // Ensure we use fresh data
-        if (currentTransactionData.status !== originalStatus) throw new Error("Transaction status changed since opening dialog. Please refresh.");
 
-        const updateTxData: Partial<Transaction> = {
-            status: newStatus,
-            adminNotes: currentEditAdminNotes.trim() || null,
-            notesToUser: currentEditNotesToUser.trim() || null,
-            updatedAt: serverTimestamp(),
-            finalSaleAmount: newFinalSaleAmount,
-            finalCashbackAmount: newFinalCashbackAmount, // Set this regardless of status for record keeping
-        };
-        
-        const userProfileUpdates: Record<string, any> = { updatedAt: serverTimestamp() };
-
-        if (newStatus === 'confirmed') {
-            updateTxData.confirmationDate = serverTimestamp();
-            updateTxData.rejectionReason = null; // Clear rejection reason if any
-            if (originalStatus === 'pending') {
-                userProfileUpdates.pendingCashback = increment(-originalInitialCashback);
-                userProfileUpdates.cashbackBalance = increment(newFinalCashbackAmount);
-                userProfileUpdates.lifetimeCashback = increment(newFinalCashbackAmount);
-            } else if (originalStatus === 'rejected' || originalStatus === 'cancelled') {
-                // Moving from rejected/cancelled to confirmed (less common, but possible)
-                // pendingCashback was already likely zeroed out or not incremented
-                userProfileUpdates.cashbackBalance = increment(newFinalCashbackAmount);
-                userProfileUpdates.lifetimeCashback = increment(newFinalCashbackAmount);
-            } // No balance change if moving from confirmed to confirmed with different amounts (handled by admin logic)
-        } else if (newStatus === 'rejected' || newStatus === 'cancelled') {
-            updateTxData.rejectionReason = currentEditRejectionReason.trim();
-            updateTxData.confirmationDate = null;
-            if (originalStatus === 'pending') {
-                userProfileUpdates.pendingCashback = increment(-originalInitialCashback);
-            } else if (originalStatus === 'confirmed' || originalStatus === 'awaiting_payout') { // If it was confirmed or awaiting payout
-                userProfileUpdates.cashbackBalance = increment(-originalFinalCashback); // Revert the confirmed amount
-                userProfileUpdates.lifetimeCashback = increment(-originalFinalCashback); // Revert from lifetime
-                 // No change to pending, it was already processed out of pending
-            }
-        }
-        // Other status changes (e.g., to 'paid' or 'awaiting_payout') handled by Payouts page
-        // or if you want direct admin control here, add more conditions.
-
-        firestoreTransaction.update(transactionRef, updateTxData);
-        if (Object.keys(userProfileUpdates).length > 1) { // Only update if there are balance changes
-            firestoreTransaction.update(userRef, userProfileUpdates);
-            console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c User ${editingTransaction.userId} balances update queued:`, "color: green; font-weight: bold;", "color: black;", userProfileUpdates);
+        firestoreTransaction.update(transactionRef, {
+          status: 'rejected' as CashbackStatus,
+          rejectionReason: currentEditRejectionReason.trim(),
+          adminNotes: currentEditAdminNotes.trim() || null,
+          notesToUser: currentEditNotesToUser.trim() || null,
+          confirmationDate: null, // Clear confirmation date
+          updatedAt: serverTimestamp(),
+        });
+        // Only adjust pending if it was originally pending
+        if (editingTransaction.status === 'pending') {
+            firestoreTransaction.update(userRef, {
+                pendingCashback: increment(-(editingTransaction.initialCashbackAmount || 0)),
+                updatedAt: serverTimestamp(),
+            });
         }
       });
-
-      toast({ title: "Transaction Updated", description: `Transaction ${editingTransaction.id} status changed to ${newStatus}.` });
-      fetchTransactions(false, null); 
-      setIsEditDialogOpen(false);
-      setEditingTransaction(null);
+      toast({ title: "Transaction Rejected", description: `Transaction for user ${editingTransaction.userId} marked as rejected.` });
+      fetchTransactions(false); setIsEditDialogOpen(false);
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Could not update transaction.";
-      setPageError(errorMsg);
-      console.error(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Error: ${errorMsg}`, "color: red; font-weight: bold;", "color: black;", err);
-      toast({ variant: "destructive", title: "Update Failed", description: errorMsg });
+      const errorMsg = err instanceof Error ? err.message : "Could not reject transaction.";
+      setPageError(errorMsg); toast({ variant: "destructive", title: "Rejection Failed", description: errorMsg });
     } finally {
       setIsSaving(false);
     }
@@ -591,18 +572,19 @@ export default function AdminTransactionsPage() {
               </p>
             ) : (
               <div className="overflow-x-auto w-full">
-                <Table className="min-w-[1200px]">
+                <Table className="min-w-[1400px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="min-w-[180px]">User</TableHead>
                       <TableHead className="min-w-[150px]">Store</TableHead>
                       <TableHead className="min-w-[120px]">Order ID</TableHead>
-                      <TableHead className="min-w-[100px] text-right">Sale Amt.</TableHead>
-                      <TableHead className="min-w-[110px] text-right">CB Amt.</TableHead>
+                      <TableHead className="min-w-[120px] text-right">Sale Amt.</TableHead>
+                      <TableHead className="min-w-[120px] text-right">Initial CB</TableHead>
+                      <TableHead className="min-w-[150px]">CB Rate Applied</TableHead>
                       <TableHead className="min-w-[120px]">Status</TableHead>
                       <TableHead className="min-w-[120px]">Txn Date</TableHead>
                       <TableHead className="min-w-[150px]">Click/Conv. ID</TableHead>
-                      <TableHead className="min-w-[200px]">Notes</TableHead>
+                      <TableHead className="min-w-[200px]">Notes (Admin/User)</TableHead>
                       <TableHead className="text-right min-w-[100px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -630,9 +612,10 @@ export default function AdminTransactionsPage() {
                         <TableCell className="truncate max-w-[150px]" title={txItem.storeName || txItem.storeId}>
                             {txItem.storeName || txItem.storeId}
                         </TableCell>
-                        <TableCell className="font-mono text-xs truncate max-w-[120px]">{txItem.orderId || 'N/A'}</TableCell>
+                        <TableCell className="font-mono text-xs truncate max-w-[120px]" title={txItem.orderId || undefined}>{txItem.orderId || 'N/A'}</TableCell>
                         <TableCell className="text-right">{formatCurrency(txItem.finalSaleAmount ?? txItem.saleAmount)}</TableCell>
-                        <TableCell className="font-semibold text-primary text-right">{formatCurrency(txItem.finalCashbackAmount ?? txItem.initialCashbackAmount ?? 0)}</TableCell>
+                        <TableCell className="font-semibold text-primary text-right">{formatCurrency(txItem.initialCashbackAmount ?? 0)}</TableCell>
+                        <TableCell className="text-xs truncate max-w-[150px]" title={txItem.cashbackRateApplied || undefined}>{txItem.cashbackRateApplied || '-'}</TableCell>
                         <TableCell>
                           <Badge variant={getStatusVariant(txItem.status)} className="capitalize flex items-center gap-1 text-xs whitespace-nowrap">
                             {getStatusIcon(txItem.status)}
@@ -689,7 +672,6 @@ export default function AdminTransactionsPage() {
           </CardContent>
         </Card>
 
-        {/* Add New Transaction Dialog */}
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
@@ -697,7 +679,6 @@ export default function AdminTransactionsPage() {
               <DialogDescription>Manually enter transaction details.</DialogDescription>
             </DialogHeader>
             <form onSubmit={addForm.handleSubmit(handleAddTransactionSubmit)} className="grid gap-4 py-4">
-              {/* Form fields from previous implementation of add dialog */}
               <div className="space-y-1">
                 <Label htmlFor="userIdForm">User ID*</Label>
                 <Input id="userIdForm" {...addForm.register('userId')} disabled={isSaving} />
@@ -803,7 +784,6 @@ export default function AdminTransactionsPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Manage/Edit Transaction Dialog (Approve/Reject focused) */}
         <Dialog open={isEditDialogOpen} onOpenChange={(isOpen) => {
             if (!isOpen) setEditingTransaction(null); 
             setIsEditDialogOpen(isOpen);
@@ -816,41 +796,32 @@ export default function AdminTransactionsPage() {
                   Tx ID: {editingTransaction.id} <br/>
                   User: {editingTransaction.userDisplayName || editingTransaction.userId} ({editingTransaction.userEmail || 'N/A'}) <br/>
                   Store: {editingTransaction.storeName || editingTransaction.storeId} | Order ID: {editingTransaction.orderId || 'N/A'} <br/>
-                  Reported Sale: {formatCurrency(editingTransaction.saleAmount)} | Initial CB: {formatCurrency(editingTransaction.initialCashbackAmount ?? 0)} <br/>
+                  Reported Sale: {formatCurrency(editingTransaction.saleAmount)} | Initial CB: {formatCurrency(editingTransaction.initialCashbackAmount ?? 0)} ({editingTransaction.cashbackRateApplied || 'N/A'}) <br/>
+                  Click ID: {editingTransaction.clickId || 'N/A'} | Conversion ID: {editingTransaction.conversionId || 'N/A'} <br />
                   Current Status: <Badge variant={getStatusVariant(editingTransaction.status)} className="capitalize">{editingTransaction.status.replace('_', ' ')}</Badge>
                 </DialogDescription>
               )}
             </DialogHeader>
             {editingTransaction && (
               <div className="space-y-4 py-4">
-                {/* Display Click and Conversion IDs if available */}
-                {editingTransaction.clickId && <p className="text-sm"><strong>Click ID:</strong> {editingTransaction.clickId}</p>}
-                {editingTransaction.conversionId && <p className="text-sm"><strong>Conversion ID:</strong> {editingTransaction.conversionId}</p>}
-                {editingTransaction.productDetails && <p className="text-sm"><strong>Product Details:</strong> {editingTransaction.productDetails}</p>}
-
-
-                {(editingTransaction.status === 'pending' || editingTransaction.status === 'confirmed') && (
-                    <>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                                <Label htmlFor="editFinalSaleAmount">Final Sale Amount</Label>
-                                <Input id="editFinalSaleAmount" type="number" step="0.01"
-                                    value={currentEditFinalSaleAmount ?? ''}
-                                    onChange={(e) => setCurrentEditFinalSaleAmount(e.target.value ? parseFloat(e.target.value) : undefined)}
-                                    placeholder={formatCurrency(editingTransaction.saleAmount)}
-                                    disabled={isSaving || editingTransaction.status !== 'pending'} />
-                            </div>
-                            <div className="space-y-1">
-                                <Label htmlFor="editFinalCashbackAmount">Final Cashback Amount</Label>
-                                <Input id="editFinalCashbackAmount" type="number" step="0.01"
-                                    value={currentEditFinalCashbackAmount ?? ''}
-                                    onChange={(e) => setCurrentEditFinalCashbackAmount(e.target.value ? parseFloat(e.target.value) : undefined)}
-                                    placeholder={formatCurrency(editingTransaction.initialCashbackAmount ?? 0)}
-                                    disabled={isSaving || editingTransaction.status !== 'pending'} />
-                            </div>
-                        </div>
-                    </>
-                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <Label htmlFor="editFinalSaleAmount">Final Sale Amount</Label>
+                        <Input id="editFinalSaleAmount" type="number" step="0.01"
+                            value={currentEditFinalSaleAmount ?? ''}
+                            onChange={(e) => setCurrentEditFinalSaleAmount(e.target.value ? parseFloat(e.target.value) : undefined)}
+                            placeholder={formatCurrency(editingTransaction.saleAmount)}
+                            disabled={isSaving || editingTransaction.status !== 'pending'} />
+                    </div>
+                    <div>
+                        <Label htmlFor="editFinalCashbackAmount">Final Cashback Amount</Label>
+                        <Input id="editFinalCashbackAmount" type="number" step="0.01"
+                            value={currentEditFinalCashbackAmount ?? ''}
+                            onChange={(e) => setCurrentEditFinalCashbackAmount(e.target.value ? parseFloat(e.target.value) : undefined)}
+                            placeholder={formatCurrency(editingTransaction.initialCashbackAmount ?? 0)}
+                            disabled={isSaving || editingTransaction.status !== 'pending'} />
+                    </div>
+                </div>
                 <div>
                   <Label htmlFor="editAdminNotes">Admin Notes (Internal)</Label>
                   <Textarea id="editAdminNotes" value={currentEditAdminNotes} onChange={(e) => setCurrentEditAdminNotes(e.target.value)} disabled={isSaving} rows={2}/>
@@ -867,46 +838,20 @@ export default function AdminTransactionsPage() {
                       <Textarea id="editRejectionReason" value={currentEditRejectionReason} onChange={(e) => setCurrentEditRejectionReason(e.target.value)} placeholder="Enter reason for rejection" disabled={isSaving} rows={2}/>
                     </div>
                     <DialogFooter className="flex-col sm:flex-row sm:justify-end gap-2 mt-2">
-                        <Button onClick={() => handleTransactionStatusUpdate('rejected')} variant="destructive" disabled={isSaving || !currentEditRejectionReason.trim()} className="w-full sm:w-auto">
+                        <Button onClick={handleRejectTransaction} variant="destructive" disabled={isSaving || !currentEditRejectionReason.trim()} className="w-full sm:w-auto">
                             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ThumbsDown className="mr-2 h-4 w-4" />} Reject
                         </Button>
-                        <Button onClick={() => handleTransactionStatusUpdate('confirmed')} disabled={isSaving} className="w-full sm:w-auto">
+                        <Button onClick={handleApproveTransaction} disabled={isSaving} className="w-full sm:w-auto">
                             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ThumbsUp className="mr-2 h-4 w-4" />} Approve
                         </Button>
                     </DialogFooter>
                   </>
                 )}
-                {editingTransaction.status !== 'pending' && editingTransaction.status !== 'paid' && editingTransaction.status !== 'cancelled' && ( // For confirmed, awaiting_payout
+                 {editingTransaction.status !== 'pending' && (
                     <DialogFooter className="mt-2">
-                         <Label htmlFor="newStatusForProcessed">Change Status</Label>
-                         <Select value={currentEditStatus} onValueChange={(value) => setCurrentEditStatus(value as CashbackStatus)} disabled={isSaving}>
-                            <SelectTrigger id="newStatusForProcessed">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {editingTransaction.status === 'confirmed' && <SelectItem value="confirmed">Confirmed</SelectItem>}
-                                {editingTransaction.status === 'confirmed' && <SelectItem value="pending">Move to Pending (Revert)</SelectItem>}
-                                {editingTransaction.status === 'awaiting_payout' && <SelectItem value="awaiting_payout">Awaiting Payout</SelectItem>}
-                                {editingTransaction.status === 'awaiting_payout' && <SelectItem value="confirmed">Move to Confirmed (Revert)</SelectItem>}
-                                <SelectItem value="rejected">Reject</SelectItem>
-                                <SelectItem value="cancelled">Cancel</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        {(currentEditStatus === 'rejected' || currentEditStatus === 'cancelled') && (
-                            <div className="w-full mt-2">
-                                <Label htmlFor="editRejectionReasonProcessed">Reason for {currentEditStatus}</Label>
-                                <Textarea id="editRejectionReasonProcessed" value={currentEditRejectionReason} onChange={(e) => setCurrentEditRejectionReason(e.target.value)} placeholder={`Reason for ${currentEditStatus}`} disabled={isSaving} rows={2}/>
-                            </div>
-                        )}
-                        <DialogClose asChild><Button variant="outline" disabled={isSaving}>Cancel</Button></DialogClose>
-                        <Button onClick={() => handleTransactionStatusUpdate(currentEditStatus)} disabled={isSaving || ((currentEditStatus === 'rejected' || currentEditStatus === 'cancelled') && !currentEditRejectionReason.trim())}>
-                            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Update Status
-                        </Button>
-                    </DialogFooter>
-                )}
-                 { (editingTransaction.status === 'paid' || editingTransaction.status === 'cancelled' || editingTransaction.status === 'rejected') && (
-                    <DialogFooter className="mt-2">
-                         <DialogClose asChild><Button variant="outline">Close</Button></DialogClose>
+                         <DialogClose asChild><Button variant="outline" disabled={isSaving}>Close</Button></DialogClose>
+                         {/* Optionally add a button to just save notes if status is already processed */}
+                         {/* <Button onClick={handleUpdateNotesOnly} disabled={isSaving}>Save Notes</Button> */}
                     </DialogFooter>
                  )}
               </div>
