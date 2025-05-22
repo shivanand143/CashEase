@@ -26,7 +26,7 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Product, Store, Category, ProductFormValues as ProductFormType } from '@/lib/types';
+import type { Product, Store, Category, ProductFormValues as AppProductFormValues, CashbackType } from '@/lib/types'; // Corrected import
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -92,20 +92,24 @@ const productSchema = z.object({
   affiliateLink: z.string().url('Affiliate link must be a valid URL'),
   price: z.number().min(0, 'Price must be non-negative').optional().nullable(),
   priceDisplay: z.string().optional().nullable(),
-  category: z.string().optional().nullable(), // Category ID or slug
+  category: z.string().optional().nullable(),
   brand: z.string().optional().nullable(),
   sku: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
   isFeatured: z.boolean().default(false),
   isTodaysPick: z.boolean().default(false),
   dataAiHint: z.string().max(50, 'AI Hint too long').optional().nullable(),
+  // Product-specific cashback
+  productSpecificCashbackDisplay: z.string().max(50, "Display text too long").optional().nullable(),
+  productSpecificCashbackRateValue: z.number().min(0, "Rate value must be non-negative").optional().nullable(),
+  productSpecificCashbackType: z.enum(['percentage', 'fixed'] as [CashbackType, ...CashbackType[]]).optional().nullable(),
 });
 
 type ProductFormValues = z.infer<typeof productSchema>;
 
 interface ProductWithStoreCategoryNames extends Product {
-  storeName?: string;
-  categoryName?: string;
+  storeNameResolved?: string; // Renamed to avoid conflict with Product.storeName
+  categoryNameResolved?: string;
 }
 
 function ProductsTableSkeleton() {
@@ -120,13 +124,13 @@ function ProductsTableSkeleton() {
           <Table>
             <TableHeader>
               <TableRow>
-                {Array.from({ length: 9 }).map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}
+                {Array.from({ length: 10 }).map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}
               </TableRow>
             </TableHeader>
             <TableBody>
               {Array.from({ length: 8 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 9 }).map((_, j) => <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>)}
+                  {Array.from({ length: 10 }).map((_, j) => <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>)}
                 </TableRow>
               ))}
             </TableBody>
@@ -163,21 +167,11 @@ export default function AdminProductsListPage() {
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
-    defaultValues: { // Default values should match ProductFormValues
-      name: '',
-      storeId: '',
-      description: null,
-      imageUrl: null,
-      affiliateLink: '',
-      price: null,
-      priceDisplay: null,
-      category: null,
-      brand: null,
-      sku: null,
-      isActive: true,
-      isFeatured: false,
-      isTodaysPick: false,
-      dataAiHint: null,
+    defaultValues: {
+      name: '', storeId: '', description: null, imageUrl: null, affiliateLink: '',
+      price: null, priceDisplay: null, category: null, brand: null, sku: null,
+      isActive: true, isFeatured: false, isTodaysPick: false, dataAiHint: null,
+      productSpecificCashbackDisplay: null, productSpecificCashbackRateValue: null, productSpecificCashbackType: null,
     },
   });
 
@@ -202,13 +196,12 @@ export default function AdminProductsListPage() {
           setCategoryList(categorySnapshot.docs.map(doc => ({ value: doc.id, label: doc.data().name || 'Unnamed Category' })));
         }
       } catch (err) {
-        console.error("Error fetching stores/categories:", err);
         if (isMounted) toast({ variant: 'destructive', title: 'Error', description: 'Could not load stores or categories.' });
       } finally {
         if (isMounted) setLoadingRelatedData(false);
       }
     };
-    if (isDialogOpen) { // Only fetch if dialog is open or about to open
+    if (isDialogOpen) {
         fetchRelatedData();
     }
     return () => { isMounted = false; };
@@ -220,26 +213,8 @@ export default function AdminProductsListPage() {
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
   ) => {
     let isMounted = true;
-    if (!db || firebaseInitializationError) {
-      if (isMounted) {
-        setError(firebaseInitializationError || "Database connection not available.");
-        if (!isLoadMoreOp) setLoading(false); else setLoadingMore(false);
-        setHasMore(false);
-      }
-      return () => { isMounted = false; };
-    }
-
-    if (!isLoadMoreOp) {
-      setLoading(true); setProducts([]); setLastVisible(null); setHasMore(true);
-    } else {
-      if (!docToStartAfter && isLoadMoreOp) {
-          if(isMounted) setLoadingMore(false);
-          return () => {isMounted = false;};
-      }
-      setLoadingMore(true);
-    }
-    if(!isLoadMoreOp) setError(null);
-    setIsSearching(currentSearchTerm !== '');
+    if (!isLoadMoreOp) setLoading(true); else setLoadingMore(true);
+    setError(null);
 
     try {
       const productsCollection = collection(db, 'products');
@@ -262,21 +237,22 @@ export default function AdminProductsListPage() {
       
       const fetchedProductsPromises = productSnap.docs.map(async (docSnap) => {
         const data = docSnap.data();
-        let storeName = 'N/A';
-        let categoryName = 'N/A';
-        if (data.storeId && db) {
+        let storeNameResolved = data.storeName || 'N/A'; // Use product.storeName if available
+        let categoryNameResolved = 'N/A';
+
+        if (data.storeId && db && !data.storeName) { // Fetch store name only if not already on product
             const storeDoc = await getDoc(doc(db, 'stores', data.storeId));
-            if (storeDoc.exists()) storeName = storeDoc.data()?.name || 'Unknown Store';
+            if (storeDoc.exists()) storeNameResolved = storeDoc.data()?.name || 'Unknown Store';
         }
         if (data.category && db) { 
             const catDoc = await getDoc(doc(db, 'categories', data.category));
-            if (catDoc.exists()) categoryName = catDoc.data()?.name || 'Unknown Category';
+            if (catDoc.exists()) categoryNameResolved = catDoc.data()?.name || 'Unknown Category';
         }
         return {
           id: docSnap.id,
           ...data,
-          storeName,
-          categoryName,
+          storeNameResolved,
+          categoryNameResolved,
           createdAt: safeToDate(data.createdAt),
           updatedAt: safeToDate(data.updatedAt),
         } as ProductWithStoreCategoryNames;
@@ -290,7 +266,6 @@ export default function AdminProductsListPage() {
         setHasMore(productSnap.docs.length === PRODUCTS_PER_PAGE);
       }
     } catch (err) {
-      console.error("Error fetching products:", err);
       const errorMsg = err instanceof Error ? err.message : "Failed to fetch products.";
       if(isMounted) {
         setError(errorMsg);
@@ -336,6 +311,9 @@ export default function AdminProductsListPage() {
       isFeatured: product.isFeatured || false,
       isTodaysPick: product.isTodaysPick || false,
       dataAiHint: product.dataAiHint || '',
+      productSpecificCashbackDisplay: product.productSpecificCashbackDisplay || '',
+      productSpecificCashbackRateValue: product.productSpecificCashbackRateValue ?? null,
+      productSpecificCashbackType: product.productSpecificCashbackType || null,
     });
     setIsDialogOpen(true);
   };
@@ -349,37 +327,31 @@ export default function AdminProductsListPage() {
     }
     setIsSaving(true); setError(null);
 
-    const submissionData: Partial<ProductFormType> = {
+    const submissionData: Partial<AppProductFormValues> = { // Use AppProductFormValues
       ...data,
-      imageUrl: data.imageUrl || null,
-      description: data.description || null,
-      price: data.price === null || data.price === undefined ? null : Number(data.price),
-      priceDisplay: data.priceDisplay || (data.price !== null && data.price !== undefined ? formatCurrency(Number(data.price)) : null),
-      category: data.category || null,
-      brand: data.brand || null,
-      sku: data.sku || null,
-      dataAiHint: data.dataAiHint || null,
+      productSpecificCashbackDisplay: data.productSpecificCashbackDisplay || null,
+      productSpecificCashbackRateValue: data.productSpecificCashbackRateValue ?? null,
+      productSpecificCashbackType: data.productSpecificCashbackType || null,
     };
-
+    
     try {
       const productDocRef = doc(db, 'products', editingProduct.id);
       await updateDoc(productDocRef, { ...submissionData, updatedAt: serverTimestamp() });
       
-      const updatedStoreName = storeList.find(s => s.id === submissionData.storeId)?.name || editingProduct.storeName;
-      const updatedCategoryName = categoryList.find(c => c.value === submissionData.category)?.label || editingProduct.categoryName;
+      const updatedStoreName = storeList.find(s => s.id === submissionData.storeId)?.name || editingProduct.storeNameResolved;
+      const updatedCategoryName = categoryList.find(c => c.value === submissionData.category)?.label || editingProduct.categoryNameResolved;
 
-      setProducts(prev => prev.map(p => p.id === editingProduct.id ? { 
+      setProducts(prev => prev.map(p => p.id === editingProduct!.id ? { 
           ...p, 
           ...submissionData, 
-          storeName: updatedStoreName,
-          categoryName: updatedCategoryName,
+          storeNameResolved: updatedStoreName,
+          categoryNameResolved: updatedCategoryName,
           updatedAt: new Date() 
       } as ProductWithStoreCategoryNames : p));
       toast({ title: "Product Updated", description: `${data.name} details saved.` });
       
       setIsDialogOpen(false); form.reset();
     } catch (err) {
-      console.error("Error saving product:", err);
       const errorMsg = err instanceof Error ? err.message : "Could not save product.";
       setError(errorMsg); toast({ variant: "destructive", title: "Save Failed", description: errorMsg });
     } finally {
@@ -395,7 +367,6 @@ export default function AdminProductsListPage() {
       setProducts(prev => prev.filter(p => p.id !== productId));
       toast({ title: "Product Deleted" });
     } catch (err) {
-      console.error("Error deleting product:", err);
       toast({ variant: "destructive", title: "Deletion Failed", description: String(err) });
     } finally {
       setDeletingProductId(null);
@@ -411,7 +382,6 @@ export default function AdminProductsListPage() {
       setProducts(prev => prev.map(p => p.id === product.id ? { ...p, [field]: newValue, updatedAt: new Date() } : p));
       toast({ title: `Product ${field} status updated` });
     } catch (err) {
-      console.error(`Error toggling ${field}:`, err);
       toast({ variant: "destructive", title: "Update Failed", description: String(err) });
     } finally {
       setUpdatingFieldId(null);
@@ -485,6 +455,7 @@ export default function AdminProductsListPage() {
                       <TableHead>Store</TableHead>
                       <TableHead>Category</TableHead>
                       <TableHead>Price</TableHead>
+                      <TableHead>Cashback</TableHead>
                       <TableHead className="text-center">Active</TableHead>
                       <TableHead className="text-center">Featured</TableHead>
                       <TableHead className="text-center">Today's Pick</TableHead>
@@ -502,9 +473,10 @@ export default function AdminProductsListPage() {
                           )}
                         </TableCell>
                         <TableCell className="font-medium max-w-xs truncate" title={product.name}>{product.name}</TableCell>
-                        <TableCell className="text-xs">{product.storeName || product.storeId}</TableCell>
-                        <TableCell className="text-xs">{product.categoryName || product.category || 'N/A'}</TableCell>
+                        <TableCell className="text-xs">{product.storeNameResolved || product.storeId}</TableCell>
+                        <TableCell className="text-xs">{product.categoryNameResolved || product.category || 'N/A'}</TableCell>
                         <TableCell>{product.priceDisplay || (product.price ? formatCurrency(product.price) : 'N/A')}</TableCell>
+                        <TableCell className="text-xs">{product.productSpecificCashbackDisplay || 'Store Rate'}</TableCell>
                         <TableCell className="text-center">
                           <Switch checked={product.isActive} onCheckedChange={() => handleToggleField(product, 'isActive')} disabled={updatingFieldId === product.id}/>
                         </TableCell>
@@ -608,7 +580,6 @@ export default function AdminProductsListPage() {
                     <SelectTrigger id="categoryEdit"><SelectValue placeholder="Select category..." /></SelectTrigger>
                     <SelectContent>
                       {loadingRelatedData && categoryList.length === 0 && <SelectItem value="loading-cat" disabled>Loading categories...</SelectItem>}
-                      {/* No <SelectItem value="">No Category</SelectItem> to avoid the error */}
                       {categoryList.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -618,7 +589,6 @@ export default function AdminProductsListPage() {
               <div className="md:col-span-2 space-y-1">
                 <Label htmlFor="descriptionEdit">Description</Label>
                 <Textarea id="descriptionEdit" {...form.register('description')} rows={3} disabled={isSaving || loadingRelatedData} />
-                {form.formState.errors.description && <p className="text-sm text-destructive mt-1">{form.formState.errors.description.message}</p>}
               </div>
                <div className="space-y-1">
                 <Label htmlFor="imageUrlEdit">Image URL</Label>
@@ -629,7 +599,6 @@ export default function AdminProductsListPage() {
               <div className="space-y-1">
                 <Label htmlFor="dataAiHintEdit">Image AI Hint</Label>
                 <Input id="dataAiHintEdit" {...form.register('dataAiHint')} placeholder="e.g. red shoe" disabled={isSaving || loadingRelatedData} />
-                {form.formState.errors.dataAiHint && <p className="text-sm text-destructive mt-1">{form.formState.errors.dataAiHint.message}</p>}
               </div>
               <div className="md:col-span-2 space-y-1">
                 <Label htmlFor="affiliateLinkEdit">Affiliate Link*</Label>
@@ -644,7 +613,6 @@ export default function AdminProductsListPage() {
               <div className="space-y-1">
                 <Label htmlFor="priceDisplayEdit">Price Display Text</Label>
                 <Input id="priceDisplayEdit" {...form.register('priceDisplay')} placeholder="e.g. ₹1,999 or Sale!" disabled={isSaving || loadingRelatedData} />
-                {form.formState.errors.priceDisplay && <p className="text-sm text-destructive mt-1">{form.formState.errors.priceDisplay.message}</p>}
               </div>
               <div className="space-y-1">
                 <Label htmlFor="brandEdit">Brand</Label>
@@ -654,17 +622,48 @@ export default function AdminProductsListPage() {
                 <Label htmlFor="skuEdit">SKU</Label>
                 <Input id="skuEdit" {...form.register('sku')} disabled={isSaving || loadingRelatedData} />
               </div>
+              
+              {/* Product Specific Cashback Fields in Edit Dialog */}
+              <fieldset className="md:col-span-2 space-y-2 border p-3 rounded-md">
+                  <legend className="text-sm font-medium px-1">Product Specific Cashback (Optional)</legend>
+                  <div className="space-y-1">
+                      <Label htmlFor="productSpecificCashbackDisplayEdit">Cashback Display Text</Label>
+                      <Input id="productSpecificCashbackDisplayEdit" {...form.register('productSpecificCashbackDisplay')} placeholder="e.g., 15% Off / Flat ₹100" disabled={isSaving} />
+                      {form.formState.errors.productSpecificCashbackDisplay && <p className="text-sm text-destructive">{form.formState.errors.productSpecificCashbackDisplay.message}</p>}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 items-end">
+                      <div className="space-y-1 col-span-2">
+                          <Label htmlFor="productSpecificCashbackRateValueEdit">Numerical Rate Value</Label>
+                          <Input id="productSpecificCashbackRateValueEdit" type="number" step="0.01" {...form.register('productSpecificCashbackRateValue', { setValueAs: v => v === null || v === '' ? null : parseFloat(v) })} disabled={isSaving} />
+                          {form.formState.errors.productSpecificCashbackRateValue && <p className="text-sm text-destructive">{form.formState.errors.productSpecificCashbackRateValue.message}</p>}
+                      </div>
+                      <div className="space-y-1">
+                          <Label htmlFor="productSpecificCashbackTypeEdit">Type</Label>
+                          <Controller name="productSpecificCashbackType" control={form.control} render={({ field }) => (
+                              <Select value={field.value || ""} onValueChange={field.onChange} disabled={isSaving}>
+                              <SelectTrigger id="productSpecificCashbackTypeEdit"><SelectValue placeholder="Type..." /></SelectTrigger>
+                              <SelectContent>
+                                  <SelectItem value="percentage">% (Percentage)</SelectItem>
+                                  <SelectItem value="fixed">₹ (Fixed)</SelectItem>
+                              </SelectContent>
+                              </Select>
+                          )}/>
+                          {form.formState.errors.productSpecificCashbackType && <p className="text-sm text-destructive">{form.formState.errors.productSpecificCashbackType.message}</p>}
+                      </div>
+                  </div>
+              </fieldset>
+
               <div className="md:col-span-2 grid grid-cols-3 gap-4 pt-2">
                 <div className="flex items-center space-x-2">
                   <Controller name="isActive" control={form.control} render={({ field }) => (<Checkbox id="isActiveEdit" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving || loadingRelatedData} /> )} />
                   <Label htmlFor="isActiveEdit" className="font-normal">Active</Label>
                 </div>
                 <div className="flex items-center space-x-2">
-                   <Controller name="isFeatured" control={form.control} render={({ field }) => (<Checkbox id="isFeaturedEdit" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving || loadingRelatedData} /> )}/>
+                   <Controller name="isFeatured" control={form.control} render={({ field }) => (<Checkbox id="isFeaturedEdit" checked={!!field.value} onCheckedChange={field.onChange} disabled={isSaving || loadingRelatedData} /> )}/>
                   <Label htmlFor="isFeaturedEdit" className="font-normal">Featured</Label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Controller name="isTodaysPick" control={form.control} render={({ field }) => ( <Checkbox id="isTodaysPickEdit" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving || loadingRelatedData} /> )}/>
+                  <Controller name="isTodaysPick" control={form.control} render={({ field }) => ( <Checkbox id="isTodaysPickEdit" checked={!!field.value} onCheckedChange={field.onChange} disabled={isSaving || loadingRelatedData} /> )}/>
                   <Label htmlFor="isTodaysPickEdit" className="font-normal">Today's Pick</Label>
                 </div>
               </div>

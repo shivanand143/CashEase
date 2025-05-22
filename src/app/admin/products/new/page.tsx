@@ -10,7 +10,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { collection, addDoc, serverTimestamp, query, orderBy, getDocs, where } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { ProductFormValues, Store, Category } from '@/lib/types';
+import type { ProductFormValues, Store, Category, CashbackType } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -32,13 +32,17 @@ const productSchema = z.object({
   affiliateLink: z.string().url('Affiliate link must be a valid URL'),
   price: z.number().min(0, 'Price must be non-negative').optional().nullable(),
   priceDisplay: z.string().optional().nullable(),
-  category: z.string().optional().nullable(), // Category ID or slug
+  category: z.string().optional().nullable(),
   brand: z.string().optional().nullable(),
   sku: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
   isFeatured: z.boolean().default(false),
   isTodaysPick: z.boolean().default(false),
   dataAiHint: z.string().max(50, 'AI Hint too long').optional().nullable(),
+  // New fields for product-specific cashback
+  productSpecificCashbackDisplay: z.string().max(50, "Display text too long").optional().nullable(),
+  productSpecificCashbackRateValue: z.number().min(0, "Rate value must be non-negative").optional().nullable(),
+  productSpecificCashbackType: z.enum(['percentage', 'fixed'] as [CashbackType, ...CashbackType[]]).optional().nullable(),
 });
 
 function AddProductPageSkeleton() {
@@ -48,8 +52,8 @@ function AddProductPageSkeleton() {
       <Card>
         <CardHeader><Skeleton className="h-7 w-1/3 mb-1" /><Skeleton className="h-4 w-2/3" /></CardHeader>
         <CardContent className="grid md:grid-cols-2 gap-x-6 gap-y-4">
-          {Array.from({ length: 8 }).map((_, index) => (
-            <div key={`form-field-skel-${index}`} className={`space-y-1 md:col-span-${index < 4 ? 1 : 2}`}>
+          {Array.from({ length: 10 }).map((_, index) => ( // Increased for more fields
+            <div key={`form-field-skel-${index}`} className="space-y-1 md:col-span-1">
               <Skeleton className="h-4 w-1/4" /><Skeleton className="h-10 w-full" />
             </div>
           ))}
@@ -75,6 +79,7 @@ export default function AddProductAdminPage() {
       name: '', storeId: '', description: null, imageUrl: null, affiliateLink: '',
       price: null, priceDisplay: null, category: null, brand: null, sku: null,
       isActive: true, isFeatured: false, isTodaysPick: false, dataAiHint: null,
+      productSpecificCashbackDisplay: null, productSpecificCashbackRateValue: null, productSpecificCashbackType: null,
     },
   });
 
@@ -124,6 +129,9 @@ export default function AddProductAdminPage() {
       brand: data.brand || null,
       sku: data.sku || null,
       dataAiHint: data.dataAiHint || null,
+      productSpecificCashbackDisplay: data.productSpecificCashbackDisplay || null,
+      productSpecificCashbackRateValue: data.productSpecificCashbackRateValue ?? null,
+      productSpecificCashbackType: data.productSpecificCashbackType || null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -140,7 +148,7 @@ export default function AddProductAdminPage() {
     }
   };
   
-  if (loadingRelatedData) { // Show skeleton if related data is loading
+  if (loadingRelatedData) {
       return <AdminGuard><AddProductPageSkeleton/></AdminGuard>;
   }
 
@@ -162,7 +170,7 @@ export default function AddProductAdminPage() {
           <CardContent>
             <form onSubmit={form.handleSubmit(onSubmit)} className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
               {/* Column 1 */}
-              <div className="space-y-4">
+              <div className="space-y-4 md:col-span-1">
                 <div className="space-y-1">
                   <Label htmlFor="name">Product Name*</Label>
                   <Input id="name" {...form.register('name')} disabled={isSaving} />
@@ -186,7 +194,6 @@ export default function AddProductAdminPage() {
                     <Select value={field.value || ""} onValueChange={field.onChange} disabled={isSaving}>
                       <SelectTrigger id="category"><SelectValue placeholder="Select category..." /></SelectTrigger>
                       <SelectContent>
-                        {/* <SelectItem value="">No Category</SelectItem>  -- This was causing the error -- */}
                         {categoryList.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
@@ -209,7 +216,7 @@ export default function AddProductAdminPage() {
                 </div>
               </div>
               {/* Column 2 */}
-              <div className="space-y-4">
+              <div className="space-y-4 md:col-span-1">
                 <div className="space-y-1">
                   <Label htmlFor="affiliateLink">Affiliate Link* (use {"{CLICK_ID}"})</Label>
                   <Input id="affiliateLink" {...form.register('affiliateLink')} placeholder="https://...&subid={CLICK_ID}" disabled={isSaving} />
@@ -234,6 +241,37 @@ export default function AddProductAdminPage() {
                   <Label htmlFor="sku">SKU/Item ID</Label>
                   <Input id="sku" {...form.register('sku')} disabled={isSaving} />
                 </div>
+
+                {/* Product Specific Cashback Fields */}
+                <fieldset className="space-y-2 border p-3 rounded-md">
+                    <legend className="text-sm font-medium px-1">Product Specific Cashback (Optional)</legend>
+                    <div className="space-y-1">
+                        <Label htmlFor="productSpecificCashbackDisplay">Cashback Display Text</Label>
+                        <Input id="productSpecificCashbackDisplay" {...form.register('productSpecificCashbackDisplay')} placeholder="e.g., 15% Off or Flat ₹100" disabled={isSaving} />
+                        {form.formState.errors.productSpecificCashbackDisplay && <p className="text-sm text-destructive">{form.formState.errors.productSpecificCashbackDisplay.message}</p>}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 items-end">
+                        <div className="space-y-1 col-span-2">
+                            <Label htmlFor="productSpecificCashbackRateValue">Numerical Rate Value</Label>
+                            <Input id="productSpecificCashbackRateValue" type="number" step="0.01" {...form.register('productSpecificCashbackRateValue', { setValueAs: v => v === null || v === '' ? null : parseFloat(v)})} disabled={isSaving} />
+                            {form.formState.errors.productSpecificCashbackRateValue && <p className="text-sm text-destructive">{form.formState.errors.productSpecificCashbackRateValue.message}</p>}
+                        </div>
+                        <div className="space-y-1">
+                            <Label htmlFor="productSpecificCashbackType">Type</Label>
+                            <Controller name="productSpecificCashbackType" control={form.control} render={({ field }) => (
+                                <Select value={field.value || ""} onValueChange={field.onChange} disabled={isSaving}>
+                                <SelectTrigger id="productSpecificCashbackType"><SelectValue placeholder="Type..." /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="percentage">% (Percentage)</SelectItem>
+                                    <SelectItem value="fixed">₹ (Fixed)</SelectItem>
+                                </SelectContent>
+                                </Select>
+                            )}/>
+                            {form.formState.errors.productSpecificCashbackType && <p className="text-sm text-destructive">{form.formState.errors.productSpecificCashbackType.message}</p>}
+                        </div>
+                    </div>
+                </fieldset>
+
                 <div className="space-y-3 pt-2">
                     <div className="flex items-center space-x-2">
                     <Controller name="isActive" control={form.control} render={({ field }) => (<Checkbox id="isActive" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )} />
@@ -249,6 +287,7 @@ export default function AddProductAdminPage() {
                     </div>
                 </div>
               </div>
+              {/* Submit Buttons */}
               <div className="md:col-span-2 flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
                 <Button type="button" variant="outline" onClick={() => router.back()} disabled={isSaving} className="w-full sm:w-auto">
                   Cancel

@@ -1,12 +1,12 @@
 
 "use client";
 
-import type { Product, Store } from '@/lib/types';
+import type { Product, Store, CashbackType } from '@/lib/types';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ExternalLink, ShoppingCart, Loader2 } from 'lucide-react';
+import { ExternalLink, ShoppingCart, Loader2, IndianRupee, Percent } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
 import { trackClickClientSide, TrackClickClientSideData } from '@/lib/actions/tracking';
@@ -24,7 +24,9 @@ const isValidHttpUrl = (string: string | undefined | null): boolean => {
   if (!string) return false;
   let url;
   try {
+    // Basic check for common error strings that might be mistakenly passed as URLs
     if (string.startsWith("Error:") || string.startsWith("Unhandled") || string.length > 2048) {
+        console.warn("Invalid URL pattern detected in isValidHttpUrl:", string);
         return false;
     }
     url = new URL(string);
@@ -34,19 +36,16 @@ const isValidHttpUrl = (string: string | undefined | null): boolean => {
   return url.protocol === "http:" || url.protocol === "https:";
 }
 
-// Function to append click ID to a URL
 const appendClickIdToUrl = (url: string, clickId: string): string => {
   try {
     const urlObj = new URL(url);
-    // Common subid parameters used by affiliate networks
-    urlObj.searchParams.set('subid', clickId); // Generic
-    urlObj.searchParams.set('aff_sub', clickId); // Often used
-    urlObj.searchParams.set('s1', clickId); // Another common one
-    // Add other common ones if you know them, e.g., aff_sub2, t_id, etc.
+    urlObj.searchParams.set('subid', clickId);
+    urlObj.searchParams.set('aff_sub', clickId);
+    urlObj.searchParams.set('s1', clickId);
     return urlObj.toString();
   } catch (e) {
     console.warn("Invalid URL for click tracking, returning original:", url, e);
-    return url; // Return original URL if parsing fails
+    return url;
   }
 };
 
@@ -56,19 +55,35 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
   const { toast } = useToast();
   const [isProcessingClick, setIsProcessingClick] = React.useState(false);
 
-  if (!product) {
-    // Handle case where product might be undefined, though ideally this shouldn't happen
+  if (!product || !product.name) {
+    const placeholderText = "Product";
+    const tempImageUrl = `https://placehold.co/300x300.png?text=${encodeURIComponent(placeholderText)}`;
     return (
       <Card className="overflow-hidden h-full flex flex-col group border shadow-sm">
-        <Skeleton className="aspect-square w-full" />
+        <div className="block aspect-square relative overflow-hidden bg-muted">
+            <Image
+            src={tempImageUrl}
+            alt={placeholderText}
+            fill
+            sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
+            className="object-contain group-hover:scale-105 transition-transform duration-300 p-2"
+            data-ai-hint={"product image"}
+            />
+        </div>
         <CardContent className="p-3 flex flex-col flex-grow justify-between">
           <div>
-            <Skeleton className="h-5 w-3/4 mb-1" />
-            <Skeleton className="h-4 w-1/2 mb-1" />
+            <h3 className="text-sm font-medium leading-snug mb-1 h-10 line-clamp-2" title={placeholderText}>
+                {placeholderText}
+            </h3>
+            <p className="text-xs text-muted-foreground mb-1">Store: Unknown</p>
           </div>
           <div className="mt-auto">
-            <Skeleton className="h-6 w-1/3 mb-3" />
-            <Skeleton className="h-8 w-full" />
+            <p className="text-base font-semibold text-primary mb-3">
+              Price not available
+            </p>
+            <Button size="sm" className="w-full text-xs bg-amber-500 hover:bg-amber-600 text-white" disabled>
+              <ShoppingCart className="mr-1 h-3 w-3" /> Shop Now
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -81,12 +96,15 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
     : `https://placehold.co/300x300.png?text=${encodeURIComponent(placeholderText)}`;
 
   const productTitle = product.name || 'Product Title';
-  const affiliateLink = product.affiliateLink || '#'; // Original affiliate link without clickId yet
+  const affiliateLink = product.affiliateLink || '#';
   const priceDisplay = product.priceDisplay || (product.price !== null && product.price !== undefined ? formatCurrency(product.price) : 'Price not available');
+
+  const cashbackDisplay = product.productSpecificCashbackDisplay || storeContext?.cashbackRate || null;
+
 
   const handleShopNow = async () => {
     setIsProcessingClick(true);
-    console.log("ProductCard: handleShopNow triggered for product:", product.id);
+    console.log("ProductCard: handleShopNow triggered for product:", product.id, "User:", user?.uid);
 
     if (authLoading) {
       toast({ title: "Please wait", description: "Checking authentication..."});
@@ -105,8 +123,8 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
 
     if (!user) {
         console.log("ProductCard: User not logged in. Storing redirect and navigating to login.");
-        sessionStorage.setItem('loginRedirectUrl', finalAffiliateLinkWithClickId); // Store the final URL
-        sessionStorage.setItem('loginRedirectSource', router.asPath);
+        sessionStorage.setItem('loginRedirectUrl', finalAffiliateLinkWithClickId);
+        sessionStorage.setItem('loginRedirectSource', router.asPath); // Use router.asPath for current path
         router.push(`/login?message=Please login to track cashback for this product.`);
         setIsProcessingClick(false);
         return;
@@ -118,9 +136,13 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
         storeName: storeContext?.name || product.storeName || "Unknown Store",
         productId: product.id,
         productName: product.name,
-        clickId: clickId, // The UUID generated
-        affiliateLink: finalAffiliateLinkWithClickId, // The link that will be opened
-        originalLink: affiliateLink, // The base affiliate link
+        clickId: clickId,
+        affiliateLink: finalAffiliateLinkWithClickId,
+        originalLink: affiliateLink,
+        // Pass product-specific cashback details if available
+        clickedCashbackDisplay: product.productSpecificCashbackDisplay || null,
+        clickedCashbackRateValue: product.productSpecificCashbackRateValue ?? null,
+        clickedCashbackType: product.productSpecificCashbackType || null,
     };
 
     console.log("ProductCard: Preparing to track click (client-side):", clickData);
@@ -129,20 +151,18 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
         const trackResult = await trackClickClientSide(clickData);
         if (trackResult.success) {
             console.log(`ProductCard: Click tracked successfully (client-side) for Product ${product.id}, ClickID ${trackResult.clickId}`);
-            // Toast for tracking is optional, redirect happens next
         } else {
             console.error("ProductCard: Failed to track product click (client-side util error):", trackResult.error);
-            toast({title: "Tracking Issue", description: `Could not fully track click: ${trackResult.error}. Proceeding to store.`, variant: "destructive", duration: 7000})
+            toast({title: "Tracking Issue", description: `Could not fully track click: ${trackResult.error}. Proceeding to store.`, variant: "destructive", duration: 7000});
         }
     } catch (e) {
         console.error("ProductCard: Error calling trackClickClientSide:", e);
-        toast({title: "Tracking Error", description: "An unexpected error during click tracking. Proceeding to store.", variant: "destructive", duration: 7000})
-    } finally {
-      setIsProcessingClick(false);
+        toast({title: "Tracking Error", description: "An unexpected error during click tracking. Proceeding to store.", variant: "destructive", duration: 7000});
     }
 
     console.log("ProductCard: Opening affiliate link in new tab:", finalAffiliateLinkWithClickId);
     window.open(finalAffiliateLinkWithClickId, '_blank', 'noopener,noreferrer');
+    setIsProcessingClick(false); // Reset after opening link
   };
 
   return (
@@ -176,7 +196,13 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
            )}
         </div>
         <div className="mt-auto">
-          <p className="text-base font-semibold text-primary mb-3">
+          {cashbackDisplay && (
+            <p className="text-xs text-green-600 font-semibold mb-1 flex items-center">
+              {product.productSpecificCashbackType === 'fixed' ? <IndianRupee className="w-3 h-3 mr-0.5"/> : <Percent className="w-3 h-3 mr-0.5"/>}
+              {cashbackDisplay} Cashback
+            </p>
+          )}
+          <p className="text-base font-semibold text-primary mb-2">
             {priceDisplay}
           </p>
           <Button
@@ -193,5 +219,3 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
     </Card>
   );
 }
-
-    
