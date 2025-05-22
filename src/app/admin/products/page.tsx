@@ -80,7 +80,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
 import { formatCurrency, safeToDate } from '@/lib/utils';
-import { MultiSelect } from '@/components/ui/multi-select'; // Assuming MultiSelect is for categories
 import { useDebounce } from '@/hooks/use-debounce';
 
 const PRODUCTS_PER_PAGE = 15;
@@ -93,7 +92,7 @@ const productSchema = z.object({
   affiliateLink: z.string().url('Affiliate link must be a valid URL'),
   price: z.number().min(0, 'Price must be non-negative').optional().nullable(),
   priceDisplay: z.string().optional().nullable(),
-  category: z.string().optional().nullable(), // Assuming single category slug for simplicity in form
+  category: z.string().optional().nullable(), // Category ID or slug
   brand: z.string().optional().nullable(),
   sku: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
@@ -159,26 +158,26 @@ export default function AdminProductsListPage() {
   const [updatingFieldId, setUpdatingFieldId] = useState<string | null>(null);
 
   const [storeList, setStoreList] = useState<{ id: string; name: string }[]>([]);
-  const [categoryList, setCategoryList] = useState<{ value: string; label: string }[]>([]); // For MultiSelect or Select
+  const [categoryList, setCategoryList] = useState<{ value: string; label: string }[]>([]);
   const [loadingRelatedData, setLoadingRelatedData] = useState(true);
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
-    defaultValues: {
+    defaultValues: { // Default values should match ProductFormValues
       name: '',
       storeId: '',
-      description: '',
-      imageUrl: '',
+      description: null,
+      imageUrl: null,
       affiliateLink: '',
-      price: 0,
-      priceDisplay: '',
-      category: '',
-      brand: '',
-      sku: '',
+      price: null,
+      priceDisplay: null,
+      category: null,
+      brand: null,
+      sku: null,
       isActive: true,
       isFeatured: false,
       isTodaysPick: false,
-      dataAiHint: '',
+      dataAiHint: null,
     },
   });
 
@@ -186,10 +185,13 @@ export default function AdminProductsListPage() {
     let isMounted = true;
     const fetchRelatedData = async () => {
       if (!db || firebaseInitializationError) {
-        if (isMounted) setError(firebaseInitializationError || "DB error for related data.");
-        setLoadingRelatedData(false);
+        if (isMounted) {
+          setError(firebaseInitializationError || "DB error for related data.");
+          setLoadingRelatedData(false);
+        }
         return;
       }
+      setLoadingRelatedData(true);
       try {
         const [storeSnapshot, categorySnapshot] = await Promise.all([
           getDocs(query(collection(db, 'stores'), orderBy('name'))),
@@ -206,9 +208,11 @@ export default function AdminProductsListPage() {
         if (isMounted) setLoadingRelatedData(false);
       }
     };
-    fetchRelatedData();
+    if (isDialogOpen) { // Only fetch if dialog is open or about to open
+        fetchRelatedData();
+    }
     return () => { isMounted = false; };
-  }, [toast]);
+  }, [toast, isDialogOpen]);
 
   const fetchProducts = useCallback(async (
     isLoadMoreOp: boolean,
@@ -264,7 +268,7 @@ export default function AdminProductsListPage() {
             const storeDoc = await getDoc(doc(db, 'stores', data.storeId));
             if (storeDoc.exists()) storeName = storeDoc.data()?.name || 'Unknown Store';
         }
-        if (data.category && db) { // Assuming category stores category ID
+        if (data.category && db) { 
             const catDoc = await getDoc(doc(db, 'categories', data.category));
             if (catDoc.exists()) categoryName = catDoc.data()?.name || 'Unknown Category';
         }
@@ -323,9 +327,9 @@ export default function AdminProductsListPage() {
       description: product.description || '',
       imageUrl: product.imageUrl || '',
       affiliateLink: product.affiliateLink,
-      price: product.price ?? 0,
+      price: product.price ?? null,
       priceDisplay: product.priceDisplay || '',
-      category: product.category || '',
+      category: product.category || null,
       brand: product.brand || '',
       sku: product.sku || '',
       isActive: product.isActive,
@@ -338,14 +342,19 @@ export default function AdminProductsListPage() {
 
   const onSubmit = async (data: ProductFormValues) => {
     if (!db) { setError("Database not available."); setIsSaving(false); return; }
+    if (!editingProduct) {
+      toast({variant: "destructive", title: "Error", description: "No product selected for editing."});
+      setIsSaving(false);
+      return;
+    }
     setIsSaving(true); setError(null);
 
     const submissionData: Partial<ProductFormType> = {
       ...data,
       imageUrl: data.imageUrl || null,
       description: data.description || null,
-      price: data.price === null ? null : Number(data.price),
-      priceDisplay: data.priceDisplay || (data.price !== null ? formatCurrency(Number(data.price)) : null),
+      price: data.price === null || data.price === undefined ? null : Number(data.price),
+      priceDisplay: data.priceDisplay || (data.price !== null && data.price !== undefined ? formatCurrency(Number(data.price)) : null),
       category: data.category || null,
       brand: data.brand || null,
       sku: data.sku || null,
@@ -353,18 +362,21 @@ export default function AdminProductsListPage() {
     };
 
     try {
-      if (editingProduct) {
-        const productDocRef = doc(db, 'products', editingProduct.id);
-        await updateDoc(productDocRef, { ...submissionData, updatedAt: serverTimestamp() });
-        setProducts(prev => prev.map(p => p.id === editingProduct.id ? { 
-            ...p, 
-            ...submissionData, 
-            storeName: storeList.find(s => s.id === submissionData.storeId)?.name || p.storeName,
-            categoryName: categoryList.find(c => c.value === submissionData.category)?.label || p.categoryName,
-            updatedAt: new Date() 
-        } as ProductWithStoreCategoryNames : p));
-        toast({ title: "Product Updated", description: `${data.name} details saved.` });
-      }
+      const productDocRef = doc(db, 'products', editingProduct.id);
+      await updateDoc(productDocRef, { ...submissionData, updatedAt: serverTimestamp() });
+      
+      const updatedStoreName = storeList.find(s => s.id === submissionData.storeId)?.name || editingProduct.storeName;
+      const updatedCategoryName = categoryList.find(c => c.value === submissionData.category)?.label || editingProduct.categoryName;
+
+      setProducts(prev => prev.map(p => p.id === editingProduct.id ? { 
+          ...p, 
+          ...submissionData, 
+          storeName: updatedStoreName,
+          categoryName: updatedCategoryName,
+          updatedAt: new Date() 
+      } as ProductWithStoreCategoryNames : p));
+      toast({ title: "Product Updated", description: `${data.name} details saved.` });
+      
       setIsDialogOpen(false); form.reset();
     } catch (err) {
       console.error("Error saving product:", err);
@@ -407,7 +419,7 @@ export default function AdminProductsListPage() {
   };
 
   if (loading && products.length === 0 && !error) {
-    return <ProductsTableSkeleton />;
+    return <AdminGuard><ProductsTableSkeleton /></AdminGuard>;
   }
 
   return (
@@ -457,7 +469,7 @@ export default function AdminProductsListPage() {
             <CardDescription>View and manage products.</CardDescription>
           </CardHeader>
           <CardContent>
-            {loading && products.length === 0 ? (
+            {loading && products.length === 0 && !error ? (
               <ProductsTableSkeleton />
             ) : !loading && products.length === 0 && !error ? (
               <p className="text-center text-muted-foreground py-8">
@@ -582,7 +594,7 @@ export default function AdminProductsListPage() {
                   <Select value={field.value} onValueChange={field.onChange} disabled={isSaving || loadingRelatedData}>
                     <SelectTrigger id="storeIdEdit"><SelectValue placeholder="Select store..." /></SelectTrigger>
                     <SelectContent>
-                      {storeList.length === 0 && <SelectItem value="loading" disabled>Loading stores...</SelectItem>}
+                      {loadingRelatedData && storeList.length === 0 && <SelectItem value="loading" disabled>Loading stores...</SelectItem>}
                       {storeList.map(store => <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -595,9 +607,8 @@ export default function AdminProductsListPage() {
                   <Select value={field.value || ""} onValueChange={field.onChange} disabled={isSaving || loadingRelatedData}>
                     <SelectTrigger id="categoryEdit"><SelectValue placeholder="Select category..." /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">No Category</SelectItem>
-                      {categoryList.length === 0 && !loadingRelatedData && <SelectItem value="loading-cat" disabled>No categories found</SelectItem>}
-                      {loadingRelatedData && <SelectItem value="loading-cat-true" disabled>Loading categories...</SelectItem>}
+                      {loadingRelatedData && categoryList.length === 0 && <SelectItem value="loading-cat" disabled>Loading categories...</SelectItem>}
+                      {/* No <SelectItem value="">No Category</SelectItem> to avoid the error */}
                       {categoryList.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -673,4 +684,3 @@ export default function AdminProductsListPage() {
     </AdminGuard>
   );
 }
-

@@ -19,7 +19,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Loader2, PlusCircle, Package as PackageIcon, UploadCloud } from 'lucide-react';
+import { ArrowLeft, Loader2, PlusCircle, Package as PackageIcon } from 'lucide-react';
 import AdminGuard from '@/components/guards/admin-guard';
 import Image from 'next/image';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -32,7 +32,7 @@ const productSchema = z.object({
   affiliateLink: z.string().url('Affiliate link must be a valid URL'),
   price: z.number().min(0, 'Price must be non-negative').optional().nullable(),
   priceDisplay: z.string().optional().nullable(),
-  category: z.string().optional().nullable(),
+  category: z.string().optional().nullable(), // Category ID or slug
   brand: z.string().optional().nullable(),
   sku: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
@@ -72,9 +72,9 @@ export default function AddProductAdminPage() {
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
     defaultValues: {
-      name: '', storeId: '', description: '', imageUrl: '', affiliateLink: '',
-      price: 0, priceDisplay: '', category: '', brand: '', sku: '',
-      isActive: true, isFeatured: false, isTodaysPick: false, dataAiHint: '',
+      name: '', storeId: '', description: null, imageUrl: null, affiliateLink: '',
+      price: null, priceDisplay: null, category: null, brand: null, sku: null,
+      isActive: true, isFeatured: false, isTodaysPick: false, dataAiHint: null,
     },
   });
 
@@ -82,7 +82,10 @@ export default function AddProductAdminPage() {
     let isMounted = true;
     const fetchRelatedData = async () => {
       if (!db || firebaseInitializationError) {
-        if(isMounted) setLoadingRelatedData(false);
+        if(isMounted) {
+          toast({ variant: 'destructive', title: 'Error', description: firebaseInitializationError || "Database not available."});
+          setLoadingRelatedData(false);
+        }
         return;
       }
       setLoadingRelatedData(true);
@@ -107,7 +110,7 @@ export default function AddProductAdminPage() {
 
   const onSubmit = async (data: ProductFormValues) => {
     if (!db || firebaseInitializationError) {
-      toast({ variant: "destructive", title: "Error", description: "Database not available." });
+      toast({ variant: "destructive", title: "Error", description: firebaseInitializationError || "Database not available." });
       return;
     }
     setIsSaving(true);
@@ -115,7 +118,7 @@ export default function AddProductAdminPage() {
       ...data,
       imageUrl: data.imageUrl || null,
       description: data.description || null,
-      price: data.price === null ? null : Number(data.price),
+      price: data.price === null || data.price === undefined ? null : Number(data.price),
       priceDisplay: data.priceDisplay || null,
       category: data.category || null,
       brand: data.brand || null,
@@ -137,7 +140,7 @@ export default function AddProductAdminPage() {
     }
   };
   
-  if (loadingRelatedData && (storeList.length === 0 || categoryList.length === 0)) {
+  if (loadingRelatedData) { // Show skeleton if related data is loading
       return <AdminGuard><AddProductPageSkeleton/></AdminGuard>;
   }
 
@@ -162,13 +165,13 @@ export default function AddProductAdminPage() {
               <div className="space-y-4">
                 <div className="space-y-1">
                   <Label htmlFor="name">Product Name*</Label>
-                  <Input id="name" {...form.register('name')} disabled={isSaving || loadingRelatedData} />
+                  <Input id="name" {...form.register('name')} disabled={isSaving} />
                   {form.formState.errors.name && <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>}
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="storeId">Store*</Label>
                   <Controller name="storeId" control={form.control} render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange} disabled={isSaving || loadingRelatedData}>
+                    <Select value={field.value} onValueChange={field.onChange} disabled={isSaving}>
                       <SelectTrigger id="storeId"><SelectValue placeholder="Select store..." /></SelectTrigger>
                       <SelectContent>
                         {storeList.map(store => <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>)}
@@ -180,10 +183,10 @@ export default function AddProductAdminPage() {
                 <div className="space-y-1">
                   <Label htmlFor="category">Category</Label>
                   <Controller name="category" control={form.control} render={({ field }) => (
-                    <Select value={field.value || ""} onValueChange={field.onChange} disabled={isSaving || loadingRelatedData}>
+                    <Select value={field.value || ""} onValueChange={field.onChange} disabled={isSaving}>
                       <SelectTrigger id="category"><SelectValue placeholder="Select category..." /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">No Category</SelectItem>
+                        {/* <SelectItem value="">No Category</SelectItem>  -- This was causing the error -- */}
                         {categoryList.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
@@ -192,56 +195,56 @@ export default function AddProductAdminPage() {
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="description">Description</Label>
-                  <Textarea id="description" {...form.register('description')} rows={3} disabled={isSaving || loadingRelatedData} />
+                  <Textarea id="description" {...form.register('description')} rows={3} disabled={isSaving} />
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="imageUrl">Image URL</Label>
-                  <Input id="imageUrl" {...form.register('imageUrl')} placeholder="https://..." disabled={isSaving || loadingRelatedData} />
-                  {form.watch('imageUrl') && <Image src={form.watch('imageUrl')!} alt="Preview" width={80} height={80} className="mt-2 object-contain border rounded-sm bg-muted p-1" />}
+                  <Input id="imageUrl" {...form.register('imageUrl')} placeholder="https://..." disabled={isSaving} />
+                  {form.watch('imageUrl') && <Image src={form.watch('imageUrl')!} alt="Preview" width={80} height={80} className="mt-2 object-contain border rounded-sm bg-muted p-1" data-ai-hint="product image preview"/>}
                   {form.formState.errors.imageUrl && <p className="text-sm text-destructive">{form.formState.errors.imageUrl.message}</p>}
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="dataAiHint">Image AI Hint (for placeholder)</Label>
-                  <Input id="dataAiHint" {...form.register('dataAiHint')} placeholder="e.g., red shoe" disabled={isSaving || loadingRelatedData} />
+                  <Label htmlFor="dataAiHint">Image AI Hint</Label>
+                  <Input id="dataAiHint" {...form.register('dataAiHint')} placeholder="e.g., red shoe" disabled={isSaving} />
                 </div>
               </div>
               {/* Column 2 */}
               <div className="space-y-4">
                 <div className="space-y-1">
                   <Label htmlFor="affiliateLink">Affiliate Link* (use {"{CLICK_ID}"})</Label>
-                  <Input id="affiliateLink" {...form.register('affiliateLink')} placeholder="https://...&subid={CLICK_ID}" disabled={isSaving || loadingRelatedData} />
+                  <Input id="affiliateLink" {...form.register('affiliateLink')} placeholder="https://...&subid={CLICK_ID}" disabled={isSaving} />
                   {form.formState.errors.affiliateLink && <p className="text-sm text-destructive">{form.formState.errors.affiliateLink.message}</p>}
                 </div>
                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                         <Label htmlFor="price">Price (Numerical)</Label>
-                        <Input id="price" type="number" step="0.01" {...form.register('price', { setValueAs: v => v === null || v === '' ? null : parseFloat(v) })} disabled={isSaving || loadingRelatedData} />
+                        <Input id="price" type="number" step="0.01" {...form.register('price', { setValueAs: v => v === null || v === '' ? null : parseFloat(v) })} disabled={isSaving} />
                         {form.formState.errors.price && <p className="text-sm text-destructive">{form.formState.errors.price.message}</p>}
                     </div>
                     <div className="space-y-1">
                         <Label htmlFor="priceDisplay">Price Display Text</Label>
-                        <Input id="priceDisplay" {...form.register('priceDisplay')} placeholder="e.g. ₹1,999 or Sale!" disabled={isSaving || loadingRelatedData} />
+                        <Input id="priceDisplay" {...form.register('priceDisplay')} placeholder="e.g. ₹1,999 or Sale!" disabled={isSaving} />
                     </div>
                  </div>
                 <div className="space-y-1">
                   <Label htmlFor="brand">Brand</Label>
-                  <Input id="brand" {...form.register('brand')} disabled={isSaving || loadingRelatedData} />
+                  <Input id="brand" {...form.register('brand')} disabled={isSaving} />
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="sku">SKU/Item ID</Label>
-                  <Input id="sku" {...form.register('sku')} disabled={isSaving || loadingRelatedData} />
+                  <Input id="sku" {...form.register('sku')} disabled={isSaving} />
                 </div>
                 <div className="space-y-3 pt-2">
                     <div className="flex items-center space-x-2">
-                    <Controller name="isActive" control={form.control} render={({ field }) => (<Checkbox id="isActive" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving || loadingRelatedData} /> )} />
+                    <Controller name="isActive" control={form.control} render={({ field }) => (<Checkbox id="isActive" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )} />
                     <Label htmlFor="isActive" className="font-normal">Active (Visible on site)</Label>
                     </div>
                     <div className="flex items-center space-x-2">
-                    <Controller name="isFeatured" control={form.control} render={({ field }) => (<Checkbox id="isFeatured" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving || loadingRelatedData} /> )}/>
+                    <Controller name="isFeatured" control={form.control} render={({ field }) => (<Checkbox id="isFeatured" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
                     <Label htmlFor="isFeatured" className="font-normal">Featured Product</Label>
                     </div>
                     <div className="flex items-center space-x-2">
-                    <Controller name="isTodaysPick" control={form.control} render={({ field }) => ( <Checkbox id="isTodaysPick" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving || loadingRelatedData} /> )}/>
+                    <Controller name="isTodaysPick" control={form.control} render={({ field }) => ( <Checkbox id="isTodaysPick" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
                     <Label htmlFor="isTodaysPick" className="font-normal">Mark as Today's Pick</Label>
                     </div>
                 </div>
