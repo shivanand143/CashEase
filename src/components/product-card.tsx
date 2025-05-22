@@ -24,7 +24,6 @@ const isValidHttpUrl = (string: string | undefined | null): boolean => {
   if (!string) return false;
   let url;
   try {
-    // Basic check for common error strings that might be mistakenly passed as URLs
     if (string.startsWith("Error:") || string.startsWith("Unhandled") || string.length > 2048) {
         console.warn("Invalid URL pattern detected in isValidHttpUrl:", string);
         return false;
@@ -99,7 +98,9 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
   const affiliateLink = product.affiliateLink || '#';
   const priceDisplay = product.priceDisplay || (product.price !== null && product.price !== undefined ? formatCurrency(product.price) : 'Price not available');
 
-  const cashbackDisplay = product.productSpecificCashbackDisplay || storeContext?.cashbackRate || null;
+  const hasProductSpecificCashback = !!product.productSpecificCashbackDisplay;
+  const cashbackDisplay = hasProductSpecificCashback ? product.productSpecificCashbackDisplay : storeContext?.cashbackRate || null;
+  const cashbackTypeForIcon = hasProductSpecificCashback ? product.productSpecificCashbackType : storeContext?.cashbackType;
 
 
   const handleShopNow = async () => {
@@ -124,7 +125,7 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
     if (!user) {
         console.log("ProductCard: User not logged in. Storing redirect and navigating to login.");
         sessionStorage.setItem('loginRedirectUrl', finalAffiliateLinkWithClickId);
-        sessionStorage.setItem('loginRedirectSource', router.asPath); // Use router.asPath for current path
+        sessionStorage.setItem('loginRedirectSource', router.asPath);
         router.push(`/login?message=Please login to track cashback for this product.`);
         setIsProcessingClick(false);
         return;
@@ -139,7 +140,6 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
         clickId: clickId,
         affiliateLink: finalAffiliateLinkWithClickId,
         originalLink: affiliateLink,
-        // Pass product-specific cashback details if available
         clickedCashbackDisplay: product.productSpecificCashbackDisplay || null,
         clickedCashbackRateValue: product.productSpecificCashbackRateValue ?? null,
         clickedCashbackType: product.productSpecificCashbackType || null,
@@ -162,7 +162,7 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
 
     console.log("ProductCard: Opening affiliate link in new tab:", finalAffiliateLinkWithClickId);
     window.open(finalAffiliateLinkWithClickId, '_blank', 'noopener,noreferrer');
-    setIsProcessingClick(false); // Reset after opening link
+    setIsProcessingClick(false);
   };
 
   return (
@@ -196,15 +196,16 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
            )}
         </div>
         <div className="mt-auto">
+          <p className="text-base font-semibold text-primary mb-1"> {/* Price first */}
+            {priceDisplay}
+          </p>
           {cashbackDisplay && (
-            <p className="text-xs text-green-600 font-semibold mb-1 flex items-center">
-              {product.productSpecificCashbackType === 'fixed' ? <IndianRupee className="w-3 h-3 mr-0.5"/> : <Percent className="w-3 h-3 mr-0.5"/>}
+            <p className="text-xs text-green-600 font-semibold mb-3 flex items-center"> {/* Cashback second, increased bottom margin */}
+              {cashbackTypeForIcon === 'fixed' ? <IndianRupee className="w-3 h-3 mr-0.5"/> : <Percent className="w-3 h-3 mr-0.5"/>}
               {cashbackDisplay} Cashback
             </p>
           )}
-          <p className="text-base font-semibold text-primary mb-2">
-            {priceDisplay}
-          </p>
+          {!cashbackDisplay && <div className="mb-3 h-[18px]"></div> /* Placeholder for consistent button spacing if no cashback */}
           <Button
             size="sm"
             className="w-full text-xs bg-amber-500 hover:bg-amber-600 text-white"
