@@ -3,11 +3,12 @@
 "use client";
 
 import * as React from 'react';
+import { useState, useEffect } from 'react'; // Added useState here
 import { useRouter } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { collection, addDoc, serverTimestamp, query, orderBy, getDocs, where, getDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, orderBy, getDocs, where, getDoc, limit } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { StoreFormValues, Category, CashbackType } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
@@ -32,7 +33,7 @@ const storeSchema = z.object({
   affiliateLink: z.string().url('Invalid URL format'),
   cashbackRate: z.string().min(1, 'Cashback rate display is required').max(50, 'Rate display too long'),
   cashbackRateValue: z.number().min(0, 'Cashback value must be non-negative'),
-  cashbackType: z.enum(['percentage', 'fixed'] as [CashbackType, ...CashbackType[]]),
+  cashbackType: z.enum(['percentage', 'fixed'] as [CashbackType, ...CashbackType[]]), // Ensures at least one value
   description: z.string().min(10, 'Description must be at least 10 characters').max(500, 'Description too long'),
   detailedDescription: z.string().max(2000, "Detailed description too long").optional().nullable(),
   categories: z.array(z.string()).min(1, 'At least one category is required'),
@@ -96,8 +97,12 @@ export default function AddStorePage() {
   useEffect(() => {
     let isMounted = true;
     const fetchCategories = async () => {
+      if (!isMounted) return;
       if (!db || firebaseInitializationError) {
-        if (isMounted) { setLoadingCategories(false); }
+        if (isMounted) {
+          toast({ variant: "destructive", title: "Error", description: firebaseInitializationError || "Database not available." });
+          setLoadingCategories(false);
+        }
         return;
       }
       setLoadingCategories(true);
@@ -117,7 +122,7 @@ export default function AddStorePage() {
     fetchCategories();
     return () => { isMounted = false; };
   }, [toast]);
-  
+
   const generateSlugFromName = (name: string) => {
     return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
   };
@@ -134,7 +139,6 @@ export default function AddStorePage() {
       return () => subscription.unsubscribe();
   }, [form]);
 
-
   const onSubmit = async (data: StoreFormValues) => {
     if (!db || firebaseInitializationError) {
       toast({ variant: "destructive", title: "Error", description: firebaseInitializationError || "Database not available." });
@@ -145,18 +149,20 @@ export default function AddStorePage() {
     const slugToSave = data.slug || generateSlugFromName(data.name);
 
     // Check if slug already exists
-    const storeRefBySlug = query(collection(db, 'stores'), where('slug', '==', slugToSave), limit(1));
-    const slugSnapshot = await getDocs(storeRefBySlug);
-    if (!slugSnapshot.empty) {
-        form.setError('slug', { type: 'manual', message: 'This slug is already in use or generates an existing slug. Please choose a unique one.' });
-        setIsSaving(false);
-        return;
+    if (slugToSave) {
+        const storeRefBySlug = query(collection(db, 'stores'), where('slug', '==', slugToSave), limit(1));
+        const slugSnapshot = await getDocs(storeRefBySlug);
+        if (!slugSnapshot.empty) {
+            form.setError('slug', { type: 'manual', message: 'This slug is already in use. Please choose a unique one or leave it blank to auto-generate.' });
+            setIsSaving(false);
+            return;
+        }
     }
 
 
     const submissionData = {
       ...data,
-      slug: slugToSave,
+      slug: slugToSave || null, // Ensure slug is null if not provided or generated empty
       logoUrl: data.logoUrl || null,
       heroImageUrl: data.heroImageUrl || null,
       detailedDescription: data.detailedDescription || null,
@@ -186,7 +192,7 @@ export default function AddStorePage() {
     }
   };
 
-  if (loadingCategories && categoriesList.length === 0) { // Show skeleton if categories are loading and list is empty
+  if (loadingCategories && categoriesList.length === 0) {
       return <AdminGuard><AddStorePageSkeleton /></AdminGuard>;
   }
 
@@ -223,13 +229,13 @@ export default function AddStorePage() {
                 <div className="space-y-1">
                   <Label htmlFor="logoUrl">Logo URL</Label>
                   <Input id="logoUrl" {...form.register('logoUrl')} placeholder="https://..." disabled={isSaving} />
-                   {form.watch('logoUrl') && <Image src={form.watch('logoUrl')!} alt="Logo Preview" width={100} height={50} className="mt-2 object-contain border rounded-sm bg-muted p-1" />}
+                   {form.watch('logoUrl') && <Image src={form.watch('logoUrl')!} alt="Logo Preview" width={100} height={50} className="mt-2 object-contain border rounded-sm bg-muted p-1" data-ai-hint="store logo preview"/>}
                   {form.formState.errors.logoUrl && <p className="text-sm text-destructive">{form.formState.errors.logoUrl.message}</p>}
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="heroImageUrl">Hero Image URL</Label>
                   <Input id="heroImageUrl" {...form.register('heroImageUrl')} placeholder="https://..." disabled={isSaving} />
-                  {form.watch('heroImageUrl') && <Image src={form.watch('heroImageUrl')!} alt="Hero Preview" width={200} height={100} className="mt-2 object-cover border rounded-sm aspect-video" />}
+                  {form.watch('heroImageUrl') && <Image src={form.watch('heroImageUrl')!} alt="Hero Preview" width={200} height={100} className="mt-2 object-cover border rounded-sm aspect-video" data-ai-hint="store hero image preview"/>}
                   {form.formState.errors.heroImageUrl && <p className="text-sm text-destructive">{form.formState.errors.heroImageUrl.message}</p>}
                 </div>
                  <div className="space-y-1">
