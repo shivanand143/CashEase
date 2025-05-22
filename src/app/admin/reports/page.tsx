@@ -7,10 +7,11 @@ import { BarChart3, CalendarDays, Download, Filter, Loader2, AlertCircle } from 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DateRangePicker } from '@/components/ui/date-range-picker'; // Assuming this exists or will be created
+// import { DateRangePicker } from '@/components/ui/date-range-picker'; // Assuming this exists or will be created
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import AdminGuard from '@/components/guards/admin-guard';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from "@/lib/utils"; // Added cn import
 // import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart'; // Example import
 // import { Bar, BarChart, CartesianGrid, XAxis, YAxis, Tooltip as RechartsTooltip } from 'recharts'; // Example import
 
@@ -109,9 +110,15 @@ export default function AdminReportsPage() {
     setLoading(false);
   };
 
-  if (loading && !reportData) {
-    // This skeleton is for the content area, not the whole page.
-    // The AdminGuard might handle overall page loading if it's fetching user profile.
+  // Initial loading state check
+  const [pageInitiallyLoading, setPageInitiallyLoading] = React.useState(true);
+  React.useEffect(() => {
+    setPageInitiallyLoading(false); // Consider this page loaded after initial mount
+  }, []);
+
+
+  if (pageInitiallyLoading) {
+    return <AdminGuard><ReportsPageSkeleton /></AdminGuard>;
   }
 
   return (
@@ -209,7 +216,7 @@ export default function AdminReportsPage() {
             </CardContent>
           </Card>
         )}
-        {loading && !reportData && (
+        {loading && !reportData && !error && ( // Show loading indicator only if no data and no error yet
           <div className="text-center py-10">
             <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
             <p className="mt-2 text-muted-foreground">Generating report...</p>
