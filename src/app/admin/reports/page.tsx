@@ -1,3 +1,4 @@
+
 // src/app/admin/reports/page.tsx
 "use client";
 
@@ -11,14 +12,13 @@ import AdminGuard from '@/components/guards/admin-guard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn, formatCurrency, safeToDate } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { collection, query, where, getDocs, Timestamp, orderBy, getCountFromServer } from 'firebase/firestore';
+import { collection, query, where, getDocs, Timestamp, orderBy, getCountFromServer, limit } from 'firebase/firestore'; // Added limit
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { UserProfile, Transaction, Store, PayoutRequest, CashbackStatus, PayoutStatus } from '@/lib/types';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { format, startOfDay, endOfDay } from 'date-fns';
-// Basic Chart Placeholder - replace with actual chart components later if needed
-// import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
+import { format, startOfDay, endOfDay, subDays } from 'date-fns';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Placeholder for DateRangePicker - a real implementation would use react-day-picker's range selection
 const DateRangePicker = ({ className, onUpdate, initialDateFrom, initialDateTo }: {
@@ -81,6 +81,8 @@ interface ReportData {
   data: any[] | { summary: any, details?: any[] }; // Flexible data structure
   columns?: { key: string; header: string; render?: (value: any, item: any) => React.ReactNode }[];
   summaryMetrics?: { label: string; value: string | number }[];
+  chartData?: any[]; // For charts
+  chartConfig?: any; // For chart configuration
 }
 
 function ReportsPageSkeleton() {
@@ -109,7 +111,10 @@ function ReportsPageSkeleton() {
 
 export default function AdminReportsPage() {
   const [reportType, setReportType] = React.useState<ReportType>('');
-  const [dateRange, setDateRange] = React.useState<{ from?: Date; to?: Date }>({});
+  const [dateRange, setDateRange] = React.useState<{ from?: Date; to?: Date }>({
+    from: subDays(new Date(), 30), // Default to last 30 days
+    to: new Date(),
+  });
   const [reportData, setReportData] = React.useState<ReportData | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -122,30 +127,42 @@ export default function AdminReportsPage() {
   const fetchUserSignupsReport = async (from?: Date, to?: Date): Promise<ReportData> => {
     if (!db) throw new Error("Database not available");
     const constraints = [
-      where('createdAt', '>=', from ? Timestamp.fromDate(startOfDay(from)) : Timestamp.fromDate(new Date(0))),
-      where('createdAt', '<=', to ? Timestamp.fromDate(endOfDay(to)) : Timestamp.now()),
+      orderBy('createdAt', 'desc'), // Order by creation date for "recent"
+      limit(10) // Limit to 10 recent users for display
     ];
-    const q = query(collection(db, 'users'), ...constraints);
-    const snapshot = await getCountFromServer(q);
-    const count = snapshot.data().count;
-
-    const usersQuery = query(collection(db, 'users'), ...constraints, orderBy('createdAt', 'desc'), limit(10));
+    if (from) constraints.unshift(where('createdAt', '>=', Timestamp.fromDate(startOfDay(from))));
+    if (to) constraints.unshift(where('createdAt', '<=', Timestamp.fromDate(endOfDay(to))));
+    
+    const usersQuery = query(collection(db, 'users'), ...constraints);
     const userDocs = await getDocs(usersQuery);
-    const recentUsers = userDocs.docs.map(doc => ({
-        id: doc.id,
-        displayName: doc.data().displayName || 'N/A',
-        email: doc.data().email,
-        createdAt: format(safeToDate(doc.data().createdAt) || new Date(), 'PPp')
-    }));
+    const recentUsers = userDocs.docs.map(doc => {
+        const data = doc.data();
+        return {
+            id: doc.id,
+            displayName: data.displayName || 'N/A',
+            email: data.email,
+            createdAt: format(safeToDate(data.createdAt) || new Date(), 'PPp'),
+            role: data.role || 'user'
+        }
+    });
+
+    // Get total count separately
+    const countConstraints = [];
+    if (from) countConstraints.push(where('createdAt', '>=', Timestamp.fromDate(startOfDay(from))));
+    if (to) countConstraints.push(where('createdAt', '<=', Timestamp.fromDate(endOfDay(to))));
+    const countQuery = query(collection(db, 'users'), ...countConstraints);
+    const snapshot = await getCountFromServer(countQuery);
+    const totalCount = snapshot.data().count;
 
     return {
       title: "User Signups Report",
-      description: `Total new users signed up within the selected period.`,
-      summaryMetrics: [{ label: "Total New Users", value: count }],
-      data: { summary: { count }, details: recentUsers },
+      description: `Total new users signed up and recent signups within the selected period.`,
+      summaryMetrics: [{ label: "Total New Users", value: totalCount }],
+      data: { summary: { count: totalCount }, details: recentUsers },
       columns: [
         { key: "displayName", header: "Display Name" },
         { key: "email", header: "Email" },
+        { key: "role", header: "Role" },
         { key: "createdAt", header: "Joined At" },
       ],
     };
@@ -154,10 +171,10 @@ export default function AdminReportsPage() {
   const fetchTransactionsReport = async (from?: Date, to?: Date): Promise<ReportData> => {
     if (!db) throw new Error("Database not available");
     const transactionsRef = collection(db, 'transactions');
-    const constraints = [
-      where('transactionDate', '>=', from ? Timestamp.fromDate(startOfDay(from)) : Timestamp.fromDate(new Date(0))),
-      where('transactionDate', '<=', to ? Timestamp.fromDate(endOfDay(to)) : Timestamp.now()),
-    ];
+    const constraints = [];
+    if (from) constraints.push(where('transactionDate', '>=', Timestamp.fromDate(startOfDay(from))));
+    if (to) constraints.push(where('transactionDate', '<=', Timestamp.fromDate(endOfDay(to))));
+    
     const q = query(transactionsRef, ...constraints);
     const snapshot = await getDocs(q);
     const transactions: Transaction[] = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as Transaction));
@@ -169,18 +186,19 @@ export default function AdminReportsPage() {
       byStatus: {} as Record<CashbackStatus, { count: number, totalSale: number, totalCashback: number }>
     };
 
+    Object.values(CashbackStatus).forEach(status => { // Initialize all statuses
+        overview.byStatus[status as CashbackStatus] = { count: 0, totalSale: 0, totalCashback: 0 };
+    });
+
     transactions.forEach(tx => {
       const status = tx.status;
-      if (!overview.byStatus[status]) {
-        overview.byStatus[status] = { count: 0, totalSale: 0, totalCashback: 0 };
-      }
       overview.byStatus[status].count++;
       overview.byStatus[status].totalSale += (tx.finalSaleAmount ?? tx.saleAmount ?? 0);
       overview.byStatus[status].totalCashback += (tx.finalCashbackAmount ?? tx.initialCashbackAmount ?? 0);
     });
     
     const statusDetails = Object.entries(overview.byStatus).map(([status, data]) => ({
-        status: status.charAt(0).toUpperCase() + status.slice(1),
+        status: status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' '),
         count: data.count,
         totalSale: formatCurrency(data.totalSale),
         totalCashback: formatCurrency(data.totalCashback)
@@ -207,11 +225,10 @@ export default function AdminReportsPage() {
   const fetchStorePerformanceReport = async (from?: Date, to?: Date): Promise<ReportData> => {
     if (!db) throw new Error("Database not available");
     const transactionsRef = collection(db, 'transactions');
-    const constraints = [
-      where('status', 'in', ['confirmed', 'paid', 'awaiting_payout'] as CashbackStatus[]),
-      where('transactionDate', '>=', from ? Timestamp.fromDate(startOfDay(from)) : Timestamp.fromDate(new Date(0))),
-      where('transactionDate', '<=', to ? Timestamp.fromDate(endOfDay(to)) : Timestamp.now()),
-    ];
+    const constraints = [where('status', 'in', ['confirmed', 'paid', 'awaiting_payout'] as CashbackStatus[])];
+    if (from) constraints.push(where('transactionDate', '>=', Timestamp.fromDate(startOfDay(from))));
+    if (to) constraints.push(where('transactionDate', '<=', Timestamp.fromDate(endOfDay(to))));
+    
     const q = query(transactionsRef, ...constraints);
     const snapshot = await getDocs(q);
     const transactions: Transaction[] = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as Transaction));
@@ -230,13 +247,20 @@ export default function AdminReportsPage() {
     }
     
     const performanceDetails = Object.values(storePerformance)
-        .sort((a,b) => b.totalCashback - a.totalCashback) // Sort by cashback descending
+        .sort((a,b) => b.totalCashback - a.totalCashback)
         .map(s => ({
             name: s.name,
             transactionCount: s.count,
             totalCashbackGenerated: formatCurrency(s.totalCashback),
             totalSalesValue: formatCurrency(s.totalSales),
         }));
+
+    // Data for bar chart
+    const chartData = performanceDetails.slice(0, 10).map(s => ({
+        name: s.name.length > 15 ? s.name.substring(0,12) + '...' : s.name, // Shorten name for chart
+        cashback: parseFloat(s.totalCashbackGenerated.replace(/[^0-9.-]+/g,"")), // Convert currency string to number
+    }));
+
 
     return {
       title: "Store Performance (Confirmed/Paid Transactions)",
@@ -248,16 +272,20 @@ export default function AdminReportsPage() {
         { key: "totalCashbackGenerated", header: "Total Cashback Generated" },
         { key: "totalSalesValue", header: "Total Sales Value" },
       ],
+      chartData: chartData,
+      chartConfig: {
+        cashback: { label: "Cashback (₹)", color: "hsl(var(--primary))" }
+      }
     };
   };
   
   const fetchPayoutSummaryReport = async (from?: Date, to?: Date): Promise<ReportData> => {
     if (!db) throw new Error("Database not available");
     const payoutsRef = collection(db, 'payoutRequests');
-    const constraints = [
-        where('requestedAt', '>=', from ? Timestamp.fromDate(startOfDay(from)) : Timestamp.fromDate(new Date(0))),
-        where('requestedAt', '<=', to ? Timestamp.fromDate(endOfDay(to)) : Timestamp.now()),
-    ];
+    const constraints = [];
+    if (from) constraints.push(where('requestedAt', '>=', Timestamp.fromDate(startOfDay(from))));
+    if (to) constraints.push(where('requestedAt', '<=', Timestamp.fromDate(endOfDay(to))));
+        
     const q = query(payoutsRef, ...constraints);
     const snapshot = await getDocs(q);
     const payouts: PayoutRequest[] = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as PayoutRequest));
@@ -268,11 +296,12 @@ export default function AdminReportsPage() {
       byStatus: {} as Record<PayoutStatus, { count: number, totalAmount: number }>
     };
 
+    Object.values(PayoutStatus).forEach(status => { // Initialize all statuses
+        overview.byStatus[status as PayoutStatus] = { count: 0, totalAmount: 0 };
+    });
+
     payouts.forEach(pr => {
       const status = pr.status;
-      if (!overview.byStatus[status]) {
-        overview.byStatus[status] = { count: 0, totalAmount: 0 };
-      }
       overview.byStatus[status].count++;
       overview.byStatus[status].totalAmount += (pr.amount || 0);
     });
@@ -338,17 +367,18 @@ export default function AdminReportsPage() {
   const renderReportData = () => {
     if (!reportData) return <p className="text-muted-foreground text-center py-10">Select a report type and date range to generate data.</p>;
 
-    const { data, columns, summaryMetrics } = reportData;
-    const detailsArray = Array.isArray(data) ? data : (data as any).details; // Handle both array and object data structures
+    const { data, columns, summaryMetrics, chartData, chartConfig } = reportData;
+    const detailsArray = Array.isArray(data) ? data : (data as any).details;
 
     return (
       <div className="space-y-6">
         {summaryMetrics && summaryMetrics.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
                 {summaryMetrics.map(metric => (
-                    <Card key={metric.label}>
-                        <CardHeader className="pb-2 pt-3">
+                    <Card key={metric.label} className="shadow-sm">
+                        <CardHeader className="pb-2 pt-3 flex flex-row items-center justify-between space-y-0">
                             <CardTitle className="text-sm font-medium text-muted-foreground">{metric.label}</CardTitle>
+                            {/* Optional: Icon based on metric */}
                         </CardHeader>
                         <CardContent className="pb-3">
                             <p className="text-2xl font-bold">{metric.value}</p>
@@ -356,6 +386,31 @@ export default function AdminReportsPage() {
                     </Card>
                 ))}
             </div>
+        )}
+        {chartData && chartConfig && (
+          <Card className="shadow-sm">
+            <CardHeader>
+              <CardTitle>Chart: {reportData.title.replace(' Report', '').replace(' Overview', '')}</CardTitle>
+            </CardHeader>
+            <CardContent className="h-[350px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" angle={-30} textAnchor="end" height={70} interval={0} tick={{fontSize: 10}}/>
+                  <YAxis tickFormatter={(value) => `₹${value}`} />
+                  <RechartsTooltip
+                    formatter={(value:any, name:any) => [formatCurrency(value), name.charAt(0).toUpperCase() + name.slice(1)]}
+                    cursor={{fill: 'hsl(var(--muted))'}}
+                    contentStyle={{backgroundColor: 'hsl(var(--background))', borderRadius: 'var(--radius)'}}
+                  />
+                  <Legend />
+                  {Object.entries(chartConfig).map(([key, config]: [string, any]) => (
+                    <Bar key={key} dataKey={key} fill={config.color} name={config.label} radius={[4, 4, 0, 0]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
         )}
         {columns && detailsArray && detailsArray.length > 0 ? (
           <div className="overflow-x-auto">
@@ -380,7 +435,7 @@ export default function AdminReportsPage() {
           </div>
         ) : detailsArray && detailsArray.length === 0 ? (
             <p className="text-muted-foreground text-center py-10">No detailed data available for this report and period.</p>
-        ) : !columns && detailsArray ? ( // If no columns defined but data exists, show raw
+        ) : !columns && detailsArray ? (
             <pre className="text-xs bg-muted p-4 rounded-md overflow-x-auto">{JSON.stringify(detailsArray, null, 2)}</pre>
         ) : null }
       </div>
@@ -399,8 +454,8 @@ export default function AdminReportsPage() {
             <CardTitle>Generate Report</CardTitle>
             <CardDescription>Select report type and date range to generate insights.</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col sm:flex-row gap-4 items-end">
-            <div className="flex-1 space-y-1">
+          <CardContent className="flex flex-col sm:flex-row flex-wrap gap-4 items-end">
+            <div className="flex-1 min-w-[200px] space-y-1">
               <label htmlFor="reportType" className="text-sm font-medium">Report Type</label>
               <Select value={reportType} onValueChange={(value) => setReportType(value as ReportType)} disabled={loading}>
                 <SelectTrigger id="reportType" className="h-10"><SelectValue placeholder="Select a report..." /></SelectTrigger>
@@ -412,10 +467,10 @@ export default function AdminReportsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
+            <div className="flex-1 min-w-[280px] space-y-1">
               <label className="text-sm font-medium block mb-1">Date Range</label>
               <DateRangePicker
-                className="w-full sm:w-auto"
+                className="w-full"
                 initialDateFrom={dateRange.from}
                 initialDateTo={dateRange.to}
                 onUpdate={(newRange) => setDateRange(newRange)}
