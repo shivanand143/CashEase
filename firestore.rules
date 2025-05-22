@@ -4,114 +4,130 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if the user is an admin
     function isAdmin() {
-      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // Helper function to check if the user is authenticated
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Helper function to check if the user owns the resource
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Users Collection
+    // USERS
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
 
-      // Admins can update any field
-      // Users can update specific non-sensitive fields or their balance during payout
-      allow update: if (isAdmin()) ||
-                      (isOwner(userId) &&
-                        // Ensure non-updatable fields by user are not changed
-                        request.resource.data.uid == resource.data.uid &&
-                        request.resource.data.email == resource.data.email &&
-                        request.resource.data.role == resource.data.role &&
-                        request.resource.data.isDisabled == resource.data.isDisabled &&
-                        request.resource.data.referralCode == resource.data.referralCode &&
-                        request.resource.data.referralCount == resource.data.referralCount &&
-                        request.resource.data.referralBonusEarned == resource.data.referralBonusEarned &&
-                        request.resource.data.pendingCashback == resource.data.pendingCashback &&
-                        request.resource.data.lifetimeCashback == resource.data.lifetimeCashback &&
-                        // Allow displayName, photoURL, payoutDetails, and updatedAt to be changed by user
-                        (
-                          (request.resource.data.displayName != resource.data.displayName ||
-                           request.resource.data.photoURL != resource.data.photoURL ||
-                           request.resource.data.payoutDetails != resource.data.payoutDetails ||
-                           request.resource.data.updatedAt != resource.data.updatedAt
-                          ) &&
-                          // If cashbackBalance is changing, it must be a decrement linked to lastPayoutRequestAt update
-                          (request.resource.data.cashbackBalance == resource.data.cashbackBalance ||
-                            (request.resource.data.cashbackBalance < resource.data.cashbackBalance &&
-                             request.resource.data.lastPayoutRequestAt != resource.data.lastPayoutRequestAt
-                            )
-                          )
-                        )
-                      );
-      allow delete: if false; // Prevent accidental deletion
+      allow update: if 
+        // Admin can update anything
+        isAdmin() ||
+        // Owner can update specific fields
+        (isOwner(userId) && 
+          // Critical fields that user cannot change themselves
+          request.resource.data.uid == resource.data.uid &&
+          request.resource.data.email == resource.data.email &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.isDisabled == resource.data.isDisabled &&
+          request.resource.data.referralCode == resource.data.referralCode &&
+          request.resource.data.referralCount == resource.data.referralCount &&
+          request.resource.data.referralBonusEarned == resource.data.referralBonusEarned &&
+          request.resource.data.pendingCashback == resource.data.pendingCashback && // Users can't change pending directly
+          request.resource.data.lifetimeCashback == resource.data.lifetimeCashback && // Users can't change lifetime directly
+          // Allow cashbackBalance update only if it's a decrement AND lastPayoutRequestAt is being updated (i.e., during a payout request)
+          (
+            (request.resource.data.cashbackBalance != resource.data.cashbackBalance && 
+             request.resource.data.cashbackBalance < resource.data.cashbackBalance && // Must be a decrement
+             request.resource.data.lastPayoutRequestAt != resource.data.lastPayoutRequestAt) ||
+            (request.resource.data.cashbackBalance == resource.data.cashbackBalance) // Or balance isn't changing
+          ) &&
+          // Allow changes to these fields by owner
+          (request.resource.data.displayName != resource.data.displayName ||
+           request.resource.data.photoURL != resource.data.photoURL ||
+           request.resource.data.payoutDetails != resource.data.payoutDetails ||
+           request.resource.data.updatedAt != resource.data.updatedAt ||
+           // Allow if only the fields above + balance for payout are changing
+           (request.resource.data.cashbackBalance != resource.data.cashbackBalance || request.resource.data.lastPayoutRequestAt != resource.data.lastPayoutRequestAt)
+          )
+        );
+      allow delete: if false; 
     }
 
-    // Stores Collection
+    // STORES
     match /stores/{storeId} {
       allow read: if resource.data.isActive == true || isAdmin();
       allow create, update, delete: if isAdmin();
     }
 
-    // Products Collection
+    // PRODUCTS
     match /products/{productId} {
       allow read: if resource.data.isActive == true || isAdmin();
       allow create, update, delete: if isAdmin();
     }
 
-    // Coupons Collection
+    // COUPONS
     match /coupons/{couponId} {
       allow read: if resource.data.isActive == true || isAdmin();
       allow create, update, delete: if isAdmin();
     }
 
-    // Categories Collection
+    // CATEGORIES
     match /categories/{categoryId} {
-      allow read: if resource.data.isActive == true || isAdmin(); // Only active categories public, admin sees all
+      allow read: if resource.data.isActive == true || isAdmin();
       allow create, update, delete: if isAdmin();
     }
 
-    // Banners Collection
+    // BANNERS
     match /banners/{bannerId} {
       allow read: if resource.data.isActive == true || isAdmin();
       allow create, update, delete: if isAdmin();
     }
 
-    // Clicks Collection
+    // CLICKS
+    // Anyone authenticated can create their own click record.
+    // Users can read their own click records.
+    // Admins can read any click records.
     match /clicks/{clickId} {
-      allow create: if isAuthenticated() &&
+      allow create: if isAuthenticated() && 
                        request.resource.data.userId == request.auth.uid &&
                        request.resource.data.clickId == clickId; // Ensure clickId in data matches doc ID
-      allow read: if (isOwner(resource.data.userId)
-                      // Optional: Limit how long users can see their own clicks
-                      // && (resource.data.timestamp > (request.time - duration.value(90, 'd')))
-                     ) || isAdmin();
-      allow update, delete: if isAdmin();
+      allow read: if (isOwner(resource.data.userId) && resource.data.userId != null) || isAdmin();
+      allow update, delete: if isAdmin(); 
     }
 
-    // Transactions Collection
+    // CONVERSIONS (New collection for postbacks)
+    // Typically only writable by a trusted backend process (Firebase Function with Admin SDK).
+    // Admins can read for auditing. Users generally don't read this directly.
+    match /conversions/{conversionId} {
+      allow read: if isAdmin();
+      // Create, update, delete should ideally be restricted to backend/admin SDK.
+      // If Firebase Functions are used with default service account, they bypass these rules.
+      // For direct client (admin panel for manual entry - less ideal for conversions):
+      allow create, update, delete: if isAdmin(); 
+    }
+
+    // TRANSACTIONS
+    // Admins can create/update/delete (e.g., manual entry, status changes).
+    // Users can read their own transactions.
+    // Backend functions (triggered by conversions) will create transactions.
     match /transactions/{transactionId} {
       allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow create: if isAdmin(); // Only admin or backend function should create transactions
-      allow update: if isAdmin(); // Status updates, notes by admin
+      allow create: if isAdmin(); // Or your Firebase Function
+      allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
-    // PayoutRequests Collection
+    // PAYOUTREQUESTS
     match /payoutRequests/{requestId} {
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow update: if isAdmin(); // Admin updates status, notes, etc.
+      allow update: if isAdmin(); // Only admins can update status, notes etc.
       allow delete: if isAdmin();
     }
   }
 }
+
+    

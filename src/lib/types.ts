@@ -11,22 +11,21 @@ export interface UserProfile {
   email: string | null;
   displayName: string | null;
   photoURL: string | null;
-  role: 'user' | 'admin'; // User roles
-  cashbackBalance: number; // Confirmed cashback available for payout
-  pendingCashback: number; // Cashback tracked but not yet confirmed
-  lifetimeCashback: number; // Total confirmed cashback earned over time
-  referralCode: string | null; // User's unique referral code
-  referralCount: number; // Number of users referred
-  referralBonusEarned: number; // Total bonus earned from referrals
-  referredBy: string | null; // UID of the user who referred this user
-  isDisabled: boolean; // To disable user accounts
+  role: 'user' | 'admin';
+  cashbackBalance: number;
+  pendingCashback: number; // Cashback tracked from conversions, awaiting admin approval
+  lifetimeCashback: number;
+  referralCode: string | null;
+  referralCount: number;
+  referralBonusEarned: number;
+  referredBy: string | null;
+  isDisabled: boolean;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
   lastPayoutRequestAt?: Date | Timestamp | null;
   payoutDetails?: PayoutDetails | null;
 }
 
-// Payout Details
 export interface PayoutDetails {
   method: PayoutMethod;
   detail: string;
@@ -37,42 +36,62 @@ export type CashbackStatus = 'pending' | 'confirmed' | 'rejected' | 'cancelled' 
 export interface Transaction {
   id: string; // Firestore document ID
   userId: string;
-  clickId?: string | null; // Link to the original click, if available
+  clickId?: string | null;
+  conversionId?: string | null; // Link to the conversion document
   storeId: string;
-  storeName?: string | null; // Denormalized for easier display
-  orderId?: string | null; // Retailer's order ID
-  productDetails?: string | null; // e.g., "iPhone 15, 2 items of clothing"
-  transactionDate: Date | Timestamp; // Date of purchase
-  reportedDate?: Date | Timestamp; // Date admin/system reported/entered it
-  saleAmount: number; // Initial sale amount reported
-  cashbackRateApplied?: string | null; // e.g., "5%" or "₹50 Flat"
-  initialCashbackAmount: number; // Calculated or manually entered
-  finalSaleAmount?: number | null; // Updated by admin for adjustments
-  finalCashbackAmount?: number | null; // Updated by admin
-  currency?: string; // e.g., "INR"
+  storeName?: string | null;
+  orderId?: string | null;
+  productDetails?: string | null; // Can be from original click or conversion
+  transactionDate: Date | Timestamp; // Date of purchase reported by affiliate network
+  reportedDate?: Date | Timestamp; // Date we received the postback/conversion
+  saleAmount: number; // Sale amount reported by affiliate network
+  cashbackRateApplied?: string | null; // e.g., "5%" or "Store Default"
+  initialCashbackAmount: number; // Cashback calculated based on saleAmount and store's rate
+  finalSaleAmount?: number | null; // Can be adjusted by admin
+  finalCashbackAmount?: number | null; // Can be adjusted by admin
+  currency?: string;
   status: CashbackStatus;
-  confirmationDate?: Date | Timestamp | null; // Date cashback confirmed
+  confirmationDate?: Date | Timestamp | null;
   rejectionReason?: string | null;
-  paidDate?: Date | Timestamp | null; // Date cashback was included in a payout
-  payoutId?: string | null; // ID of the PayoutRequest this transaction was part of
-  adminNotes?: string | null; // For admin internal use
-  notesToUser?: string | null; // e.g., reason for adjustment or rejection visible to user
+  paidDate?: Date | Timestamp | null;
+  payoutId?: string | null;
+  adminNotes?: string | null;
+  notesToUser?: string | null; // Notes visible to the user, e.g., reason for adjustment
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
 
 export interface Click {
-    id: string; // Firestore document ID (this will be the generated clickId)
-    userId: string;
+    id: string; // Firestore document ID (this will be the generated clickId from client)
+    clickId: string; // The actual UUID generated on the client
+    userId: string | null; // Null if user was not logged in
     storeId: string;
-    storeName?: string | null; // Denormalized
+    storeName?: string | null;
     couponId?: string | null;
     productId?: string | null;
-    productName?: string | null; // Denormalized
-    affiliateLink: string; // The final affiliate link clicked
+    productName?: string | null;
+    affiliateLink: string; // The final affiliate link clicked (with clickId appended)
+    originalLink?: string | null; // The store/product/coupon link before appending clickId
     timestamp: Date | Timestamp;
     userAgent?: string | null;
-    clickId: string; // Ensure clickId is part of the data itself
+    // Potentially add device info, IP (with privacy considerations) if needed
+}
+
+export interface Conversion {
+  id?: string; // Firestore document ID
+  clickId: string; // The click_id from the postback
+  originalClickFirebaseId?: string | null; // Firestore ID of the matched click document
+  userId: string | null; // From matched click or null
+  storeId: string | null; // From matched click or null
+  storeName?: string | null; // From matched click or postback
+  orderId: string;
+  saleAmount: number;
+  currency?: string;
+  commissionAmount?: number | null; // If provided by network
+  status: 'received' | 'processed' | 'error' | 'unmatched_click';
+  timestamp: Date | Timestamp;
+  postbackData?: Record<string, any>; // Store the raw postback query/body
+  processingError?: string | null;
 }
 
 export type CashbackType = 'percentage' | 'fixed';
@@ -85,10 +104,10 @@ export interface Store {
   slug?: string | null;
   logoUrl: string | null;
   heroImageUrl?: string | null;
-  affiliateLink: string;
-  cashbackRate: string;
-  cashbackRateValue: number;
-  cashbackType: CashbackType;
+  affiliateLink: string; // Base affiliate link for the store
+  cashbackRate: string; // Display string like "Up to 5%"
+  cashbackRateValue: number; // Numerical value for calculation (e.g., 5 for 5%)
+  cashbackType: CashbackType; // 'percentage' or 'fixed'
   description: string;
   detailedDescription?: string | null;
   categories: string[]; // Array of category slugs/IDs
@@ -98,13 +117,13 @@ export interface Store {
   cashbackConfirmationTime?: string | null;
   cashbackOnAppOrders?: boolean | null;
   detailedCashbackRatesLink?: string | null;
-  topOffersText?: string | null;
-  offerDetailsLink?: string | null;
+  topOffersText?: string | null; // Bullet points or short highlights
+  offerDetailsLink?: string | null; // Link to a page with more T&Cs for offers
   terms?: string | null;
   isFeatured: boolean;
   isActive: boolean;
   isTodaysDeal?: boolean;
-  dataAiHint?: string | null;
+  dataAiHint?: string | null; // For placeholder image generation
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
@@ -112,10 +131,10 @@ export interface Store {
 export interface Coupon {
   id: string;
   storeId: string;
-  store?: Store; // Optional: for enriched coupon data
+  store?: Store;
   code: string | null;
   description: string;
-  link: string | null;
+  link: string | null; // Specific link for this coupon, overrides store.affiliateLink if present
   expiryDate: Date | Timestamp | null;
   isFeatured: boolean;
   isActive: boolean;
@@ -153,13 +172,13 @@ export interface Banner {
 export interface Product {
   id:string;
   storeId: string;
-  storeName?: string; // Denormalized
+  storeName?: string; // Denormalized for easier display if needed
   name: string;
   description?: string | null;
   imageUrl: string | null;
-  affiliateLink: string;
+  affiliateLink: string; // Specific affiliate link for the product
   price?: number | null;
-  priceDisplay?: string | null;
+  priceDisplay?: string | null; // e.g., "₹1,999" or "Sale!"
   category?: string | null; // Category ID/slug
   brand?: string | null;
   sku?: string | null;
@@ -169,7 +188,7 @@ export interface Product {
   specifications?: Record<string, string>;
   isActive: boolean;
   isFeatured?: boolean;
-  isTodaysPick?: boolean;
+  isTodaysPick?: boolean; // To feature on homepage "Today's Picks"
   dataAiHint?: string | null;
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
@@ -184,18 +203,9 @@ export interface PayoutRequest {
   processedAt?: Date | Timestamp | null;
   paymentMethod: PayoutMethod;
   paymentDetails: PayoutDetails;
-  transactionIds: string[]; // IDs of transactions covered by this payout when admin marks as 'paid'
+  transactionIds: string[]; // IDs of Transaction documents that this payout covers
   adminNotes?: string | null;
   failureReason?: string | null;
-}
-
-// Enriched types for frontend display
-export interface CouponWithStore extends Coupon {
-  store?: Store;
-}
-
-export interface ProductWithStore extends Product {
-  store?: Store;
 }
 
 // Form values - Omit fields managed by Firestore or system
@@ -204,8 +214,10 @@ export interface CouponFormValues extends Omit<Coupon, 'id' | 'createdAt' | 'upd
 export interface BannerFormValues extends Omit<Banner, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface CategoryFormValues extends Omit<Category, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface ProductFormValues extends Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'storeName'> {}
-export interface TransactionFormValues extends Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'confirmationDate' | 'paidDate' | 'payoutId' | 'reportedDate' | 'cashbackRateApplied' | 'initialCashbackAmount' | 'finalSaleAmount' | 'finalCashbackAmount' | 'currency' > {
+export interface TransactionFormValues extends Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'confirmationDate' | 'paidDate' | 'payoutId' | 'reportedDate' | 'cashbackRateApplied' | 'initialCashbackAmount' | 'finalSaleAmount' | 'finalCashbackAmount' | 'currency' | 'conversionId'> {
     transactionDate: Date; // Ensure transactionDate is always a Date for the form
     saleAmount: number;
     cashbackAmount: number; // This will be used as initialCashbackAmount
 }
+
+    

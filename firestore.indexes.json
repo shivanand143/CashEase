@@ -2,20 +2,40 @@
 {
   "indexes": [
     {
-      "collectionGroup": "users",
+      "collectionGroup": "clicks",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "email", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "clicks",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
+        { "fieldPath": "clickId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "conversions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "clickId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "conversions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "storeId", "order": "ASCENDING" },
         { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "conversions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "orderId", "order": "ASCENDING" }
       ]
     },
     {
@@ -32,6 +52,14 @@
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "requestedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "transactionDate", "order": "DESCENDING" }
       ]
     },
     {
@@ -42,14 +70,6 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "payoutId", "order": "ASCENDING" },
         { "fieldPath": "transactionDate", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "transactions",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "transactionDate", "order": "DESCENDING" }
       ]
     },
     {
@@ -123,6 +143,15 @@
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
+     {
+      "collectionGroup": "coupons",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
     {
       "collectionGroup": "categories",
       "queryScope": "COLLECTION_GROUP",
@@ -161,3 +190,5 @@
   ],
   "fieldOverrides": []
 }
+
+    

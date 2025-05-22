@@ -27,7 +27,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Transaction, CashbackStatus, UserProfile, Store, TransactionFormValues as AppTransactionFormValues } from '@/lib/types';
+import type { Transaction, CashbackStatus, UserProfile, Store, TransactionFormValues as AppTransactionFormValues } from '@/lib/types'; // Corrected type import
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -42,9 +42,9 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
+// Label was already imported from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Loader2, Search, Edit, PlusCircle, CheckCircle, XCircle, Info, ListFilter, Calendar as CalendarIconLucide, IndianRupee, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { AlertCircle, Loader2, Search, Edit, PlusCircle, CheckCircle, XCircle, Info, ListFilter, Calendar as CalendarIconLucide, IndianRupee, ThumbsUp, ThumbsDown, Eye } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -65,9 +65,11 @@ import { cn } from "@/lib/utils";
 import { useDebounce } from '@/hooks/use-debounce';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/hooks/use-auth'; // Import useAuth
+import { Label } from '@/components/ui/label'; // Ensure Label is imported
 
 
 const TRANSACTIONS_PER_PAGE = 15;
+const ADMIN_TX_LOG_PREFIX = "ADMIN_TXN_PAGE:";
 
 const transactionFormSchema = z.object({
   userId: z.string().min(1, "User ID is required."),
@@ -75,10 +77,12 @@ const transactionFormSchema = z.object({
   storeName: z.string().optional().nullable(),
   orderId: z.string().min(1, "Order ID is required").optional().nullable(),
   clickId: z.string().optional().nullable(),
+  conversionId: z.string().optional().nullable(),
   productDetails: z.string().optional().nullable(),
   transactionDate: z.date({ required_error: "Transaction date is required."}),
   saleAmount: z.number({ required_error: "Sale amount is required."}).min(0, "Sale amount must be non-negative."),
-  cashbackAmount: z.number({ required_error: "Cashback amount is required."}).min(0, "Cashback amount must be non-negative."),
+  cashbackAmount: z.number({ required_error: "Cashback amount is required."}).min(0, "Cashback amount must be non-negative."), // This will be initialCashbackAmount
+  cashbackRateApplied: z.string().optional().nullable(),
   status: z.enum(['pending', 'confirmed', 'rejected', 'cancelled'] as [CashbackStatus, ...CashbackStatus[]], { required_error: "Status is required."}),
   adminNotes: z.string().optional().nullable(),
   notesToUser: z.string().optional().nullable(),
@@ -145,7 +149,7 @@ const getStatusIcon = (status: CashbackStatus) => {
     case 'confirmed': return <CheckCircle className="h-3 w-3 text-green-600" />;
     case 'paid': return <IndianRupee className="h-3 w-3 text-blue-600" />;
     case 'pending': return <Loader2 className="h-3 w-3 animate-spin text-yellow-600" />;
-    case 'awaiting_payout': return <IndianRupee className="h-3 w-3 text-purple-600" />;
+    case 'awaiting_payout': return <IndianRupee className="h-3 w-3 text-purple-600" />; // Awaiting Payout uses different icon
     case 'rejected':
     case 'cancelled': return <XCircle className="h-3 w-3 text-red-600" />;
     default: return <Info className="h-3 w-3 text-muted-foreground" />;
@@ -153,7 +157,7 @@ const getStatusIcon = (status: CashbackStatus) => {
 };
 
 export default function AdminTransactionsPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user: adminUser, loading: authLoading } = useAuth(); // For admin context
   const [transactions, setTransactions] = React.useState<TransactionWithUser[]>([]);
   const [pageLoading, setPageLoading] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null);
@@ -162,7 +166,7 @@ export default function AdminTransactionsPage() {
   const [loadingMore, setLoadingMore] = React.useState(false);
   const { toast } = useToast();
 
-  const [filterType, setFilterType] = React.useState<'all' | 'userId' | 'storeId' | 'orderId' | 'status'>('all');
+  const [filterType, setFilterType] = React.useState<'all' | 'userId' | 'storeId' | 'orderId' | 'status' | 'clickId' | 'conversionId'>('all');
   const [filterStatus, setFilterStatus] = React.useState<CashbackStatus | 'all'>('all');
   const [searchTermInput, setSearchTermInput] = React.useState('');
   const debouncedSearchTerm = useDebounce(searchTermInput, 500);
@@ -177,6 +181,9 @@ export default function AdminTransactionsPage() {
   const [currentEditAdminNotes, setCurrentEditAdminNotes] = React.useState('');
   const [currentEditNotesToUser, setCurrentEditNotesToUser] = React.useState('');
   const [currentEditRejectionReason, setCurrentEditRejectionReason] = React.useState('');
+  const [currentEditFinalCashbackAmount, setCurrentEditFinalCashbackAmount] = React.useState<number | undefined>(undefined);
+  const [currentEditFinalSaleAmount, setCurrentEditFinalSaleAmount] = React.useState<number | undefined>(undefined);
+
 
   const [userCache, setUserCache] = React.useState<Record<string, Pick<UserProfile, 'displayName' | 'email'>>>({});
   const [storeCache, setStoreCache] = React.useState<Record<string, Pick<Store, 'name'>>>({});
@@ -184,14 +191,16 @@ export default function AdminTransactionsPage() {
   const addForm = useForm<TransactionFormValues>({
     resolver: zodResolver(transactionFormSchema),
     defaultValues: {
-      userId: '', storeId: '', storeName: '', orderId: '', clickId: '',
+      userId: '', storeId: '', storeName: '', orderId: '', clickId: '', conversionId: '',
       productDetails: '', transactionDate: new Date(), saleAmount: 0,
-      cashbackAmount: 0, status: 'pending', adminNotes: '', notesToUser: '', rejectionReason: ''
+      cashbackAmount: 0, cashbackRateApplied: '', status: 'pending', adminNotes: '', notesToUser: '', rejectionReason: ''
     },
   });
 
   const fetchTransactionDetails = React.useCallback(async (rawTransactions: Transaction[]): Promise<TransactionWithUser[]> => {
+    const operation = "fetchTransactionDetails";
     if (!db || firebaseInitializationError || rawTransactions.length === 0) {
+      if (firebaseInitializationError) console.error(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c DB Error: ${firebaseInitializationError}`, "color: red; font-weight: bold;", "color: black;");
       return rawTransactions.map(txItem => ({ ...txItem, userDisplayName: txItem.userId, storeName: txItem.storeName || txItem.storeId }));
     }
 
@@ -200,8 +209,9 @@ export default function AdminTransactionsPage() {
 
     try {
       if (userIdsToFetch.length > 0) {
+        // Batch fetch users
         const newUsers: Record<string, Pick<UserProfile, 'displayName' | 'email'>> = {};
-        for (let i = 0; i < userIdsToFetch.length; i += 30) {
+        for (let i = 0; i < userIdsToFetch.length; i += 30) { // Firestore 'in' query limit is 30
           const chunk = userIdsToFetch.slice(i, i + 30);
           if (chunk.length === 0) continue;
           const usersQuery = query(collection(db, 'users'), where('__name__', 'in', chunk));
@@ -215,8 +225,9 @@ export default function AdminTransactionsPage() {
       }
 
       if (storeIdsToFetch.length > 0) {
+        // Batch fetch stores
         const newStores: Record<string, Pick<Store, 'name'>> = {};
-        for (let i = 0; i < storeIdsToFetch.length; i += 30) {
+         for (let i = 0; i < storeIdsToFetch.length; i += 30) { // Firestore 'in' query limit is 30
           const chunk = storeIdsToFetch.slice(i, i + 30);
           if (chunk.length === 0) continue;
           const storesQuery = query(collection(db, 'stores'), where('__name__', 'in', chunk));
@@ -229,7 +240,7 @@ export default function AdminTransactionsPage() {
         setStoreCache(prev => ({ ...prev, ...newStores }));
       }
     } catch (detailError) {
-      console.error("ADMIN_TX: Error fetching transaction details (users/stores):", detailError);
+      console.error(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Error fetching details (users/stores):`, "color: red; font-weight: bold;", "color: black;", detailError);
       toast({ variant: "destructive", title: "Detail Fetch Error", description: "Could not load some user/store names." });
     }
     return rawTransactions.map(txItem => ({
@@ -240,57 +251,58 @@ export default function AdminTransactionsPage() {
     }));
   }, [userCache, storeCache, toast]);
 
+
   const fetchTransactions = React.useCallback(async (
-    loadMoreOperation = false,
+    loadMoreOp = false,
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null
   ) => {
+    const operation = "fetchTransactions";
+    let isMounted = true;
+    console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Called. LoadMore: ${loadMoreOp}, Search: "${debouncedSearchTerm}", StatusFilter: ${filterStatus}`, "color: blue; font-weight: bold;", "color: black;");
+    if (!isMounted) return () => {isMounted = false};
+
     if (firebaseInitializationError || !db) {
-      setPageError(firebaseInitializationError || "Database connection not available.");
-      if(!loadMoreOperation) setPageLoading(false); else setLoadingMore(false);
-      setHasMore(false);
-      return;
+      if (isMounted) {
+        setPageError(firebaseInitializationError || "Database connection not available.");
+        setPageLoading(false); setLoadingMore(false); setHasMore(false);
+      }
+      return () => {isMounted = false};
     }
 
-    if (!loadMoreOperation) {
+    if (!loadMoreOp) {
       setPageLoading(true); setTransactions([]); setLastVisible(null); setHasMore(true);
     } else {
-       if (!docToStartAfter && loadMoreOperation) {
-          setLoadingMore(false);
-          return;
+       if (!docToStartAfter && loadMoreOp) { // Prevent load more if no cursor
+          if (isMounted) setLoadingMore(false);
+          return () => {isMounted = false};
       }
       setLoadingMore(true);
     }
-    if(!loadMoreOperation) setPageError(null);
+    if (!loadMoreOp) setPageError(null);
     setIsSearching(debouncedSearchTerm !== '');
 
     try {
       const transactionsCollectionRef = collection(db, 'transactions');
-      const constraints: QueryConstraint[] = [];
+      let constraints: QueryConstraint[] = [];
 
       if (filterStatus !== 'all') {
         constraints.push(where('status', '==', filterStatus));
       }
 
-      if (debouncedSearchTerm && filterType !== 'all' && filterType !== 'status') {
-        if (debouncedSearchTerm.trim()) {
-            constraints.push(where(filterType, '==', debouncedSearchTerm.trim()));
-        } else if (filterType !== 'all') {
-            setTransactions([]); setHasMore(false);
-            setPageLoading(false); setLoadingMore(false); setIsSearching(false);
-            return;
-        }
+      if (debouncedSearchTerm.trim() && filterType !== 'all' && filterType !== 'status') {
+          constraints.push(where(filterType, '==', debouncedSearchTerm.trim()));
       }
       
       constraints.push(orderBy('transactionDate', 'desc'));
 
-      if (loadMoreOperation && docToStartAfter) {
+      if (loadMoreOp && docToStartAfter) {
         constraints.push(startAfter(docToStartAfter));
       }
       constraints.push(limit(TRANSACTIONS_PER_PAGE));
 
       const q = query(transactionsCollectionRef, ...constraints);
       const querySnapshot = await getDocs(q);
-      console.log(`ADMIN_TX: Fetched ${querySnapshot.size} raw transactions with current filters.`);
+      console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Fetched ${querySnapshot.size} raw transactions.`, "color: blue; font-weight: bold;", "color: black;");
 
       const rawTransactionsData = querySnapshot.docs.map(docSnap => ({
         id: docSnap.id,
@@ -304,49 +316,66 @@ export default function AdminTransactionsPage() {
       
       let filteredForGeneralSearch = rawTransactionsData;
       if (debouncedSearchTerm && filterType === 'all') {
+         // Client-side search for 'all' because Firestore doesn't support OR queries easily on multiple text fields
+         const lowerSearch = debouncedSearchTerm.toLowerCase();
          filteredForGeneralSearch = rawTransactionsData.filter(tx =>
-           (tx.userDisplayName && tx.userDisplayName.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
-           (tx.userEmail && tx.userEmail.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
-           (tx.storeName && tx.storeName.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
-           (tx.orderId && tx.orderId.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
-           (tx.productDetails && tx.productDetails.toLowerCase().includes(debouncedSearchTerm.toLowerCase()))
+           (tx.userId && tx.userId.toLowerCase().includes(lowerSearch)) ||
+           (tx.storeId && tx.storeId.toLowerCase().includes(lowerSearch)) ||
+           (tx.storeName && tx.storeName.toLowerCase().includes(lowerSearch)) ||
+           (tx.orderId && tx.orderId.toLowerCase().includes(lowerSearch)) ||
+           (tx.clickId && tx.clickId.toLowerCase().includes(lowerSearch)) ||
+           (tx.conversionId && tx.conversionId.toLowerCase().includes(lowerSearch)) ||
+           (tx.productDetails && tx.productDetails.toLowerCase().includes(lowerSearch))
          );
+         console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Client-side filtered for 'all' to ${filteredForGeneralSearch.length} transactions.`, "color: blue; font-weight: bold;", "color: black;");
       }
 
       const transactionsWithDetails = await fetchTransactionDetails(filteredForGeneralSearch);
       
-      setTransactions(prev => loadMoreOperation ? [...prev, ...transactionsWithDetails] : transactionsWithDetails);
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-      setHasMore(querySnapshot.docs.length === TRANSACTIONS_PER_PAGE && transactionsWithDetails.length > 0);
-      console.log(`ADMIN_TX: Processed ${transactionsWithDetails.length} transactions. HasMore: ${querySnapshot.docs.length === TRANSACTIONS_PER_PAGE && transactionsWithDetails.length > 0}`);
+      if(isMounted){
+        setTransactions(prev => loadMoreOp ? [...prev, ...transactionsWithDetails] : transactionsWithDetails);
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+        setHasMore(querySnapshot.docs.length === TRANSACTIONS_PER_PAGE && transactionsWithDetails.length > 0);
+        console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Processed ${transactionsWithDetails.length} transactions. HasMore: ${querySnapshot.docs.length === TRANSACTIONS_PER_PAGE && transactionsWithDetails.length > 0}`, "color: blue; font-weight: bold;", "color: black;");
+      }
 
     } catch (err) {
-      console.error("AdminTransactions: Error fetching transactions:", err);
       const errorMsg = err instanceof Error ? err.message : "Failed to fetch transactions";
-      setPageError(errorMsg);
-      toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
-      setHasMore(false);
+      console.error(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Error: ${errorMsg}`, "color: red; font-weight: bold;", "color: black;", err);
+      if(isMounted) {
+        setPageError(errorMsg);
+        toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+        setHasMore(false);
+      }
     } finally {
-      if(!loadMoreOperation) setPageLoading(false); else setLoadingMore(false);
-      setIsSearching(false);
+      if(isMounted){
+        setPageLoading(false); setLoadingMore(false); setIsSearching(false);
+      }
     }
+    return () => {isMounted = false};
   }, [debouncedSearchTerm, filterType, filterStatus, toast, fetchTransactionDetails]);
 
   React.useEffect(() => {
+    let isMounted = true;
     if (authLoading) {
-      setPageLoading(true);
-      return;
+      if(isMounted) setPageLoading(true);
+      return () => {isMounted = false;};
     }
-    if (!user) {
-      setPageLoading(false); // No user, stop loading, AdminGuard will redirect
-      return;
+    if (!adminUser && !authLoading) {
+      if(isMounted) setPageLoading(false); // Stop loading, AdminGuard will handle redirect
+      return () => {isMounted = false;};
     }
-    fetchTransactions(false, null);
-  }, [authLoading, user, filterStatus, debouncedSearchTerm, fetchTransactions]);
+    // If adminUser is present (checked by AdminGuard), then fetch
+    const cleanup = fetchTransactions(false, null);
+    return () => {
+        isMounted = false;
+        if (typeof cleanup === 'function') cleanup();
+    };
+  }, [authLoading, adminUser, filterStatus, debouncedSearchTerm, fetchTransactions]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchTransactions(false, null); 
+    // fetchTransactions is called by useEffect due to debouncedSearchTerm change
   };
 
   const handleLoadMore = () => {
@@ -357,9 +386,9 @@ export default function AdminTransactionsPage() {
 
   const openAddDialog = () => {
     addForm.reset({
-      userId: '', storeId: '', storeName: '', orderId: '', clickId: '',
+      userId: '', storeId: '', storeName: '', orderId: '', clickId: '', conversionId: '',
       productDetails: '', transactionDate: new Date(), saleAmount: 0,
-      cashbackAmount: 0, status: 'pending', adminNotes: '', notesToUser: '', rejectionReason: ''
+      cashbackAmount: 0, cashbackRateApplied: '', status: 'pending', adminNotes: '', notesToUser: '', rejectionReason: ''
     });
     setIsAddDialogOpen(true);
   };
@@ -369,10 +398,14 @@ export default function AdminTransactionsPage() {
     setCurrentEditAdminNotes(txItem.adminNotes || '');
     setCurrentEditNotesToUser(txItem.notesToUser || '');
     setCurrentEditRejectionReason(txItem.rejectionReason || '');
+    setCurrentEditFinalSaleAmount(txItem.finalSaleAmount ?? txItem.saleAmount);
+    setCurrentEditFinalCashbackAmount(txItem.finalCashbackAmount ?? txItem.initialCashbackAmount);
     setIsEditDialogOpen(true);
   };
 
   const handleAddTransactionSubmit = async (data: TransactionFormValues) => {
+    const operation = "handleAddTransactionSubmit";
+    console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Attempting to add transaction:`, "color: blue; font-weight: bold;", "color: black;", data);
     if (!db) { setPageError("Database not available."); setIsSaving(false); return; }
     setIsSaving(true);
     setPageError(null);
@@ -389,10 +422,10 @@ export default function AdminTransactionsPage() {
             if (!storeNameFromDb && data.storeId) {
                 try {
                   const storeDocRef = doc(db, 'stores', data.storeId);
-                  const storeSnap = await firestoreTransaction.get(storeDocRef); // Use firestoreTransaction.get here
+                  const storeSnap = await firestoreTransaction.get(storeDocRef);
                   storeNameFromDb = storeSnap.exists() ? storeSnap.data()?.name : 'Unknown Store';
                 } catch (storeFetchError) {
-                  console.warn(`Could not fetch store name for ${data.storeId}, using 'Unknown Store'. Error: ${storeFetchError}`);
+                  console.warn(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Could not fetch store name for ${data.storeId}, using 'Unknown Store'. Error: ${storeFetchError}`, "color: orange; font-weight: bold;", "color: black;");
                   storeNameFromDb = 'Unknown Store';
                 }
             }
@@ -404,37 +437,39 @@ export default function AdminTransactionsPage() {
                 storeName: storeNameFromDb || 'Unknown Store',
                 orderId: data.orderId || null,
                 clickId: data.clickId || null,
+                conversionId: data.conversionId || null,
                 productDetails: data.productDetails || null,
                 transactionDate: Timestamp.fromDate(data.transactionDate),
                 saleAmount: data.saleAmount,
                 initialCashbackAmount: data.cashbackAmount,
                 finalSaleAmount: data.saleAmount, 
                 finalCashbackAmount: data.cashbackAmount,
-                currency: 'INR',
+                currency: 'INR', // Default currency
                 status: data.status,
                 confirmationDate: (data.status === 'confirmed') ? serverTimestamp() : null,
                 paidDate: null,
                 payoutId: null,
                 reportedDate: serverTimestamp(),
-                rejectionReason: (data.status === 'rejected' || data.status === 'cancelled') ? data.rejectionReason : null,
+                rejectionReason: (data.status === 'rejected' || data.status === 'cancelled') ? data.rejectionReason || null : null,
                 adminNotes: data.adminNotes || null,
                 notesToUser: data.notesToUser || null,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
             };
             firestoreTransaction.set(newTransactionRef, transactionDataToSave);
-            console.log(`ADMIN_TX: Logged transaction ${newTransactionRef.id} for user ${data.userId} with status ${data.status}.`);
+            console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Transaction doc ${newTransactionRef.id} prepared for user ${data.userId}, status ${data.status}.`, "color: blue; font-weight: bold;", "color: black;");
 
             const userProfileUpdates: Record<string, any> = { updatedAt: serverTimestamp() };
             if (data.status === 'pending') {
                 userProfileUpdates.pendingCashback = increment(data.cashbackAmount);
             } else if (data.status === 'confirmed') {
+                userProfileUpdates.pendingCashback = increment(0); // Ensure it's not negative if previously pending then directly confirmed
                 userProfileUpdates.cashbackBalance = increment(data.cashbackAmount);
                 userProfileUpdates.lifetimeCashback = increment(data.cashbackAmount);
             }
-            if (data.status === 'pending' || data.status === 'confirmed') {
-                firestoreTransaction.update(userDocRef, userProfileUpdates);
-                console.log(`ADMIN_TX: User ${data.userId} balances updated for new transaction. Status: ${data.status}, Amount: ${data.cashbackAmount}`);
+            if (Object.keys(userProfileUpdates).length > 1) { // Only update if there are balance changes
+              firestoreTransaction.update(userDocRef, userProfileUpdates);
+              console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c User ${data.userId} balances updated. Status: ${data.status}, Amount: ${data.cashbackAmount}.`, "color: blue; font-weight: bold;", "color: black;");
             }
         });
         toast({ title: "Transaction Logged", description: `New transaction for user ${data.userId} has been logged.` });
@@ -444,7 +479,7 @@ export default function AdminTransactionsPage() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Could not add transaction.";
       setPageError(errorMsg);
-      console.error("ADMIN_TX: Error adding transaction:", err);
+      console.error(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Error: ${errorMsg}`, "color: red; font-weight: bold;", "color: black;", err);
       toast({ variant: "destructive", title: "Add Failed", description: errorMsg });
     } finally {
       setIsSaving(false);
@@ -452,6 +487,7 @@ export default function AdminTransactionsPage() {
   };
 
   const handleApproveTransaction = async () => {
+    const operation = "handleApproveTransaction";
     if (!editingTransaction || !editingTransaction.id || !db || editingTransaction.status !== 'pending') {
         toast({ variant: "destructive", title: "Invalid Action", description: "No valid pending transaction selected or DB error." });
         return;
@@ -460,13 +496,17 @@ export default function AdminTransactionsPage() {
     setPageError(null);
     const transactionRef = doc(db, 'transactions', editingTransaction.id);
     const userRef = doc(db, 'users', editingTransaction.userId);
-    const cashbackAmount = editingTransaction.finalCashbackAmount ?? editingTransaction.initialCashbackAmount ?? 0;
+    
+    const finalSaleAmt = currentEditFinalSaleAmount ?? editingTransaction.saleAmount;
+    const finalCashbackAmt = currentEditFinalCashbackAmount ?? editingTransaction.initialCashbackAmount ?? 0;
 
-    if (cashbackAmount <= 0) {
-        toast({variant: "destructive", title: "Invalid Amount", description: "Cashback amount must be positive to approve."});
+    if (finalCashbackAmt <= 0) {
+        toast({variant: "destructive", title: "Invalid Amount", description: "Final cashback amount must be positive to approve."});
         setIsSaving(false);
         return;
     }
+
+    console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Approving Tx ID: ${editingTransaction.id} for User: ${editingTransaction.userId}. Original Initial CB: ${editingTransaction.initialCashbackAmount}, New Final CB: ${finalCashbackAmt}`, "color: blue; font-weight: bold;", "color: black;");
 
     try {
       await runTransaction(db, async (firestoreTransaction) => {
@@ -482,19 +522,21 @@ export default function AdminTransactionsPage() {
         firestoreTransaction.update(transactionRef, {
             status: 'confirmed' as CashbackStatus,
             confirmationDate: serverTimestamp(),
-            updatedAt: serverTimestamp(),
+            finalSaleAmount: finalSaleAmt,
+            finalCashbackAmount: finalCashbackAmt,
             adminNotes: currentEditAdminNotes || null,
             notesToUser: currentEditNotesToUser || null,
             rejectionReason: null, 
+            updatedAt: serverTimestamp(),
         });
         
         firestoreTransaction.update(userRef, {
-            pendingCashback: increment(-cashbackAmount),
-            cashbackBalance: increment(cashbackAmount),
-            lifetimeCashback: increment(cashbackAmount),
+            pendingCashback: increment(-(currentTransactionData.initialCashbackAmount ?? 0)), // Deduct original pending amount
+            cashbackBalance: increment(finalCashbackAmt), // Add final confirmed amount
+            lifetimeCashback: increment(finalCashbackAmt), // Add final confirmed amount to lifetime
             updatedAt: serverTimestamp()
         });
-        console.log(`ADMIN_TX: Approved transaction ${editingTransaction.id}. User ${editingTransaction.userId} balances updated. Cashback: ${cashbackAmount}`);
+        console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Tx ${editingTransaction.id} approved. User ${editingTransaction.userId} balances updated. Pending decreased by ${currentTransactionData.initialCashbackAmount}, Confirmed & Lifetime increased by ${finalCashbackAmt}.`, "color: green; font-weight: bold;", "color: black;");
       });
 
       toast({ title: "Transaction Approved", description: `Transaction ${editingTransaction.id} status changed to Confirmed.` });
@@ -504,7 +546,7 @@ export default function AdminTransactionsPage() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Could not approve transaction.";
       setPageError(errorMsg);
-      console.error("ADMIN_TX: Error approving transaction:", err);
+      console.error(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Error: ${errorMsg}`, "color: red; font-weight: bold;", "color: black;", err);
       toast({ variant: "destructive", title: "Approval Failed", description: errorMsg });
     } finally {
       setIsSaving(false);
@@ -512,6 +554,7 @@ export default function AdminTransactionsPage() {
   };
 
   const handleRejectTransaction = async () => {
+    const operation = "handleRejectTransaction";
     if (!editingTransaction || !editingTransaction.id || !db || editingTransaction.status !== 'pending') {
         toast({ variant: "destructive", title: "Invalid Action", description: "No valid pending transaction selected or DB error." });
         return;
@@ -524,11 +567,8 @@ export default function AdminTransactionsPage() {
     setPageError(null);
     const transactionRef = doc(db, 'transactions', editingTransaction.id);
     const userRef = doc(db, 'users', editingTransaction.userId);
-    const cashbackAmount = editingTransaction.finalCashbackAmount ?? editingTransaction.initialCashbackAmount ?? 0;
-
-     if (cashbackAmount <= 0 && editingTransaction.status === 'pending') { 
-        console.warn(`ADMIN_TX: Cashback amount for pending transaction ${editingTransaction.id} is zero or negative. User pending balance won't be affected negatively.`);
-     }
+    
+    console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Rejecting Tx ID: ${editingTransaction.id} for User: ${editingTransaction.userId}. Reason: ${currentEditRejectionReason.trim()}`, "color: blue; font-weight: bold;", "color: black;");
 
     try {
       await runTransaction(db, async (firestoreTransaction) => {
@@ -544,21 +584,25 @@ export default function AdminTransactionsPage() {
         firestoreTransaction.update(transactionRef, {
             status: 'rejected' as CashbackStatus,
             rejectionReason: currentEditRejectionReason.trim(),
-            updatedAt: serverTimestamp(),
+            finalSaleAmount: currentEditFinalSaleAmount ?? currentTransactionData.saleAmount, // Keep original or update
+            finalCashbackAmount: 0, // Rejected cashback is 0
             adminNotes: currentEditAdminNotes || null,
             notesToUser: currentEditNotesToUser || null,
             confirmationDate: null, 
+            updatedAt: serverTimestamp(),
         });
         
-        if (cashbackAmount > 0) {
+        const initialCashbackToDeduct = currentTransactionData.initialCashbackAmount ?? 0;
+        if (initialCashbackToDeduct > 0) { // Only deduct if there was something pending
             firestoreTransaction.update(userRef, {
-                pendingCashback: increment(-cashbackAmount),
+                pendingCashback: increment(-initialCashbackToDeduct),
                 updatedAt: serverTimestamp()
             });
+             console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Tx ${editingTransaction.id} rejected. User ${editingTransaction.userId} pendingCashback decreased by ${initialCashbackToDeduct}.`, "color: green; font-weight: bold;", "color: black;");
         } else {
              firestoreTransaction.update(userRef, { updatedAt: serverTimestamp() }); 
+             console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Tx ${editingTransaction.id} rejected. No pending cashback to adjust for user ${editingTransaction.userId}.`, "color: orange; font-weight: bold;", "color: black;");
         }
-        console.log(`ADMIN_TX: Rejected transaction ${editingTransaction.id}. User ${editingTransaction.userId} pendingCashback updated. Amount: ${cashbackAmount}. Reason: ${currentEditRejectionReason.trim()}`);
       });
 
       toast({ title: "Transaction Rejected", description: `Transaction ${editingTransaction.id} status changed to Rejected.` });
@@ -568,50 +612,78 @@ export default function AdminTransactionsPage() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Could not reject transaction.";
       setPageError(errorMsg);
-      console.error("ADMIN_TX: Error rejecting transaction:", err);
+      console.error(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Error: ${errorMsg}`, "color: red; font-weight: bold;", "color: black;", err);
       toast({ variant: "destructive", title: "Rejection Failed", description: errorMsg });
     } finally {
       setIsSaving(false);
     }
   };
   
-  const handleUpdateNotes = async () => {
+  const handleUpdateNotesOrAmounts = async () => {
+    const operation = "handleUpdateNotesOrAmounts";
     if (!editingTransaction || !editingTransaction.id || !db) {
         toast({ variant: "destructive", title: "Error", description: "No transaction selected or DB error." });
         return;
     }
-    if (editingTransaction.status === 'pending') {
-        toast({ variant: "info", title: "Action Not Allowed", description: "Please approve or reject pending transactions first before updating notes only." });
+    // This function is for non-pending transactions, or for updating amounts/notes on pending ones without changing status yet
+    if (editingTransaction.status === 'pending' && 
+        (currentEditFinalSaleAmount === editingTransaction.saleAmount && 
+         currentEditFinalCashbackAmount === editingTransaction.initialCashbackAmount &&
+         currentEditAdminNotes === (editingTransaction.adminNotes || '') &&
+         currentEditNotesToUser === (editingTransaction.notesToUser || ''))) {
+        toast({ variant: "info", title: "No Changes", description: "No changes detected to save." });
         return;
     }
+
     setIsSaving(true);
     setPageError(null);
     const transactionRef = doc(db, 'transactions', editingTransaction.id);
+    console.log(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Updating notes/amounts for Tx ID: ${editingTransaction.id}. New Sale: ${currentEditFinalSaleAmount}, New CB: ${currentEditFinalCashbackAmount}`, "color: blue; font-weight: bold;", "color: black;");
     try {
-        await updateDoc(transactionRef, {
+        const updateData: Partial<Transaction> = {
             adminNotes: currentEditAdminNotes || null,
             notesToUser: currentEditNotesToUser || null,
             updatedAt: serverTimestamp()
-        });
-        toast({ title: "Transaction Notes Updated" });
+        };
+
+        if (currentEditFinalSaleAmount !== undefined && currentEditFinalSaleAmount !== (editingTransaction.finalSaleAmount ?? editingTransaction.saleAmount)) {
+            updateData.finalSaleAmount = currentEditFinalSaleAmount;
+        }
+        if (currentEditFinalCashbackAmount !== undefined && currentEditFinalCashbackAmount !== (editingTransaction.finalCashbackAmount ?? editingTransaction.initialCashbackAmount)) {
+            updateData.finalCashbackAmount = currentEditFinalCashbackAmount;
+            // Note: If status is 'confirmed', changing finalCashbackAmount here would require adjusting user's cashbackBalance.
+            // This is complex and typically done *during* the approval step. For already confirmed/paid, this change is just informational
+            // unless further logic for balance rollback/adjustment is added.
+            if (editingTransaction.status === 'confirmed' || editingTransaction.status === 'awaiting_payout' || editingTransaction.status === 'paid') {
+                 console.warn(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Warning: Changing finalCashbackAmount for a transaction with status '${editingTransaction.status}'. This does NOT automatically adjust user's cashbackBalance here. Balance adjustments for confirmed/paid transactions are complex and usually handled via rejections/rollbacks.`, "color: orange; font-weight: bold;", "color: black;");
+                 toast({variant: "default", title: "Cashback Amount Updated", description: "Note: User's overall balance might need manual review if this transaction was already confirmed or paid.", duration: 10000});
+            }
+        }
+
+
+        await updateDoc(transactionRef, updateData);
+        toast({ title: "Transaction Details Updated" });
         
         setTransactions(prev => prev.map(tx => tx.id === editingTransaction!.id ? {
             ...tx,
             adminNotes: currentEditAdminNotes || null,
             notesToUser: currentEditNotesToUser || null,
+            finalSaleAmount: currentEditFinalSaleAmount ?? tx.finalSaleAmount ?? tx.saleAmount,
+            finalCashbackAmount: currentEditFinalCashbackAmount ?? tx.finalCashbackAmount ?? tx.initialCashbackAmount,
             updatedAt: new Date() 
         } : tx));
         setIsEditDialogOpen(false);
         setEditingTransaction(null);
     } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : "Could not update notes.";
+        const errorMsg = err instanceof Error ? err.message : "Could not update notes/amounts.";
         setPageError(errorMsg);
-        console.error("ADMIN_TX: Error updating notes:", err);
+        console.error(`%c[${ADMIN_TX_LOG_PREFIX}:${operation}]%c Error: ${errorMsg}`, "color: red; font-weight: bold;", "color: black;", err);
         toast({ variant: "destructive", title: "Update Failed", description: errorMsg });
     } finally {
         setIsSaving(false);
     }
   };
+
 
   if (authLoading || (pageLoading && transactions.length === 0 && !pageError)) {
     return <AdminGuard><TransactionsTableSkeleton /></AdminGuard>;
@@ -636,17 +708,19 @@ export default function AdminTransactionsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Filter & Search Transactions</CardTitle>
-            <CardDescription>Filter by status or search by User ID, Store ID, or Order ID.</CardDescription>
+            <CardDescription>Filter by status or search by User ID, Store ID, Order ID, Click ID, or Conversion ID.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col sm:flex-row gap-4 items-end">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
-              <Select value={filterType} onValueChange={(value) => setFilterType(value as 'all' | 'userId' | 'storeId' | 'orderId' | 'status')}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full flex-grow-[2]">
+              <Select value={filterType} onValueChange={(value) => setFilterType(value as any)}>
                 <SelectTrigger><SelectValue placeholder="Filter by Field" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All (for general text search)</SelectItem>
                   <SelectItem value="userId">User ID</SelectItem>
                   <SelectItem value="storeId">Store ID</SelectItem>
                   <SelectItem value="orderId">Order ID</SelectItem>
+                  <SelectItem value="clickId">Click ID</SelectItem>
+                  <SelectItem value="conversionId">Conversion ID</SelectItem>
                   <SelectItem value="status">Status</SelectItem>
                 </SelectContent>
               </Select>
@@ -694,11 +768,11 @@ export default function AdminTransactionsPage() {
               <TransactionsTableSkeleton />
             ) : !pageLoading && transactions.length === 0 && !pageError ? (
               <p className="text-center text-muted-foreground py-8">
-                {debouncedSearchTerm || filterStatus !== 'all' ? 'No transactions found matching your criteria.' : 'No transactions recorded yet. Log a reported sale to begin.'}
+                {debouncedSearchTerm || filterStatus !== 'all' || filterType !== 'all' ? 'No transactions found matching your criteria.' : 'No transactions recorded yet. Log a sale or wait for postbacks.'}
               </p>
             ) : (
               <div className="overflow-x-auto w-full">
-                <Table className="min-w-[1200px]"> {/* Added min-w to ensure table can scroll */}
+                <Table className="min-w-[1200px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="min-w-[180px]">User</TableHead>
@@ -708,7 +782,8 @@ export default function AdminTransactionsPage() {
                       <TableHead className="min-w-[110px] text-right">Cashback</TableHead>
                       <TableHead className="min-w-[120px]">Status</TableHead>
                       <TableHead className="min-w-[120px]">Txn Date</TableHead>
-                      <TableHead className="min-w-[200px]">Details/Notes</TableHead>
+                      <TableHead className="min-w-[150px]">Click/Conv. ID</TableHead>
+                      <TableHead className="min-w-[200px]">Admin Notes</TableHead>
                       <TableHead className="text-right min-w-[100px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -746,6 +821,11 @@ export default function AdminTransactionsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="whitespace-nowrap">{txItem.transactionDate ? format(new Date(txItem.transactionDate), 'PP') : 'N/A'}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                            {txItem.clickId && <div className="truncate max-w-[100px]" title={`Click: ${txItem.clickId}`}>C: {txItem.clickId}</div>}
+                            {txItem.conversionId && <div className="truncate max-w-[100px]" title={`Conv: ${txItem.conversionId}`}>V: {txItem.conversionId}</div>}
+                            {!txItem.clickId && !txItem.conversionId && '-'}
+                        </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                            <TooltipProvider>
                             <Tooltip>
@@ -754,7 +834,7 @@ export default function AdminTransactionsPage() {
                                   className="truncate block max-w-[200px] cursor-pointer hover:underline"
                                    onClick={() => openEditDialog(txItem)}
                                 >
-                                  {txItem.rejectionReason ? `Rej: ${txItem.rejectionReason}` : (txItem.notesToUser || txItem.adminNotes || '-')}
+                                  {txItem.adminNotes || txItem.notesToUser || txItem.rejectionReason || '-'}
                                 </span>
                               </TooltipTrigger>
                               <TooltipContent>
@@ -794,7 +874,7 @@ export default function AdminTransactionsPage() {
           <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Log Reported Sale / Add Transaction</DialogTitle>
-              <DialogDescription>Manually enter transaction details as reported (e.g., from affiliate network).</DialogDescription>
+              <DialogDescription>Manually enter transaction details (e.g., from affiliate network or missing sale).</DialogDescription>
             </DialogHeader>
             <form onSubmit={addForm.handleSubmit(handleAddTransactionSubmit)} className="grid gap-4 py-4">
               <div className="space-y-1">
@@ -819,6 +899,10 @@ export default function AdminTransactionsPage() {
               <div className="space-y-1">
                 <Label htmlFor="clickIdForm">Click ID (Optional)</Label>
                 <Input id="clickIdForm" {...addForm.register('clickId')} disabled={isSaving}/>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="conversionIdForm">Conversion ID (Optional - from postback)</Label>
+                <Input id="conversionIdForm" {...addForm.register('conversionId')} disabled={isSaving}/>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="productDetailsForm">Product Details (Optional)</Label>
@@ -847,9 +931,13 @@ export default function AdminTransactionsPage() {
                 {addForm.formState.errors.saleAmount && <p className="text-sm text-destructive">{addForm.formState.errors.saleAmount.message}</p>}
               </div>
                <div className="space-y-1">
-                <Label htmlFor="cashbackAmountForm">Cashback Amount*</Label>
+                <Label htmlFor="cashbackAmountForm">(Initial) Cashback Amount*</Label>
                 <Input id="cashbackAmountForm" type="number" step="0.01" {...addForm.register('cashbackAmount', { valueAsNumber: true })} disabled={isSaving}/>
                 {addForm.formState.errors.cashbackAmount && <p className="text-sm text-destructive">{addForm.formState.errors.cashbackAmount.message}</p>}
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cashbackRateAppliedForm">Cashback Rate Applied (Display, optional)</Label>
+                <Input id="cashbackRateAppliedForm" {...addForm.register('cashbackRateApplied')} placeholder="e.g., 5% or Store Default" disabled={isSaving}/>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="statusForm">Status*</Label>
@@ -874,11 +962,11 @@ export default function AdminTransactionsPage() {
                   </div>
               )}
               <div className="space-y-1">
-                <Label htmlFor="adminNotesForm">Admin Notes (Optional)</Label>
+                <Label htmlFor="adminNotesForm">Admin Notes (Internal)</Label>
                 <Textarea id="adminNotesForm" {...addForm.register('adminNotes')} rows={2} disabled={isSaving}/>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="notesToUserForm">Notes for User (Optional)</Label>
+                <Label htmlFor="notesToUserForm">Notes for User (Visible in their history)</Label>
                 <Textarea id="notesToUserForm" {...addForm.register('notesToUser')} rows={2} disabled={isSaving}/>
               </div>
               <DialogFooter className="flex-col sm:flex-row sm:justify-end gap-2 mt-2">
@@ -894,39 +982,63 @@ export default function AdminTransactionsPage() {
           </DialogContent>
         </Dialog>
 
+        {/* Edit/Manage Transaction Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={(isOpen) => {
             if (!isOpen) setEditingTransaction(null); 
             setIsEditDialogOpen(isOpen);
         }}>
-          <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Manage Transaction</DialogTitle>
               {editingTransaction && (
                 <DialogDescription>
-                  ID: {editingTransaction.id} <br/>
+                  Tx ID: {editingTransaction.id} <br/>
                   User: {editingTransaction.userDisplayName || editingTransaction.userId} ({editingTransaction.userEmail || 'N/A'}) <br/>
                   Store: {editingTransaction.storeName || editingTransaction.storeId} | Order ID: {editingTransaction.orderId || 'N/A'} <br/>
-                  Sale: {formatCurrency(editingTransaction.finalSaleAmount ?? editingTransaction.saleAmount)} | Cashback: {formatCurrency(editingTransaction.finalCashbackAmount ?? editingTransaction.initialCashbackAmount ?? 0)} <br/>
+                  Initial Sale: {formatCurrency(editingTransaction.saleAmount)} | Initial CB: {formatCurrency(editingTransaction.initialCashbackAmount ?? 0)} <br/>
                   Current Status: <Badge variant={getStatusVariant(editingTransaction.status)} className="capitalize">{editingTransaction.status.replace('_', ' ')}</Badge>
                 </DialogDescription>
               )}
             </DialogHeader>
             {editingTransaction && (
               <div className="space-y-4 py-4">
+                {/* Fields to potentially edit final amounts for pending/confirmed transactions */}
+                {(editingTransaction.status === 'pending' || editingTransaction.status === 'confirmed') && (
+                    <>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <Label htmlFor="editFinalSaleAmount">Final Sale Amount</Label>
+                                <Input id="editFinalSaleAmount" type="number" step="0.01"
+                                    value={currentEditFinalSaleAmount ?? ''}
+                                    onChange={(e) => setCurrentEditFinalSaleAmount(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                    placeholder={formatCurrency(editingTransaction.saleAmount)}
+                                    disabled={isSaving} />
+                            </div>
+                            <div className="space-y-1">
+                                <Label htmlFor="editFinalCashbackAmount">Final Cashback Amount</Label>
+                                <Input id="editFinalCashbackAmount" type="number" step="0.01"
+                                    value={currentEditFinalCashbackAmount ?? ''}
+                                    onChange={(e) => setCurrentEditFinalCashbackAmount(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                    placeholder={formatCurrency(editingTransaction.initialCashbackAmount ?? 0)}
+                                    disabled={isSaving} />
+                            </div>
+                        </div>
+                    </>
+                )}
                 <div>
-                  <Label htmlFor="editAdminNotes">Admin Notes</Label>
-                  <Textarea id="editAdminNotes" value={currentEditAdminNotes} onChange={(e) => setCurrentEditAdminNotes(e.target.value)} disabled={isSaving} />
+                  <Label htmlFor="editAdminNotes">Admin Notes (Internal)</Label>
+                  <Textarea id="editAdminNotes" value={currentEditAdminNotes} onChange={(e) => setCurrentEditAdminNotes(e.target.value)} disabled={isSaving} rows={2}/>
                 </div>
                 <div>
-                  <Label htmlFor="editNotesToUser">Notes for User (will be visible in their history)</Label>
-                  <Textarea id="editNotesToUser" value={currentEditNotesToUser} onChange={(e) => setCurrentEditNotesToUser(e.target.value)} disabled={isSaving} />
+                  <Label htmlFor="editNotesToUser">Notes for User (Visible in their history)</Label>
+                  <Textarea id="editNotesToUser" value={currentEditNotesToUser} onChange={(e) => setCurrentEditNotesToUser(e.target.value)} disabled={isSaving} rows={2}/>
                 </div>
 
                 {editingTransaction.status === 'pending' && (
                   <>
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <Label htmlFor="editRejectionReason">Rejection Reason (Required if rejecting)</Label>
-                      <Textarea id="editRejectionReason" value={currentEditRejectionReason} onChange={(e) => setCurrentEditRejectionReason(e.target.value)} placeholder="Enter reason for rejection" disabled={isSaving} />
+                      <Textarea id="editRejectionReason" value={currentEditRejectionReason} onChange={(e) => setCurrentEditRejectionReason(e.target.value)} placeholder="Enter reason for rejection" disabled={isSaving} rows={2}/>
                     </div>
                     <DialogFooter className="flex-col sm:flex-row sm:justify-end gap-2 mt-2">
                         <Button onClick={handleRejectTransaction} variant="destructive" disabled={isSaving || !currentEditRejectionReason.trim()} className="w-full sm:w-auto">
@@ -941,8 +1053,8 @@ export default function AdminTransactionsPage() {
                 {editingTransaction.status !== 'pending' && (
                     <DialogFooter className="mt-2">
                         <DialogClose asChild><Button variant="outline" disabled={isSaving}>Cancel</Button></DialogClose>
-                        <Button onClick={handleUpdateNotes} disabled={isSaving}>
-                            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Update Notes
+                        <Button onClick={handleUpdateNotesOrAmounts} disabled={isSaving}>
+                            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Update Notes/Amounts
                         </Button>
                     </DialogFooter>
                 )}
@@ -955,3 +1067,4 @@ export default function AdminTransactionsPage() {
   );
 }
 
+    
