@@ -2,7 +2,6 @@
 "use client";
 
 import * as React from 'react';
-import { useState, useEffect, useCallback } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -24,7 +23,8 @@ import {
   Timestamp,
   runTransaction,
   getDoc,
-  increment
+  increment,
+  writeBatch
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { Transaction, CashbackStatus, UserProfile, Store, TransactionFormValues as AppTransactionFormValues } from '@/lib/types';
@@ -63,6 +63,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { useDebounce } from '@/hooks/use-debounce';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useAuth } from '@/hooks/use-auth'; // Import useAuth
+
 
 const TRANSACTIONS_PER_PAGE = 15;
 
@@ -75,8 +78,8 @@ const transactionFormSchema = z.object({
   productDetails: z.string().optional().nullable(),
   transactionDate: z.date({ required_error: "Transaction date is required."}),
   saleAmount: z.number({ required_error: "Sale amount is required."}).min(0, "Sale amount must be non-negative."),
-  cashbackAmount: z.number({ required_error: "Cashback amount is required."}).min(0, "Cashback amount must be non-negative."), // This is initialCashbackAmount
-  status: z.enum(['pending', 'confirmed', 'rejected', 'cancelled'] as [CashbackStatus, ...CashbackStatus[]], { required_error: "Status is required."}), // Admin can only set these initial statuses
+  cashbackAmount: z.number({ required_error: "Cashback amount is required."}).min(0, "Cashback amount must be non-negative."),
+  status: z.enum(['pending', 'confirmed', 'rejected', 'cancelled'] as [CashbackStatus, ...CashbackStatus[]], { required_error: "Status is required."}),
   adminNotes: z.string().optional().nullable(),
   notesToUser: z.string().optional().nullable(),
   rejectionReason: z.string().optional().nullable(),
@@ -100,12 +103,12 @@ function TransactionsTableSkeleton() {
         <Skeleton className="h-4 w-1/2" />
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto w-full">
           <Table>
             <TableHeader>
               <TableRow>
                 {Array.from({ length: 9 }).map((_, index) => (
-                  <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead>
+                  <TableHead key={index} className="min-w-[120px]"><Skeleton className="h-5 w-full" /></TableHead>
                 ))}
               </TableRow>
             </TableHeader>
@@ -127,12 +130,12 @@ function TransactionsTableSkeleton() {
 
 const getStatusVariant = (status: CashbackStatus): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
-    case 'confirmed': return 'default'; // Green-like
-    case 'paid': return 'secondary'; // Blue/Purple-like
-    case 'pending': return 'outline'; // Yellow-like
-    case 'awaiting_payout': return 'default'; // Can be similar to confirmed or a different shade
+    case 'confirmed': return 'default';
+    case 'paid': return 'secondary';
+    case 'pending': return 'outline';
+    case 'awaiting_payout': return 'default';
     case 'rejected':
-    case 'cancelled': return 'destructive'; // Red-like
+    case 'cancelled': return 'destructive';
     default: return 'outline';
   }
 };
@@ -150,32 +153,33 @@ const getStatusIcon = (status: CashbackStatus) => {
 };
 
 export default function AdminTransactionsPage() {
-  const [transactions, setTransactions] = useState<TransactionWithUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [pageError, setPageError] = useState<string | null>(null);
-  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const { user, loading: authLoading } = useAuth();
+  const [transactions, setTransactions] = React.useState<TransactionWithUser[]>([]);
+  const [pageLoading, setPageLoading] = React.useState(true);
+  const [pageError, setPageError] = React.useState<string | null>(null);
+  const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMore, setHasMore] = React.useState(true);
+  const [loadingMore, setLoadingMore] = React.useState(false);
   const { toast } = useToast();
 
-  const [filterType, setFilterType] = useState<'all' | 'userId' | 'storeId' | 'orderId' | 'status'>('all');
-  const [filterStatus, setFilterStatus] = useState<CashbackStatus | 'all'>('all');
-  const [searchTermInput, setSearchTermInput] = useState('');
+  const [filterType, setFilterType] = React.useState<'all' | 'userId' | 'storeId' | 'orderId' | 'status'>('all');
+  const [filterStatus, setFilterStatus] = React.useState<CashbackStatus | 'all'>('all');
+  const [searchTermInput, setSearchTermInput] = React.useState('');
   const debouncedSearchTerm = useDebounce(searchTermInput, 500);
-  const [isSearching, setIsSearching] = useState(false);
+  const [isSearching, setIsSearching] = React.useState(false);
 
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [editingTransaction, setEditingTransaction] = useState<TransactionWithUser | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
+  const [editingTransaction, setEditingTransaction] = React.useState<TransactionWithUser | null>(null);
+  const [isSaving, setIsSaving] = React.useState(false);
 
-  // State for the edit/manage dialog's editable fields
-  const [currentEditAdminNotes, setCurrentEditAdminNotes] = useState('');
-  const [currentEditNotesToUser, setCurrentEditNotesToUser] = useState('');
-  const [currentEditRejectionReason, setCurrentEditRejectionReason] = useState('');
+  // State for managing notes and rejection reason in the edit dialog directly
+  const [currentEditAdminNotes, setCurrentEditAdminNotes] = React.useState('');
+  const [currentEditNotesToUser, setCurrentEditNotesToUser] = React.useState('');
+  const [currentEditRejectionReason, setCurrentEditRejectionReason] = React.useState('');
 
-  const [userCache, setUserCache] = useState<Record<string, Pick<UserProfile, 'displayName' | 'email'>>>({});
-  const [storeCache, setStoreCache] = useState<Record<string, Pick<Store, 'name'>>>({});
+  const [userCache, setUserCache] = React.useState<Record<string, Pick<UserProfile, 'displayName' | 'email'>>>({});
+  const [storeCache, setStoreCache] = React.useState<Record<string, Pick<Store, 'name'>>>({});
 
   const addForm = useForm<TransactionFormValues>({
     resolver: zodResolver(transactionFormSchema),
@@ -186,17 +190,13 @@ export default function AdminTransactionsPage() {
     },
   });
 
-  const fetchTransactionDetails = useCallback(async (rawTransactions: Transaction[]): Promise<TransactionWithUser[]> => {
-    let isMounted = true;
+  const fetchTransactionDetails = React.useCallback(async (rawTransactions: Transaction[]): Promise<TransactionWithUser[]> => {
     if (!db || firebaseInitializationError || rawTransactions.length === 0) {
-        if(isMounted) console.warn("AdminTransactions: DB not init or no raw transactions for detail fetching.");
-        return rawTransactions.map(t => ({...t, userDisplayName: t.userId, storeName: t.storeName || t.storeId}));
+      return rawTransactions.map(txItem => ({ ...txItem, userDisplayName: txItem.userId, storeName: txItem.storeName || txItem.storeId }));
     }
 
-    const userIdsToFetch = [...new Set(rawTransactions.map(t => t.userId).filter(id => id && !userCache[id]))];
-    const storeIdsToFetch = [...new Set(rawTransactions.map(t => t.storeId).filter(id => id && !storeCache[id] && !t.storeName))];
-
-    if(isMounted) console.log("AdminTransactions: Fetching details for user IDs:", userIdsToFetch, "and store IDs:", storeIdsToFetch);
+    const userIdsToFetch = [...new Set(rawTransactions.map(txItem => txItem.userId).filter(id => id && !userCache[id]))];
+    const storeIdsToFetch = [...new Set(rawTransactions.flatMap(txItem => (txItem.storeId && !storeCache[txItem.storeId] && !txItem.storeName) ? [txItem.storeId] : []))];
 
     try {
       if (userIdsToFetch.length > 0) {
@@ -211,58 +211,52 @@ export default function AdminTransactionsPage() {
             newUsers[docSnap.id] = { displayName: data.displayName || null, email: data.email || null };
           });
         }
-        if (isMounted) setUserCache(prev => ({ ...prev, ...newUsers }));
+        setUserCache(prev => ({ ...prev, ...newUsers }));
       }
 
       if (storeIdsToFetch.length > 0) {
         const newStores: Record<string, Pick<Store, 'name'>> = {};
         for (let i = 0; i < storeIdsToFetch.length; i += 30) {
-            const chunk = storeIdsToFetch.slice(i, i + 30);
-            if (chunk.length === 0) continue;
-            const storesQuery = query(collection(db, 'stores'), where('__name__', 'in', chunk));
-            const storeSnaps = await getDocs(storesQuery);
-            storeSnaps.forEach(docSnap => {
-                const data = docSnap.data();
-                newStores[docSnap.id] = { name: data.name || 'Unknown Store' };
-            });
+          const chunk = storeIdsToFetch.slice(i, i + 30);
+          if (chunk.length === 0) continue;
+          const storesQuery = query(collection(db, 'stores'), where('__name__', 'in', chunk));
+          const storeSnaps = await getDocs(storesQuery);
+          storeSnaps.forEach(docSnap => {
+            const data = docSnap.data();
+            newStores[docSnap.id] = { name: data.name || 'Unknown Store' };
+          });
         }
-        if (isMounted) setStoreCache(prev => ({ ...prev, ...newStores }));
+        setStoreCache(prev => ({ ...prev, ...newStores }));
       }
     } catch (detailError) {
-      console.error("AdminTransactions: Error fetching transaction details (users/stores):", detailError);
-      if(isMounted) toast({ variant: "destructive", title: "Detail Fetch Error", description: "Could not load some user/store names." });
+      console.error("ADMIN_TX: Error fetching transaction details (users/stores):", detailError);
+      toast({ variant: "destructive", title: "Detail Fetch Error", description: "Could not load some user/store names." });
     }
-    if (!isMounted) return rawTransactions.map(t => ({...t, userDisplayName: t.userId, storeName: t.storeName || t.storeId}));
-    
-    return rawTransactions.map(transaction => ({
-      ...transaction,
-      userDisplayName: userCache[transaction.userId]?.displayName || transaction.userId,
-      userEmail: userCache[transaction.userId]?.email,
-      storeName: transaction.storeName || storeCache[transaction.storeId]?.name || transaction.storeId,
+    return rawTransactions.map(txItem => ({
+      ...txItem,
+      userDisplayName: userCache[txItem.userId]?.displayName || txItem.userId,
+      userEmail: userCache[txItem.userId]?.email,
+      storeName: txItem.storeName || storeCache[txItem.storeId]?.name || txItem.storeId,
     }));
-     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userCache, storeCache, toast]);
 
-  const fetchTransactions = useCallback(async (
+  const fetchTransactions = React.useCallback(async (
     loadMoreOperation = false,
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null
   ) => {
-    let isMounted = true;
     if (firebaseInitializationError || !db) {
-      if (isMounted) {
-        setPageError(firebaseInitializationError || "Database connection not available.");
-        if(!loadMoreOperation) setLoading(false); else setLoadingMore(false);
-        setHasMore(false);
-      }
-      return () => { isMounted = false; };
+      setPageError(firebaseInitializationError || "Database connection not available.");
+      if(!loadMoreOperation) setPageLoading(false); else setLoadingMore(false);
+      setHasMore(false);
+      return;
     }
 
     if (!loadMoreOperation) {
-      setLoading(true); setTransactions([]); setLastVisible(null); setHasMore(true);
+      setPageLoading(true); setTransactions([]); setLastVisible(null); setHasMore(true);
     } else {
        if (!docToStartAfter && loadMoreOperation) {
-          if(isMounted) setLoadingMore(false);
-          return () => { isMounted = false; };
+          setLoadingMore(false);
+          return;
       }
       setLoadingMore(true);
     }
@@ -278,7 +272,13 @@ export default function AdminTransactionsPage() {
       }
 
       if (debouncedSearchTerm && filterType !== 'all' && filterType !== 'status') {
-        constraints.push(where(filterType, '==', debouncedSearchTerm));
+        if (debouncedSearchTerm.trim()) {
+            constraints.push(where(filterType, '==', debouncedSearchTerm.trim()));
+        } else if (filterType !== 'all') {
+            setTransactions([]); setHasMore(false);
+            setPageLoading(false); setLoadingMore(false); setIsSearching(false);
+            return;
+        }
       }
       
       constraints.push(orderBy('transactionDate', 'desc'));
@@ -290,7 +290,7 @@ export default function AdminTransactionsPage() {
 
       const q = query(transactionsCollectionRef, ...constraints);
       const querySnapshot = await getDocs(q);
-      console.log(`ADMIN_TX: Fetched ${querySnapshot.size} raw transactions.`);
+      console.log(`ADMIN_TX: Fetched ${querySnapshot.size} raw transactions with current filters.`);
 
       const rawTransactionsData = querySnapshot.docs.map(docSnap => ({
         id: docSnap.id,
@@ -301,37 +301,48 @@ export default function AdminTransactionsPage() {
         createdAt: safeToDate(docSnap.data().createdAt as Timestamp | undefined) || new Date(0),
         updatedAt: safeToDate(docSnap.data().updatedAt as Timestamp | undefined) || new Date(0),
       } as Transaction));
-
-      const transactionsWithDetails = await fetchTransactionDetails(rawTransactionsData);
       
-      if(isMounted){
-        setTransactions(prev => loadMoreOperation ? [...prev, ...transactionsWithDetails] : transactionsWithDetails);
-        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-        setHasMore(querySnapshot.docs.length === TRANSACTIONS_PER_PAGE && transactionsWithDetails.length > 0);
-        console.log(`ADMIN_TX: Processed ${transactionsWithDetails.length} transactions. HasMore: ${querySnapshot.docs.length === TRANSACTIONS_PER_PAGE && transactionsWithDetails.length > 0}`);
+      let filteredForGeneralSearch = rawTransactionsData;
+      if (debouncedSearchTerm && filterType === 'all') {
+         filteredForGeneralSearch = rawTransactionsData.filter(tx =>
+           (tx.userDisplayName && tx.userDisplayName.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
+           (tx.userEmail && tx.userEmail.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
+           (tx.storeName && tx.storeName.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
+           (tx.orderId && tx.orderId.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
+           (tx.productDetails && tx.productDetails.toLowerCase().includes(debouncedSearchTerm.toLowerCase()))
+         );
       }
+
+      const transactionsWithDetails = await fetchTransactionDetails(filteredForGeneralSearch);
+      
+      setTransactions(prev => loadMoreOperation ? [...prev, ...transactionsWithDetails] : transactionsWithDetails);
+      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+      setHasMore(querySnapshot.docs.length === TRANSACTIONS_PER_PAGE && transactionsWithDetails.length > 0);
+      console.log(`ADMIN_TX: Processed ${transactionsWithDetails.length} transactions. HasMore: ${querySnapshot.docs.length === TRANSACTIONS_PER_PAGE && transactionsWithDetails.length > 0}`);
 
     } catch (err) {
       console.error("AdminTransactions: Error fetching transactions:", err);
       const errorMsg = err instanceof Error ? err.message : "Failed to fetch transactions";
-      if(isMounted) {
-        setPageError(errorMsg);
-        toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
-        setHasMore(false);
-      }
+      setPageError(errorMsg);
+      toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+      setHasMore(false);
     } finally {
-      if(isMounted){
-        if(!loadMoreOperation) setLoading(false); else setLoadingMore(false);
-        setIsSearching(false);
-      }
+      if(!loadMoreOperation) setPageLoading(false); else setLoadingMore(false);
+      setIsSearching(false);
     }
-    return () => { isMounted = false; };
   }, [debouncedSearchTerm, filterType, filterStatus, toast, fetchTransactionDetails]);
 
-  useEffect(() => {
+  React.useEffect(() => {
+    if (authLoading) {
+      setPageLoading(true);
+      return;
+    }
+    if (!user) {
+      setPageLoading(false); // No user, stop loading, AdminGuard will redirect
+      return;
+    }
     fetchTransactions(false, null);
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterStatus, debouncedSearchTerm]); // Removed fetchTransactions
+  }, [authLoading, user, filterStatus, debouncedSearchTerm, fetchTransactions]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -353,12 +364,11 @@ export default function AdminTransactionsPage() {
     setIsAddDialogOpen(true);
   };
 
-  const openEditDialog = (transaction: TransactionWithUser) => {
-    setEditingTransaction(transaction);
-    setCurrentEditAdminNotes(transaction.adminNotes || '');
-    setCurrentEditNotesToUser(transaction.notesToUser || '');
-    setCurrentEditRejectionReason(transaction.rejectionReason || '');
-    // Note: status change itself is handled by Approve/Reject buttons, not a Select here for pending.
+  const openEditDialog = (txItem: TransactionWithUser) => {
+    setEditingTransaction(txItem);
+    setCurrentEditAdminNotes(txItem.adminNotes || '');
+    setCurrentEditNotesToUser(txItem.notesToUser || '');
+    setCurrentEditRejectionReason(txItem.rejectionReason || '');
     setIsEditDialogOpen(true);
   };
 
@@ -377,9 +387,14 @@ export default function AdminTransactionsPage() {
 
             let storeNameFromDb = data.storeName;
             if (!storeNameFromDb && data.storeId) {
-                const storeDocRef = doc(db, 'stores', data.storeId);
-                const storeSnap = await firestoreTransaction.get(storeDocRef);
-                storeNameFromDb = storeSnap.exists() ? storeSnap.data()?.name : 'Unknown Store';
+                try {
+                  const storeDocRef = doc(db, 'stores', data.storeId);
+                  const storeSnap = await firestoreTransaction.get(storeDocRef); // Use firestoreTransaction.get here
+                  storeNameFromDb = storeSnap.exists() ? storeSnap.data()?.name : 'Unknown Store';
+                } catch (storeFetchError) {
+                  console.warn(`Could not fetch store name for ${data.storeId}, using 'Unknown Store'. Error: ${storeFetchError}`);
+                  storeNameFromDb = 'Unknown Store';
+                }
             }
             
             const newTransactionRef = doc(collection(db, 'transactions'));
@@ -392,13 +407,13 @@ export default function AdminTransactionsPage() {
                 productDetails: data.productDetails || null,
                 transactionDate: Timestamp.fromDate(data.transactionDate),
                 saleAmount: data.saleAmount,
-                initialCashbackAmount: data.cashbackAmount, // Use form's cashbackAmount as initial
+                initialCashbackAmount: data.cashbackAmount,
                 finalSaleAmount: data.saleAmount, 
-                finalCashbackAmount: data.cashbackAmount, // Default finalCashback to initial
+                finalCashbackAmount: data.cashbackAmount,
                 currency: 'INR',
                 status: data.status,
                 confirmationDate: (data.status === 'confirmed') ? serverTimestamp() : null,
-                paidDate: null, // Paid status is handled by payout flow
+                paidDate: null,
                 payoutId: null,
                 reportedDate: serverTimestamp(),
                 rejectionReason: (data.status === 'rejected' || data.status === 'cancelled') ? data.rejectionReason : null,
@@ -408,9 +423,8 @@ export default function AdminTransactionsPage() {
                 updatedAt: serverTimestamp(),
             };
             firestoreTransaction.set(newTransactionRef, transactionDataToSave);
-            console.log(`ADMIN_TX: Created new transaction ${newTransactionRef.id} with status ${data.status}`);
+            console.log(`ADMIN_TX: Logged transaction ${newTransactionRef.id} for user ${data.userId} with status ${data.status}.`);
 
-            // Update user balances based on initial status
             const userProfileUpdates: Record<string, any> = { updatedAt: serverTimestamp() };
             if (data.status === 'pending') {
                 userProfileUpdates.pendingCashback = increment(data.cashbackAmount);
@@ -418,10 +432,9 @@ export default function AdminTransactionsPage() {
                 userProfileUpdates.cashbackBalance = increment(data.cashbackAmount);
                 userProfileUpdates.lifetimeCashback = increment(data.cashbackAmount);
             }
-            // Only update if there are balance changes
             if (data.status === 'pending' || data.status === 'confirmed') {
                 firestoreTransaction.update(userDocRef, userProfileUpdates);
-                console.log(`ADMIN_TX: User ${data.userId} balances updated for new transaction. Pending: ${data.status === 'pending' ? data.cashbackAmount : 0}, Confirmed: ${data.status === 'confirmed' ? data.cashbackAmount : 0}`);
+                console.log(`ADMIN_TX: User ${data.userId} balances updated for new transaction. Status: ${data.status}, Amount: ${data.cashbackAmount}`);
             }
         });
         toast({ title: "Transaction Logged", description: `New transaction for user ${data.userId} has been logged.` });
@@ -440,7 +453,7 @@ export default function AdminTransactionsPage() {
 
   const handleApproveTransaction = async () => {
     if (!editingTransaction || !editingTransaction.id || !db || editingTransaction.status !== 'pending') {
-        toast({ variant: "destructive", title: "Error", description: "No valid pending transaction selected or DB error." });
+        toast({ variant: "destructive", title: "Invalid Action", description: "No valid pending transaction selected or DB error." });
         return;
     }
     setIsSaving(true);
@@ -448,6 +461,12 @@ export default function AdminTransactionsPage() {
     const transactionRef = doc(db, 'transactions', editingTransaction.id);
     const userRef = doc(db, 'users', editingTransaction.userId);
     const cashbackAmount = editingTransaction.finalCashbackAmount ?? editingTransaction.initialCashbackAmount ?? 0;
+
+    if (cashbackAmount <= 0) {
+        toast({variant: "destructive", title: "Invalid Amount", description: "Cashback amount must be positive to approve."});
+        setIsSaving(false);
+        return;
+    }
 
     try {
       await runTransaction(db, async (firestoreTransaction) => {
@@ -479,8 +498,9 @@ export default function AdminTransactionsPage() {
       });
 
       toast({ title: "Transaction Approved", description: `Transaction ${editingTransaction.id} status changed to Confirmed.` });
-      fetchTransactions(false, null); // Refresh list
+      fetchTransactions(false, null); 
       setIsEditDialogOpen(false);
+      setEditingTransaction(null);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Could not approve transaction.";
       setPageError(errorMsg);
@@ -493,7 +513,7 @@ export default function AdminTransactionsPage() {
 
   const handleRejectTransaction = async () => {
     if (!editingTransaction || !editingTransaction.id || !db || editingTransaction.status !== 'pending') {
-        toast({ variant: "destructive", title: "Error", description: "No valid pending transaction selected or DB error." });
+        toast({ variant: "destructive", title: "Invalid Action", description: "No valid pending transaction selected or DB error." });
         return;
     }
     if (!currentEditRejectionReason.trim()) {
@@ -505,6 +525,10 @@ export default function AdminTransactionsPage() {
     const transactionRef = doc(db, 'transactions', editingTransaction.id);
     const userRef = doc(db, 'users', editingTransaction.userId);
     const cashbackAmount = editingTransaction.finalCashbackAmount ?? editingTransaction.initialCashbackAmount ?? 0;
+
+     if (cashbackAmount <= 0 && editingTransaction.status === 'pending') { 
+        console.warn(`ADMIN_TX: Cashback amount for pending transaction ${editingTransaction.id} is zero or negative. User pending balance won't be affected negatively.`);
+     }
 
     try {
       await runTransaction(db, async (firestoreTransaction) => {
@@ -526,17 +550,21 @@ export default function AdminTransactionsPage() {
             confirmationDate: null, 
         });
         
-        firestoreTransaction.update(userRef, {
-            pendingCashback: increment(-cashbackAmount), // Decrement pending cashback
-            updatedAt: serverTimestamp()
-            // No change to cashbackBalance or lifetimeCashback
-        });
-        console.log(`ADMIN_TX: Rejected transaction ${editingTransaction.id}. User ${editingTransaction.userId} pendingCashback updated by -${cashbackAmount}. Rejection reason: ${currentEditRejectionReason.trim()}`);
+        if (cashbackAmount > 0) {
+            firestoreTransaction.update(userRef, {
+                pendingCashback: increment(-cashbackAmount),
+                updatedAt: serverTimestamp()
+            });
+        } else {
+             firestoreTransaction.update(userRef, { updatedAt: serverTimestamp() }); 
+        }
+        console.log(`ADMIN_TX: Rejected transaction ${editingTransaction.id}. User ${editingTransaction.userId} pendingCashback updated. Amount: ${cashbackAmount}. Reason: ${currentEditRejectionReason.trim()}`);
       });
 
       toast({ title: "Transaction Rejected", description: `Transaction ${editingTransaction.id} status changed to Rejected.` });
-      fetchTransactions(false, null); // Refresh list
+      fetchTransactions(false, null); 
       setIsEditDialogOpen(false);
+      setEditingTransaction(null);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Could not reject transaction.";
       setPageError(errorMsg);
@@ -547,14 +575,13 @@ export default function AdminTransactionsPage() {
     }
   };
   
-  // Handler for updating notes on an already processed transaction
   const handleUpdateNotes = async () => {
     if (!editingTransaction || !editingTransaction.id || !db) {
         toast({ variant: "destructive", title: "Error", description: "No transaction selected or DB error." });
         return;
     }
     if (editingTransaction.status === 'pending') {
-        toast({ variant: "info", title: "Action Not Allowed", description: "Please approve or reject pending transactions first." });
+        toast({ variant: "info", title: "Action Not Allowed", description: "Please approve or reject pending transactions first before updating notes only." });
         return;
     }
     setIsSaving(true);
@@ -567,8 +594,15 @@ export default function AdminTransactionsPage() {
             updatedAt: serverTimestamp()
         });
         toast({ title: "Transaction Notes Updated" });
-        fetchTransactions(false, null); // Refresh list
+        
+        setTransactions(prev => prev.map(tx => tx.id === editingTransaction!.id ? {
+            ...tx,
+            adminNotes: currentEditAdminNotes || null,
+            notesToUser: currentEditNotesToUser || null,
+            updatedAt: new Date() 
+        } : tx));
         setIsEditDialogOpen(false);
+        setEditingTransaction(null);
     } catch (err) {
         const errorMsg = err instanceof Error ? err.message : "Could not update notes.";
         setPageError(errorMsg);
@@ -579,8 +613,7 @@ export default function AdminTransactionsPage() {
     }
   };
 
-
-  if (loading && transactions.length === 0 && !pageError) {
+  if (authLoading || (pageLoading && transactions.length === 0 && !pageError)) {
     return <AdminGuard><TransactionsTableSkeleton /></AdminGuard>;
   }
 
@@ -639,11 +672,11 @@ export default function AdminTransactionsPage() {
                   placeholder={`Search by ${filterType === 'all' ? 'any text' : filterType.replace('Id', ' ID')}...`}
                   value={searchTermInput}
                   onChange={(e) => setSearchTermInput(e.target.value)}
-                  disabled={isSearching || loading}
+                  disabled={isSearching || pageLoading}
                   className="h-10"
                 />
-                <Button type="submit" disabled={isSearching || loading} className="h-10">
-                  {isSearching || (loading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                <Button type="submit" disabled={isSearching || pageLoading} className="h-10">
+                  {isSearching || (pageLoading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                    <span className="sr-only sm:not-sr-only sm:ml-2">Search</span>
                 </Button>
               </form>
@@ -657,60 +690,85 @@ export default function AdminTransactionsPage() {
             <CardDescription>Review reported sales and manage cashback.</CardDescription>
           </CardHeader>
           <CardContent>
-            {loading && transactions.length === 0 ? (
+            {pageLoading && transactions.length === 0 && !pageError ? (
               <TransactionsTableSkeleton />
-            ) : !loading && transactions.length === 0 && !pageError ? (
+            ) : !pageLoading && transactions.length === 0 && !pageError ? (
               <p className="text-center text-muted-foreground py-8">
                 {debouncedSearchTerm || filterStatus !== 'all' ? 'No transactions found matching your criteria.' : 'No transactions recorded yet. Log a reported sale to begin.'}
               </p>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
+              <div className="overflow-x-auto w-full">
+                <Table className="min-w-[1200px]"> {/* Added min-w to ensure table can scroll */}
                   <TableHeader>
                     <TableRow>
-                      <TableHead>User</TableHead>
-                      <TableHead>Store</TableHead>
-                      <TableHead>Order ID</TableHead>
-                      <TableHead>Sale Amt.</TableHead>
-                      <TableHead>Cashback Amt.</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Transaction Date</TableHead>
-                      <TableHead>Details</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="min-w-[180px]">User</TableHead>
+                      <TableHead className="min-w-[150px]">Store</TableHead>
+                      <TableHead className="min-w-[120px]">Order ID</TableHead>
+                      <TableHead className="min-w-[100px] text-right">Sale Amt.</TableHead>
+                      <TableHead className="min-w-[110px] text-right">Cashback</TableHead>
+                      <TableHead className="min-w-[120px]">Status</TableHead>
+                      <TableHead className="min-w-[120px]">Txn Date</TableHead>
+                      <TableHead className="min-w-[200px]">Details/Notes</TableHead>
+                      <TableHead className="text-right min-w-[100px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {transactions.map((transaction) => (
-                      <TableRow key={transaction.id}>
+                    {transactions.map((txItem) => ( 
+                      <TableRow key={txItem.id}>
                         <TableCell>
-                          <div className="font-medium truncate max-w-[150px]" title={transaction.userDisplayName || transaction.userId}>
-                            {transaction.userDisplayName || transaction.userId}
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate max-w-[150px]" title={transaction.userEmail || undefined}>
-                            {transaction.userEmail || 'N/A'}
-                          </div>
-                           <div className="text-[10px] font-mono text-muted-foreground/70">ID: {transaction.userId}</div>
+                           <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <div className="font-medium truncate max-w-[180px]" title={txItem.userDisplayName || txItem.userId}>
+                                        {txItem.userDisplayName || txItem.userId}
+                                    </div>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>UID: {txItem.userId}</p>
+                                    {txItem.userEmail && <p>Email: {txItem.userEmail}</p>}
+                                </TooltipContent>
+                            </Tooltip>
+                           </TooltipProvider>
+                           <div className="text-xs text-muted-foreground truncate max-w-[180px]" title={txItem.userEmail || undefined}>
+                            {txItem.userEmail || 'N/A'}
+                           </div>
                         </TableCell>
-                        <TableCell className="truncate max-w-[150px]" title={transaction.storeName || transaction.storeId}>
-                            {transaction.storeName || transaction.storeId}
+                        <TableCell className="truncate max-w-[150px]" title={txItem.storeName || txItem.storeId}>
+                            {txItem.storeName || txItem.storeId}
                         </TableCell>
-                        <TableCell className="font-mono text-xs truncate max-w-[120px]">{transaction.orderId || 'N/A'}</TableCell>
-                        <TableCell>{formatCurrency(transaction.finalSaleAmount ?? transaction.saleAmount)}</TableCell>
-                        <TableCell className="font-semibold text-primary">{formatCurrency(transaction.finalCashbackAmount ?? transaction.initialCashbackAmount ?? 0)}</TableCell>
+                        <TableCell className="font-mono text-xs truncate max-w-[120px]">{txItem.orderId || 'N/A'}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(txItem.finalSaleAmount ?? txItem.saleAmount)}</TableCell>
+                        <TableCell className="font-semibold text-primary text-right">{formatCurrency(txItem.finalCashbackAmount ?? txItem.initialCashbackAmount ?? 0)}</TableCell>
                         <TableCell>
-                          <Badge variant={getStatusVariant(transaction.status)} className="capitalize flex items-center gap-1 text-xs">
-                            {getStatusIcon(transaction.status)}
-                            {transaction.status}
+                          <Badge variant={getStatusVariant(txItem.status)} className="capitalize flex items-center gap-1 text-xs whitespace-nowrap">
+                            {getStatusIcon(txItem.status)}
+                            {txItem.status.replace('_', ' ')}
                           </Badge>
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">{transaction.transactionDate ? format(new Date(transaction.transactionDate), 'PP') : 'N/A'}</TableCell>
-                        <TableCell className="text-xs">
-                           {transaction.confirmationDate && <div>Conf: {format(safeToDate(transaction.confirmationDate)!, 'PP')}</div>}
-                           {transaction.paidDate && <div>Paid: {format(safeToDate(transaction.paidDate)!, 'PP')}</div>}
-                           {transaction.rejectionReason && <div className="text-destructive">Rej: {transaction.rejectionReason}</div>}
+                        <TableCell className="whitespace-nowrap">{txItem.transactionDate ? format(new Date(txItem.transactionDate), 'PP') : 'N/A'}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                           <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span
+                                  className="truncate block max-w-[200px] cursor-pointer hover:underline"
+                                   onClick={() => openEditDialog(txItem)}
+                                >
+                                  {txItem.rejectionReason ? `Rej: ${txItem.rejectionReason}` : (txItem.notesToUser || txItem.adminNotes || '-')}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="max-w-xs break-words">
+                                  Admin: {txItem.adminNotes || 'N/A'} <br/>
+                                  User: {txItem.notesToUser || 'N/A'} <br/>
+                                  Rejection: {txItem.rejectionReason || 'N/A'}
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </TableCell>
                         <TableCell className="text-right">
-                              <Button variant="outline" size="sm" onClick={() => openEditDialog(transaction)}>
+                              <Button variant="outline" size="sm" onClick={() => openEditDialog(txItem)}>
                                 <Edit className="mr-1 h-3 w-3" /> Manage
                               </Button>
                         </TableCell>
@@ -720,7 +778,7 @@ export default function AdminTransactionsPage() {
                 </Table>
               </div>
             )}
-            {hasMore && !loading && transactions.length > 0 && (
+            {hasMore && !pageLoading && transactions.length > 0 && (
               <div className="mt-6 text-center">
                 <Button onClick={handleLoadMore} disabled={loadingMore}>
                   {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -823,11 +881,11 @@ export default function AdminTransactionsPage() {
                 <Label htmlFor="notesToUserForm">Notes for User (Optional)</Label>
                 <Textarea id="notesToUserForm" {...addForm.register('notesToUser')} rows={2} disabled={isSaving}/>
               </div>
-              <DialogFooter>
+              <DialogFooter className="flex-col sm:flex-row sm:justify-end gap-2 mt-2">
                 <DialogClose asChild>
-                  <Button type="button" variant="outline" disabled={isSaving}>Cancel</Button>
+                  <Button type="button" variant="outline" disabled={isSaving} className="w-full sm:w-auto">Cancel</Button>
                 </DialogClose>
-                <Button type="submit" disabled={isSaving}>
+                <Button type="submit" disabled={isSaving} className="w-full sm:w-auto">
                   {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Log Transaction
                 </Button>
@@ -836,12 +894,11 @@ export default function AdminTransactionsPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Edit/Manage Transaction Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={(isOpen) => {
-            if (!isOpen) setEditingTransaction(null);
+            if (!isOpen) setEditingTransaction(null); 
             setIsEditDialogOpen(isOpen);
         }}>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Manage Transaction</DialogTitle>
               {editingTransaction && (
@@ -850,7 +907,7 @@ export default function AdminTransactionsPage() {
                   User: {editingTransaction.userDisplayName || editingTransaction.userId} ({editingTransaction.userEmail || 'N/A'}) <br/>
                   Store: {editingTransaction.storeName || editingTransaction.storeId} | Order ID: {editingTransaction.orderId || 'N/A'} <br/>
                   Sale: {formatCurrency(editingTransaction.finalSaleAmount ?? editingTransaction.saleAmount)} | Cashback: {formatCurrency(editingTransaction.finalCashbackAmount ?? editingTransaction.initialCashbackAmount ?? 0)} <br/>
-                  Current Status: <Badge variant={getStatusVariant(editingTransaction.status)} className="capitalize">{editingTransaction.status}</Badge>
+                  Current Status: <Badge variant={getStatusVariant(editingTransaction.status)} className="capitalize">{editingTransaction.status.replace('_', ' ')}</Badge>
                 </DialogDescription>
               )}
             </DialogHeader>
@@ -871,18 +928,18 @@ export default function AdminTransactionsPage() {
                       <Label htmlFor="editRejectionReason">Rejection Reason (Required if rejecting)</Label>
                       <Textarea id="editRejectionReason" value={currentEditRejectionReason} onChange={(e) => setCurrentEditRejectionReason(e.target.value)} placeholder="Enter reason for rejection" disabled={isSaving} />
                     </div>
-                    <DialogFooter>
-                        <Button onClick={handleRejectTransaction} variant="destructive" disabled={isSaving || !currentEditRejectionReason.trim()}>
-                            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ThumbsDown className="mr-2 h-4 w-4" />} Reject
+                    <DialogFooter className="flex-col sm:flex-row sm:justify-end gap-2 mt-2">
+                        <Button onClick={handleRejectTransaction} variant="destructive" disabled={isSaving || !currentEditRejectionReason.trim()} className="w-full sm:w-auto">
+                            {isSaving && editingTransaction.status === 'pending' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ThumbsDown className="mr-2 h-4 w-4" />} Reject
                         </Button>
-                        <Button onClick={handleApproveTransaction} disabled={isSaving}>
-                            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ThumbsUp className="mr-2 h-4 w-4" />} Approve
+                        <Button onClick={handleApproveTransaction} disabled={isSaving} className="w-full sm:w-auto">
+                            {isSaving && editingTransaction.status === 'pending' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ThumbsUp className="mr-2 h-4 w-4" />} Approve
                         </Button>
                     </DialogFooter>
                   </>
                 )}
                 {editingTransaction.status !== 'pending' && (
-                    <DialogFooter>
+                    <DialogFooter className="mt-2">
                         <DialogClose asChild><Button variant="outline" disabled={isSaving}>Cancel</Button></DialogClose>
                         <Button onClick={handleUpdateNotes} disabled={isSaving}>
                             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Update Notes
@@ -897,3 +954,4 @@ export default function AdminTransactionsPage() {
     </AdminGuard>
   );
 }
+
