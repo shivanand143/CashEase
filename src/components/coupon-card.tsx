@@ -25,18 +25,22 @@ import { safeToDate } from '@/lib/utils';
 import * as React from 'react';
 
 interface CouponCardProps {
-  coupon: Coupon & { store?: Store }; // Coupon data, optionally with nested store data
+  coupon: Coupon & { store?: Store };
 }
 
 const appendClickIdToUrl = (url: string, clickId: string): string => {
+  if (!url || typeof url !== 'string' || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+    console.warn("Attempted to append click ID to an invalid or non-HTTP(S) URL:", url);
+    return url; // Or a default fallback URL
+  }
   try {
     const urlObj = new URL(url);
-    urlObj.searchParams.set('subid', clickId); // Generic
-    urlObj.searchParams.set('aff_sub', clickId); // Common
-    urlObj.searchParams.set('s1', clickId); // Another common one
+    urlObj.searchParams.set('click_id', clickId); // Using 'click_id'
+    urlObj.searchParams.set('subid', clickId);
+    urlObj.searchParams.set('aff_sub', clickId);
     return urlObj.toString();
   } catch (e) {
-    console.warn("Invalid URL for click tracking, returning original:", url, e);
+    console.warn("Error appending click ID to URL, returning original:", url, e);
     return url;
   }
 };
@@ -57,8 +61,8 @@ export default function CouponCard({ coupon }: CouponCardProps) {
     }
 
     const clickId = uuidv4();
-    // Determine the target URL: coupon-specific link, or store's affiliate link, or fallback.
     const originalLink = coupon.link || coupon.store?.affiliateLink || '#';
+
     if (originalLink === '#') {
         toast({ title: "Link Error", description: "No valid link for this offer.", variant: "destructive"});
         console.warn("CouponCard: No valid target URL for coupon:", coupon.id);
@@ -68,11 +72,12 @@ export default function CouponCard({ coupon }: CouponCardProps) {
     const finalAffiliateLinkWithClickId = appendClickIdToUrl(originalLink, clickId);
     console.log("CouponCard: Generated Click ID:", clickId, "Final URL:", finalAffiliateLinkWithClickId);
 
+
     if (!user) {
         console.log("CouponCard: User not logged in. Storing redirect and navigating to login.");
         sessionStorage.setItem('loginRedirectUrl', finalAffiliateLinkWithClickId);
         sessionStorage.setItem('loginRedirectSource', router.asPath);
-        router.push(`/login?message=Please login to use this ${isCode ? 'code' : 'deal'} and track cashback.`);
+        router.push(`/login?message=Login to use this ${isCode ? 'code' : 'deal'} & track cashback.`);
         setIsProcessingClick(false);
         return;
     }
@@ -83,12 +88,15 @@ export default function CouponCard({ coupon }: CouponCardProps) {
         storeId: coupon.storeId,
         storeName: coupon.store?.name || "Unknown Store",
         couponId: coupon.id,
-        clickId: clickId,
+        clickId: clickId, // The UUID
         affiliateLink: finalAffiliateLinkWithClickId,
         originalLink: originalLink,
-        // productId and productName are null for coupon clicks
         productId: null,
         productName: null,
+        // Coupons typically don't have product-specific cashback, so these are null
+        clickedCashbackDisplay: null,
+        clickedCashbackRateValue: null,
+        clickedCashbackType: null,
       };
       console.log("CouponCard: Preparing to track click (client-side):", clickData);
       try {
@@ -97,7 +105,7 @@ export default function CouponCard({ coupon }: CouponCardProps) {
             console.log(`CouponCard: Tracked click (client-side) for ${isCode ? 'code' : 'deal'} coupon ${coupon.id}`);
         } else {
             console.error("CouponCard: Failed to track coupon click (client-side util error):", trackResult.error);
-            toast({title: "Tracking Issue", description: `Could not fully track click: ${trackResult.error}. Proceeding to store.`, variant: "destructive", duration: 7000});
+            toast({title: "Tracking Issue", description: `Could not fully track click. Proceeding to store.`, variant: "destructive", duration: 7000});
         }
       } catch (trackError) {
         console.error(`CouponCard: Error tracking ${isCode ? 'code' : 'deal'} click (client-side):`, trackError);
@@ -106,8 +114,6 @@ export default function CouponCard({ coupon }: CouponCardProps) {
     } else if (!coupon.storeId) {
         console.warn("CouponCard: storeId missing for coupon:", coupon.id, "Cannot track click properly.");
     }
-    setIsProcessingClick(false);
-
 
     if (isCode && coupon.code) {
       try {
@@ -123,21 +129,19 @@ export default function CouponCard({ coupon }: CouponCardProps) {
       } catch (err) {
         console.error('CouponCard: Failed to copy code:', err);
         toast({ variant: 'destructive', title: 'Copy Failed', description: 'Could not copy code. Redirecting anyway...' });
-        console.log("CouponCard: Code copy failed, redirecting to:", finalAffiliateLinkWithClickId);
         window.open(finalAffiliateLinkWithClickId, '_blank', 'noopener,noreferrer');
       }
     } else {
       console.log("CouponCard: Get Deal clicked or no code, redirecting to:", finalAffiliateLinkWithClickId);
       window.open(finalAffiliateLinkWithClickId, '_blank', 'noopener,noreferrer');
     }
+    setIsProcessingClick(false);
   };
 
    const handleCardClick = (e: React.MouseEvent) => {
-     // Prevent navigation if a button inside the card was clicked
      if ((e.target as HTMLElement).closest('button')) {
        return;
      }
-     // Navigate to store page if storeId exists
      if (coupon.storeId) {
        router.push(`/stores/${coupon.storeId}`);
      } else {
@@ -147,7 +151,7 @@ export default function CouponCard({ coupon }: CouponCardProps) {
 
   const expiryDate = coupon.expiryDate ? safeToDate(coupon.expiryDate) : null;
   const isExpired = expiryDate ? expiryDate < new Date() : false;
-  const storeName = coupon.store?.name || 'Store'; // Fallback if store name isn't populated
+  const storeName = coupon.store?.name || 'Store';
 
   return (
     <Card
@@ -197,7 +201,7 @@ export default function CouponCard({ coupon }: CouponCardProps) {
             size="sm"
             className="w-full border-dashed border-primary text-primary hover:bg-primary/10 justify-between group"
             onClick={(e) => {
-               e.stopPropagation(); // Prevent card click handler
+               e.stopPropagation();
                handleInteraction(true);
             }}
             disabled={isExpired || authLoading || isProcessingClick}
@@ -211,7 +215,7 @@ export default function CouponCard({ coupon }: CouponCardProps) {
              size="sm"
              className="w-full bg-secondary hover:bg-secondary/90"
              onClick={(e) => {
-                e.stopPropagation(); // Prevent card click handler
+                e.stopPropagation();
                 handleInteraction(false);
              }}
              disabled={isExpired || authLoading || isProcessingClick}

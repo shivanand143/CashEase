@@ -32,8 +32,8 @@ export async function trackClickClientSide(data: TrackClickClientSideData): Prom
   }
 
   // Ensure critical data is present
-  if (!data.storeId || !data.affiliateLink || !data.clickId) {
-    const errorMsg = `Missing critical data: storeId, affiliateLink, or clickId. ClickId: ${data.clickId}`;
+  if (!data.userId || !data.storeId || !data.affiliateLink || !data.clickId) {
+    const errorMsg = `Missing critical data: userId, storeId, affiliateLink, or clickId. ClickId: ${data.clickId}`;
     console.error(`%c[${operation}]%c ${errorMsg}`, "color: red; font-weight: bold;", "color: black;", data);
     return { success: false, error: errorMsg };
   }
@@ -41,8 +41,8 @@ export async function trackClickClientSide(data: TrackClickClientSideData): Prom
   // Store clickId in localStorage
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem('magicsaver_clickId', data.clickId); // Use a more specific key
-      console.log(`%c[${operation}]%c Stored clickId ${data.clickId} in localStorage.`, "color: blue; font-weight: bold;", "color: black;");
+      localStorage.setItem('magicsaver_lastClickId', data.clickId); // Use a more specific key
+      console.log(`%c[${operation}]%c Stored clickId ${data.clickId} in localStorage as magicsaver_lastClickId.`, "color: blue; font-weight: bold;", "color: black;");
     } catch (e) {
       console.warn(`%c[${operation}]%c Failed to store clickId in localStorage:`, "color: orange; font-weight: bold;", "color: black;", e);
     }
@@ -55,7 +55,7 @@ export async function trackClickClientSide(data: TrackClickClientSideData): Prom
     const clickDataToSave: Click = {
       id: data.clickId, // Store the ID also as a field in the document
       clickId: data.clickId, // Explicitly storing the field as per type
-      userId: data.userId || null,
+      userId: data.userId, // User ID is now mandatory based on the check above
       storeId: data.storeId,
       storeName: data.storeName || null,
       couponId: data.couponId || null,
@@ -74,10 +74,12 @@ export async function trackClickClientSide(data: TrackClickClientSideData): Prom
     console.log(`%c[${operation}]%c Preparing to set document in /clicks/${data.clickId} with data:`, "color: blue; font-weight: bold;", "color: black;", clickDataToSave);
     await setDoc(clickDocRef, clickDataToSave);
 
-    console.log(`%c[${operation}]%c SUCCESS: Click tracked for User ${data.userId || 'Guest'}, Click ID ${data.clickId}, Store ${data.storeId}`, "color: green; font-weight: bold;", "color: black;");
+    console.log(`%c[${operation}]%c SUCCESS: Click tracked for User ${data.userId}, Click ID ${data.clickId}, Store ${data.storeId}`, "color: green; font-weight: bold;", "color: black;");
     return { success: true, clickId: data.clickId };
   } catch (error) {
-    console.error(`%c[${operation}]%c ERROR writing to Firestore for Click ID ${data.clickId}, User ${data.userId || 'Guest'}:`, "color: red; font-weight: bold;", "color: black;", error);
+    console.error(`%c[${operation}]%c ERROR writing to Firestore for Click ID ${data.clickId}, User ${data.userId}:`, "color: red; font-weight: bold;", "color: black;", error);
     return { success: false, error: error instanceof Error ? error.message : "Unknown error tracking click." };
   }
 }
+
+    
