@@ -88,25 +88,47 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
       </Card>
     );
   }
-  
-  const placeholderText = product.name ? product.name.substring(0, 15) : "Product";
+
+  const placeholderTextForImage = product.name ? product.name.substring(0, 15) : "Product";
   const imageUrl = isValidHttpUrl(product.imageUrl)
     ? product.imageUrl!
-    : `https://placehold.co/300x300.png?text=${encodeURIComponent(placeholderText)}`;
+    : `https://placehold.co/300x300.png?text=${encodeURIComponent(placeholderTextForImage)}`;
 
   const productTitle = product.name || 'Product Title';
   const affiliateLink = product.affiliateLink || '#';
   const priceDisplay = product.priceDisplay || (product.price !== null && product.price !== undefined ? formatCurrency(product.price) : 'Price not available');
 
-  const hasProductSpecificCashback = !!product.productSpecificCashbackDisplay;
-  const cashbackDisplay = hasProductSpecificCashback ? product.productSpecificCashbackDisplay : storeContext?.cashbackRate || null;
-  const cashbackTypeForIcon = hasProductSpecificCashback ? product.productSpecificCashbackType : storeContext?.cashbackType;
+  // Determine cashback display and type
+  let cashbackDisplayString: string | null = null;
+  let cashbackTypeForIconToUse: CashbackType | undefined | null = undefined;
+
+  if (product.productSpecificCashbackDisplay) {
+    cashbackDisplayString = product.productSpecificCashbackDisplay;
+    cashbackTypeForIconToUse = product.productSpecificCashbackType;
+    // Heuristic if type is missing but display string is present
+    if (!cashbackTypeForIconToUse) {
+      if (cashbackDisplayString.includes("₹") || cashbackDisplayString.toLowerCase().includes("flat")) {
+        cashbackTypeForIconToUse = 'fixed';
+      } else if (cashbackDisplayString.includes("%")) {
+        cashbackTypeForIconToUse = 'percentage';
+      }
+    }
+  } else if (storeContext?.cashbackRate) {
+    cashbackDisplayString = storeContext.cashbackRate;
+    cashbackTypeForIconToUse = storeContext.cashbackType;
+     // Heuristic for store cashback if type is missing
+    if (!cashbackTypeForIconToUse) {
+      if (cashbackDisplayString.includes("₹") || cashbackDisplayString.toLowerCase().includes("flat")) {
+        cashbackTypeForIconToUse = 'fixed';
+      } else if (cashbackDisplayString.includes("%")) {
+        cashbackTypeForIconToUse = 'percentage';
+      }
+    }
+  }
 
 
   const handleShopNow = async () => {
     setIsProcessingClick(true);
-    console.log("ProductCard: handleShopNow triggered for product:", product.id, "User:", user?.uid);
-
     if (authLoading) {
       toast({ title: "Please wait", description: "Checking authentication..."});
       setIsProcessingClick(false);
@@ -120,10 +142,8 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
 
     const clickId = uuidv4();
     const finalAffiliateLinkWithClickId = appendClickIdToUrl(affiliateLink, clickId);
-    console.log("ProductCard: Generated Click ID:", clickId, "Final URL:", finalAffiliateLinkWithClickId);
 
     if (!user) {
-        console.log("ProductCard: User not logged in. Storing redirect and navigating to login.");
         sessionStorage.setItem('loginRedirectUrl', finalAffiliateLinkWithClickId);
         sessionStorage.setItem('loginRedirectSource', router.asPath);
         router.push(`/login?message=Please login to track cashback for this product.`);
@@ -140,17 +160,16 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
         clickId: clickId,
         affiliateLink: finalAffiliateLinkWithClickId,
         originalLink: affiliateLink,
+        // Pass product-specific cashback details if available
         clickedCashbackDisplay: product.productSpecificCashbackDisplay || null,
         clickedCashbackRateValue: product.productSpecificCashbackRateValue ?? null,
         clickedCashbackType: product.productSpecificCashbackType || null,
     };
 
-    console.log("ProductCard: Preparing to track click (client-side):", clickData);
-
     try {
         const trackResult = await trackClickClientSide(clickData);
         if (trackResult.success) {
-            console.log(`ProductCard: Click tracked successfully (client-side) for Product ${product.id}, ClickID ${trackResult.clickId}`);
+            // console.log(`ProductCard: Click tracked successfully (client-side) for Product ${product.id}, ClickID ${trackResult.clickId}`);
         } else {
             console.error("ProductCard: Failed to track product click (client-side util error):", trackResult.error);
             toast({title: "Tracking Issue", description: `Could not fully track click: ${trackResult.error}. Proceeding to store.`, variant: "destructive", duration: 7000});
@@ -160,7 +179,6 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
         toast({title: "Tracking Error", description: "An unexpected error during click tracking. Proceeding to store.", variant: "destructive", duration: 7000});
     }
 
-    console.log("ProductCard: Opening affiliate link in new tab:", finalAffiliateLinkWithClickId);
     window.open(finalAffiliateLinkWithClickId, '_blank', 'noopener,noreferrer');
     setIsProcessingClick(false);
   };
@@ -175,9 +193,9 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
             className="object-contain group-hover:scale-105 transition-transform duration-300 p-2"
-            data-ai-hint={product.dataAiHint || "product image"}
+            data-ai-hint={product.dataAiHint || "product item"}
             onError={(e) => {
-                (e.target as HTMLImageElement).src = `https://placehold.co/300x300.png?text=${encodeURIComponent(placeholderText)}`;
+                (e.target as HTMLImageElement).src = `https://placehold.co/300x300.png?text=${encodeURIComponent(placeholderTextForImage)}`;
             }}
             />
         </a>
@@ -196,16 +214,16 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
            )}
         </div>
         <div className="mt-auto">
-          <p className="text-base font-semibold text-primary mb-1"> {/* Price first */}
+          <p className="text-base font-semibold text-primary mb-1">
             {priceDisplay}
           </p>
-          {cashbackDisplay && (
-            <p className="text-xs text-green-600 font-semibold mb-3 flex items-center"> {/* Cashback second, increased bottom margin */}
-              {cashbackTypeForIcon === 'fixed' ? <IndianRupee className="w-3 h-3 mr-0.5"/> : <Percent className="w-3 h-3 mr-0.5"/>}
-              {cashbackDisplay} Cashback
+          {cashbackDisplayString && (
+            <p className="text-xs text-green-600 font-semibold mb-3 flex items-center">
+              {cashbackTypeForIconToUse === 'fixed' ? <IndianRupee className="w-3 h-3 mr-0.5"/> : cashbackTypeForIconToUse === 'percentage' ? <Percent className="w-3 h-3 mr-0.5"/> : null}
+              {cashbackDisplayString} Cashback
             </p>
           )}
-          {!cashbackDisplay && <div className="mb-3 h-[18px]"></div> /* Placeholder for consistent button spacing if no cashback */}
+          {!cashbackDisplayString && <div className="mb-3 h-[18px]"></div>}
           <Button
             size="sm"
             className="w-full text-xs bg-amber-500 hover:bg-amber-600 text-white"
