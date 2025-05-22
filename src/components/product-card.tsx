@@ -24,6 +24,7 @@ const isValidHttpUrl = (string: string | undefined | null): boolean => {
   if (!string) return false;
   let url;
   try {
+    // Basic check for common error strings that might accidentally be passed as URLs
     if (string.startsWith("Error:") || string.startsWith("Unhandled") || string.length > 2048) {
       console.warn("Invalid URL pattern detected in isValidHttpUrl:", string);
       return false;
@@ -55,6 +56,7 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
   const [isProcessingClick, setIsProcessingClick] = React.useState(false);
 
   if (!product || !product.name) {
+    // Fallback for invalid product prop
     const placeholderText = "Product";
     const tempImageUrl = `https://placehold.co/300x300.png?text=${encodeURIComponent(placeholderText)}`;
     return (
@@ -89,48 +91,65 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
     );
   }
 
-  const placeholderTextForImage = product.name ? product.name.substring(0, 15) : "Product";
+
+  const productTitle = product.name || 'Product Title';
+  const placeholderTextForImage = productTitle.substring(0, 15);
   const imageUrl = isValidHttpUrl(product.imageUrl)
     ? product.imageUrl!
     : `https://placehold.co/300x300.png?text=${encodeURIComponent(placeholderTextForImage)}`;
 
-  const productTitle = product.name || 'Product Title';
   const affiliateLink = product.affiliateLink || '#';
   const priceDisplay = product.priceDisplay || (product.price !== null && product.price !== undefined ? formatCurrency(product.price) : 'Price not available');
 
   let cashbackDisplayString: string | null = null;
   let cashbackTypeForIconToUse: CashbackType | undefined | null = undefined;
+  let calculatedCashbackValue: number | null = null;
+  let priceAfterCashback: number | null = null;
 
-  // --- REVISED CASHBACK LOGIC ---
   const hasProductSpecificDisplay = product.productSpecificCashbackDisplay && product.productSpecificCashbackDisplay.trim() !== "";
-  const hasProductSpecificRateAndType = typeof product.productSpecificCashbackRateValue === 'number' && product.productSpecificCashbackRateValue > 0 && product.productSpecificCashbackType;
+  const hasProductSpecificRateAndType = typeof product.productSpecificCashbackRateValue === 'number' && product.productSpecificCashbackRateValue >= 0 && product.productSpecificCashbackType;
 
   if (hasProductSpecificDisplay) {
     cashbackDisplayString = product.productSpecificCashbackDisplay;
     cashbackTypeForIconToUse = product.productSpecificCashbackType;
-    // Heuristic if type is explicitly missing but display string gives a clue
-    if (!cashbackTypeForIconToUse) {
-      if (cashbackDisplayString!.includes("₹") || cashbackDisplayString!.toLowerCase().includes("flat")) cashbackTypeForIconToUse = 'fixed';
-      else if (cashbackDisplayString!.includes("%")) cashbackTypeForIconToUse = 'percentage';
+    if (product.price !== null && product.price !== undefined && typeof product.productSpecificCashbackRateValue === 'number' && product.productSpecificCashbackRateValue >=0) {
+      if (product.productSpecificCashbackType === 'fixed') {
+        calculatedCashbackValue = product.productSpecificCashbackRateValue;
+      } else if (product.productSpecificCashbackType === 'percentage') {
+        calculatedCashbackValue = (product.price * product.productSpecificCashbackRateValue) / 100;
+      }
     }
   } else if (hasProductSpecificRateAndType) {
-    // Construct display string if explicit display text is missing but rate/type are set
     cashbackTypeForIconToUse = product.productSpecificCashbackType;
     if (product.productSpecificCashbackType === 'fixed') {
       cashbackDisplayString = `${formatCurrency(product.productSpecificCashbackRateValue!)} Cashback`;
+      if (product.price !== null && product.price !== undefined) calculatedCashbackValue = product.productSpecificCashbackRateValue!;
     } else if (product.productSpecificCashbackType === 'percentage') {
       cashbackDisplayString = `${product.productSpecificCashbackRateValue!}% Cashback`;
+      if (product.price !== null && product.price !== undefined) calculatedCashbackValue = (product.price * product.productSpecificCashbackRateValue!) / 100;
     }
-  } else if (storeContext?.cashbackRate) {
-    // Fallback to store-level cashback
+  } else if (storeContext?.cashbackRate && storeContext.cashbackRateValue != null && storeContext.cashbackType) {
     cashbackDisplayString = storeContext.cashbackRate;
     cashbackTypeForIconToUse = storeContext.cashbackType;
-    if (!cashbackTypeForIconToUse && cashbackDisplayString) {
-        if (cashbackDisplayString.includes("₹") || cashbackDisplayString.toLowerCase().includes("flat")) cashbackTypeForIconToUse = 'fixed';
-        else if (cashbackDisplayString.includes("%")) cashbackTypeForIconToUse = 'percentage';
+     if (product.price !== null && product.price !== undefined && typeof storeContext.cashbackRateValue === 'number' && storeContext.cashbackRateValue >=0) {
+      if (storeContext.cashbackType === 'fixed') {
+        calculatedCashbackValue = storeContext.cashbackRateValue;
+      } else if (storeContext.cashbackType === 'percentage') {
+        calculatedCashbackValue = (product.price * storeContext.cashbackRateValue) / 100;
+      }
     }
   }
-  // --- END REVISED CASHBACK LOGIC ---
+
+  // Fallback for icon type if not explicitly set but display string gives a clue
+  if (!cashbackTypeForIconToUse && cashbackDisplayString) {
+      if (cashbackDisplayString.includes("₹") || cashbackDisplayString.toLowerCase().includes("flat")) cashbackTypeForIconToUse = 'fixed';
+      else if (cashbackDisplayString.includes("%")) cashbackTypeForIconToUse = 'percentage';
+  }
+  
+  if (product.price !== null && product.price !== undefined && calculatedCashbackValue !== null) {
+    priceAfterCashback = product.price - calculatedCashbackValue;
+  }
+
 
   const handleShopNow = async () => {
     setIsProcessingClick(true);
@@ -149,8 +168,9 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
     const finalAffiliateLinkWithClickId = appendClickIdToUrl(affiliateLink, clickId);
 
     if (!user) {
+        console.log("ProductCard: User not logged in. Storing redirect and navigating to login.");
         sessionStorage.setItem('loginRedirectUrl', finalAffiliateLinkWithClickId);
-        sessionStorage.setItem('loginRedirectSource', router.asPath);
+        sessionStorage.setItem('loginRedirectSource', router.asPath); // Save current path
         router.push(`/login?message=Please login to track cashback for this product.`);
         setIsProcessingClick(false);
         return;
@@ -165,16 +185,20 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
         clickId: clickId,
         affiliateLink: finalAffiliateLinkWithClickId,
         originalLink: affiliateLink,
+        // Pass cashback details at time of click
         clickedCashbackDisplay: product.productSpecificCashbackDisplay || null,
         clickedCashbackRateValue: product.productSpecificCashbackRateValue ?? null,
         clickedCashbackType: product.productSpecificCashbackType || null,
     };
+    console.log("ProductCard: Preparing to track click (client-side):", clickData);
 
     try {
         const trackResult = await trackClickClientSide(clickData);
         if (!trackResult.success) {
             console.error("ProductCard: Failed to track product click (client-side util error):", trackResult.error);
             toast({title: "Tracking Issue", description: `Could not fully track click: ${trackResult.error}. Proceeding to store.`, variant: "destructive", duration: 7000});
+        } else {
+            console.log("ProductCard: Click tracked successfully (client-side). Click ID:", trackResult.clickId);
         }
     } catch (e) {
         console.error("ProductCard: Error calling trackClickClientSide:", e);
@@ -216,17 +240,25 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
            )}
         </div>
         <div className="mt-auto">
-          <p className="text-base font-semibold text-primary mb-1">
+          <p className="text-base font-semibold text-foreground mb-1">
             {priceDisplay}
           </p>
-          {cashbackDisplayString ? (
-            <p className="text-xs text-green-600 font-semibold mb-3 flex items-center">
+          {cashbackDisplayString && (
+            <p className="text-xs text-green-600 font-semibold mb-1 flex items-center">
               {cashbackTypeForIconToUse === 'fixed' ? <IndianRupee className="w-3 h-3 mr-0.5 flex-shrink-0"/> : cashbackTypeForIconToUse === 'percentage' ? <Percent className="w-3 h-3 mr-0.5 flex-shrink-0"/> : null}
               {cashbackDisplayString}
             </p>
-          ) : (
-            <div className="mb-3 h-[18px]"></div> // Placeholder for consistent button alignment
           )}
+          {priceAfterCashback !== null && calculatedCashbackValue !== null && calculatedCashbackValue > 0 ? (
+            <p className="text-sm font-bold text-primary mb-3">
+              Effective Price: {formatCurrency(priceAfterCashback)}
+            </p>
+          ) : cashbackDisplayString ? (
+             <div className="mb-3 h-[20px]"></div> // Placeholder for spacing if only cashback string is shown
+          ) : (
+            <div className="mb-3 h-[38px]"></div> // Placeholder if neither cashback string nor effective price is shown
+          )}
+
           <Button
             size="sm"
             className="w-full text-xs bg-amber-500 hover:bg-amber-600 text-white"
@@ -241,4 +273,3 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
     </Card>
   );
 }
-
