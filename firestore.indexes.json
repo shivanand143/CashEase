@@ -1,3 +1,4 @@
+
 {
   "indexes": [
     {
@@ -10,26 +11,11 @@
       ]
     },
     {
-      "collectionGroup": "clicks",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "clickId", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "payoutRequests",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "requestedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "payoutRequests",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "requestedAt", "order": "DESCENDING" }
+        { "fieldPath": "requestedAt", "order": "ASCENDING" }
       ]
     },
     {
@@ -51,23 +37,6 @@
       ]
     },
     {
-      "collectionGroup": "transactions",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "transactionDate", "order": "ASCENDING" }
-      ]
-    },
-     {
-      "collectionGroup": "transactions",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "storeId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "transactionDate", "order": "DESCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "stores",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -76,7 +45,7 @@
         { "fieldPath": "name", "order": "ASCENDING" }
       ]
     },
-     {
+    {
       "collectionGroup": "stores",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -121,7 +90,7 @@
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
-     {
+    {
       "collectionGroup": "coupons",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -203,6 +172,14 @@
       "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "orderId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "payoutRequests",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "DESCENDING" }
       ]
     }
   ],
