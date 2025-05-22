@@ -17,7 +17,7 @@ import * as React from 'react';
 
 interface ProductCardProps {
   product: Product;
-  storeContext?: Store; // Store data passed from parent if available
+  storeContext?: Store;
 }
 
 const isValidHttpUrl = (string: string | undefined | null): boolean => {
@@ -25,8 +25,8 @@ const isValidHttpUrl = (string: string | undefined | null): boolean => {
   let url;
   try {
     if (string.startsWith("Error:") || string.startsWith("Unhandled") || string.length > 2048) {
-        console.warn("Invalid URL pattern detected in isValidHttpUrl:", string);
-        return false;
+      console.warn("Invalid URL pattern detected in isValidHttpUrl:", string);
+      return false;
     }
     url = new URL(string);
   } catch (_) {
@@ -98,34 +98,39 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
   const affiliateLink = product.affiliateLink || '#';
   const priceDisplay = product.priceDisplay || (product.price !== null && product.price !== undefined ? formatCurrency(product.price) : 'Price not available');
 
-  // Determine cashback display and type
   let cashbackDisplayString: string | null = null;
   let cashbackTypeForIconToUse: CashbackType | undefined | null = undefined;
 
-  if (product.productSpecificCashbackDisplay) {
+  // --- REVISED CASHBACK LOGIC ---
+  const hasProductSpecificDisplay = product.productSpecificCashbackDisplay && product.productSpecificCashbackDisplay.trim() !== "";
+  const hasProductSpecificRateAndType = typeof product.productSpecificCashbackRateValue === 'number' && product.productSpecificCashbackRateValue > 0 && product.productSpecificCashbackType;
+
+  if (hasProductSpecificDisplay) {
     cashbackDisplayString = product.productSpecificCashbackDisplay;
     cashbackTypeForIconToUse = product.productSpecificCashbackType;
-    // Heuristic if type is missing but display string is present
+    // Heuristic if type is explicitly missing but display string gives a clue
     if (!cashbackTypeForIconToUse) {
-      if (cashbackDisplayString.includes("₹") || cashbackDisplayString.toLowerCase().includes("flat")) {
-        cashbackTypeForIconToUse = 'fixed';
-      } else if (cashbackDisplayString.includes("%")) {
-        cashbackTypeForIconToUse = 'percentage';
-      }
+      if (cashbackDisplayString!.includes("₹") || cashbackDisplayString!.toLowerCase().includes("flat")) cashbackTypeForIconToUse = 'fixed';
+      else if (cashbackDisplayString!.includes("%")) cashbackTypeForIconToUse = 'percentage';
+    }
+  } else if (hasProductSpecificRateAndType) {
+    // Construct display string if explicit display text is missing but rate/type are set
+    cashbackTypeForIconToUse = product.productSpecificCashbackType;
+    if (product.productSpecificCashbackType === 'fixed') {
+      cashbackDisplayString = `${formatCurrency(product.productSpecificCashbackRateValue!)} Cashback`;
+    } else if (product.productSpecificCashbackType === 'percentage') {
+      cashbackDisplayString = `${product.productSpecificCashbackRateValue!}% Cashback`;
     }
   } else if (storeContext?.cashbackRate) {
+    // Fallback to store-level cashback
     cashbackDisplayString = storeContext.cashbackRate;
     cashbackTypeForIconToUse = storeContext.cashbackType;
-     // Heuristic for store cashback if type is missing
-    if (!cashbackTypeForIconToUse) {
-      if (cashbackDisplayString.includes("₹") || cashbackDisplayString.toLowerCase().includes("flat")) {
-        cashbackTypeForIconToUse = 'fixed';
-      } else if (cashbackDisplayString.includes("%")) {
-        cashbackTypeForIconToUse = 'percentage';
-      }
+    if (!cashbackTypeForIconToUse && cashbackDisplayString) {
+        if (cashbackDisplayString.includes("₹") || cashbackDisplayString.toLowerCase().includes("flat")) cashbackTypeForIconToUse = 'fixed';
+        else if (cashbackDisplayString.includes("%")) cashbackTypeForIconToUse = 'percentage';
     }
   }
-
+  // --- END REVISED CASHBACK LOGIC ---
 
   const handleShopNow = async () => {
     setIsProcessingClick(true);
@@ -160,7 +165,6 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
         clickId: clickId,
         affiliateLink: finalAffiliateLinkWithClickId,
         originalLink: affiliateLink,
-        // Pass product-specific cashback details if available
         clickedCashbackDisplay: product.productSpecificCashbackDisplay || null,
         clickedCashbackRateValue: product.productSpecificCashbackRateValue ?? null,
         clickedCashbackType: product.productSpecificCashbackType || null,
@@ -168,9 +172,7 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
 
     try {
         const trackResult = await trackClickClientSide(clickData);
-        if (trackResult.success) {
-            // console.log(`ProductCard: Click tracked successfully (client-side) for Product ${product.id}, ClickID ${trackResult.clickId}`);
-        } else {
+        if (!trackResult.success) {
             console.error("ProductCard: Failed to track product click (client-side util error):", trackResult.error);
             toast({title: "Tracking Issue", description: `Could not fully track click: ${trackResult.error}. Proceeding to store.`, variant: "destructive", duration: 7000});
         }
@@ -217,13 +219,14 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
           <p className="text-base font-semibold text-primary mb-1">
             {priceDisplay}
           </p>
-          {cashbackDisplayString && (
+          {cashbackDisplayString ? (
             <p className="text-xs text-green-600 font-semibold mb-3 flex items-center">
-              {cashbackTypeForIconToUse === 'fixed' ? <IndianRupee className="w-3 h-3 mr-0.5"/> : cashbackTypeForIconToUse === 'percentage' ? <Percent className="w-3 h-3 mr-0.5"/> : null}
-              {cashbackDisplayString} Cashback
+              {cashbackTypeForIconToUse === 'fixed' ? <IndianRupee className="w-3 h-3 mr-0.5 flex-shrink-0"/> : cashbackTypeForIconToUse === 'percentage' ? <Percent className="w-3 h-3 mr-0.5 flex-shrink-0"/> : null}
+              {cashbackDisplayString}
             </p>
+          ) : (
+            <div className="mb-3 h-[18px]"></div> // Placeholder for consistent button alignment
           )}
-          {!cashbackDisplayString && <div className="mb-3 h-[18px]"></div>}
           <Button
             size="sm"
             className="w-full text-xs bg-amber-500 hover:bg-amber-600 text-white"
@@ -238,3 +241,4 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
     </Card>
   );
 }
+
