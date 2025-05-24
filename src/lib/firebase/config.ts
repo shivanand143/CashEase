@@ -17,11 +17,11 @@ const firebaseConfig: FirebaseOptions = {
 // Function to check if all required keys have values
 function checkFirebaseConfig(config: FirebaseOptions): string[] {
     const requiredKeys: Array<keyof FirebaseOptions> = [
-        'apiKey', 'authDomain', 'projectId', // storageBucket, messagingSenderId, appId are often essential too
+        'apiKey', 'authDomain', 'projectId' // storageBucket, messagingSenderId, appId are often essential too
     ];
     // More robust check for critical values
     const missing = requiredKeys.filter(key => !config[key]);
-    if (!config.appId && !config.messagingSenderId && !config.storageBucket) {
+    if (!config.appId && !config.messagingSenderId && !config.storageBucket && !config.measurementId) {
         // If none of the 'often essential but sometimes optional' are present, flag appId as generally needed.
         if (!config.appId) missing.push('appId');
     }
@@ -36,27 +36,34 @@ let firebaseInitializationError: string | null = null;
 const missingEnvVars = checkFirebaseConfig(firebaseConfig);
 
 if (missingEnvVars.length > 0) {
-  firebaseInitializationError = `Warning: Missing Firebase environment variables: ${missingEnvVars.join(', ')}. Firebase features will be unavailable. Please check your .env.local or environment configuration.`;
-  console.warn(firebaseInitializationError);
-  // Ensure services remain null if config is incomplete
+  firebaseInitializationError = `Warning: Missing Firebase environment variables for the primary project: ${missingEnvVars.join(', ')}. Firebase features will be unavailable. Please check your .env.local or environment configuration.`;
+  console.warn(firebaseInitializationError); // Use warn for client-side visibility
+  // Ensure services remain null
   app = null;
   auth = null;
   db = null;
 } else {
   try {
-    // Initialize Firebase only if config is valid
-    if (!getApps().length) {
-      app = initializeApp(firebaseConfig);
-      console.log("Firebase initialized successfully with primary config.");
-    } else {
-      app = getApp(); // Get default app if already initialized
-      console.log("Firebase default app already initialized, using existing instance for primary config.");
+    // Initialize Firebase only if config is valid and no previous error occurred
+    if (!firebaseInitializationError) { // Check if error is not already set
+        if (!getApps().length) {
+            app = initializeApp(firebaseConfig);
+            console.log("Firebase primary app initialized successfully.");
+        } else {
+            app = getApp(); // Get default app if already initialized
+            console.log("Firebase primary app already initialized, using existing instance.");
+        }
+        auth = getAuth(app);
+        db = getFirestore(app);
     }
-    auth = getAuth(app);
-    db = getFirestore(app);
   } catch (error: any) {
-    firebaseInitializationError = `Error initializing Firebase: ${error.message}`;
-    console.error(firebaseInitializationError, "Config used (API Key masked):", { ...firebaseConfig, apiKey: firebaseConfig.apiKey ? 'VALID_KEY_PRESENT' : 'MISSING_OR_INVALID' });
+    firebaseInitializationError = `Error initializing Firebase primary app: ${error.message}`;
+    console.error(firebaseInitializationError);
+    // Log the specific config used if it helps debugging (mask API key)
+    console.error("Primary Firebase Config used (API Key masked):", {
+        ...firebaseConfig,
+        apiKey: firebaseConfig.apiKey ? 'PRESENT' : 'MISSING_OR_INVALID',
+    });
     // Set services to null on error
     app = null;
     auth = null;
