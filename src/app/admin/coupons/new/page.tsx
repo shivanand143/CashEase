@@ -1,3 +1,4 @@
+
 // src/app/admin/coupons/new/page.tsx
 "use client";
 
@@ -28,15 +29,15 @@ import { cn, safeToDate } from '@/lib/utils';
 
 const couponSchema = z.object({
   storeId: z.string().min(1, 'Store is required'),
-  code: z.string().optional().nullable(),
+  code: z.string().max(50, "Code too long").optional().nullable(),
   description: z.string().min(5, 'Description is too short').max(250, 'Description too long'),
-  link: z.string().url('Invalid URL format').optional().or(z.literal('')).nullable(), // Allow empty string for link
+  link: z.string().url('Invalid URL format').optional().or(z.literal('')).nullable(),
   expiryDate: z.date().optional().nullable(),
   isFeatured: z.boolean().default(false),
   isActive: z.boolean().default(true),
 }).refine(data => data.code || data.link, {
   message: "Either a Coupon Code or a Link is required",
-  path: ["code"], // Or path: ["link"] if you prefer the error on link
+  path: ["code"],
 });
 
 function AddCouponPageSkeleton() {
@@ -121,11 +122,14 @@ export default function AddCouponPage() {
     }
     setIsSaving(true);
     setPageError(null);
+
+    const jsExpiryDate = data.expiryDate ? safeToDate(data.expiryDate) : null;
+
     const submissionData = {
       ...data,
       code: data.code || null,
       link: data.link || null,
-      expiryDate: data.expiryDate ? Timestamp.fromDate(data.expiryDate) : null, // Convert JS Date to Firestore Timestamp
+      expiryDate: jsExpiryDate ? Timestamp.fromDate(jsExpiryDate) : null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -183,6 +187,7 @@ export default function AddCouponPage() {
                 <div className="space-y-1">
                   <Label htmlFor="code">Coupon Code</Label>
                   <Input id="code" {...form.register('code')} placeholder="Optional (e.g., SAVE10)" disabled={isSaving} />
+                  {form.formState.errors.code && form.formState.errors.code.type !== 'refine' && <p className="text-sm text-destructive">{form.formState.errors.code.message}</p>}
                 </div>
               </div>
 
@@ -206,7 +211,7 @@ export default function AddCouponPage() {
                         <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal h-10", !field.value && "text-muted-foreground")} disabled={isSaving}>
                           <CalendarIcon className="mr-2 h-4 w-4" />
                           {(() => {
-                            const date = safeToDate(field.value);
+                            const date = field.value ? safeToDate(field.value) : null;
                             return date ? format(date, "PPP") : <span>Optional: Pick a date</span>;
                           })()}
                         </Button>
@@ -217,7 +222,7 @@ export default function AddCouponPage() {
                             selected={field.value ? safeToDate(field.value) : undefined} 
                             onSelect={(date) => field.onChange(date || null)} 
                             initialFocus 
-                            disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))} // Disable past dates
+                            disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
                         />
                       </PopoverContent>
                     </Popover>

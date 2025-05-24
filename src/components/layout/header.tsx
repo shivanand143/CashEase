@@ -21,10 +21,10 @@ import {
   SheetTrigger,
   SheetClose,
 } from "@/components/ui/sheet";
-import { VisuallyHidden } from '@/components/ui/visually-hidden';
+import { VisuallyHidden } from '@/components/ui/visually-hidden'; // Added for Sheet a11y
 import {
     LogIn, LogOut, User, IndianRupee, ShoppingBag, LayoutDashboard, Settings, Menu,
-    Tag, ShieldCheck, Gift, History, Send, X, List, HelpCircle, BookOpen, Search as SearchIcon
+    Tag, ShieldCheck, Gift, History, Send, X, List, HelpCircle, BookOpen, Search as SearchIcon, MousePointerClick, ReceiptText
 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -33,7 +33,8 @@ import { cn } from '@/lib/utils';
 import { Separator } from "@/components/ui/separator";
 import { Input } from '@/components/ui/input';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useHasMounted } from '@/hooks/use-has-mounted'; // Import the new hook
+import { useHasMounted } from '@/hooks/use-has-mounted';
+import { useToast } from '@/hooks/use-toast'; // Import useToast
 
 export default function Header() {
   const { user, userProfile, loading: authLoadingHook, signOut } = useAuth();
@@ -43,11 +44,12 @@ export default function Header() {
   const router = useRouter();
   const isMobile = useIsMobile();
   const hasMounted = useHasMounted();
+  const { toast } = useToast(); // Initialize toast
 
   const getInitials = (name?: string | null) => {
-    if (!name) return 'MS';
+    if (!name) return 'MS'; // MagicSaver initials
     const parts = name.split(' ');
-    if (parts.length > 1) {
+    if (parts.length > 1 && parts[0] && parts[parts.length - 1]) {
       return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }
     return name.substring(0, 2).toUpperCase();
@@ -61,7 +63,7 @@ export default function Header() {
   ];
 
   const sheetNavLinks = [
-    { href: "/", label: "Home", icon: ShoppingBag },
+    { href: "/", label: "Home", icon: ShoppingBag }, // Changed icon to Home
     { href: "/stores", label: "All Stores", icon: ShoppingBag },
     { href: "/coupons", label: "All Coupons", icon: Tag },
     { href: "/categories", label: "Categories", icon: List },
@@ -74,9 +76,9 @@ export default function Header() {
   const userMenuItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/dashboard/history", label: "Cashback History", icon: History },
-    { href: "/dashboard/clicks", label: "Click History", icon: User }, // Changed icon for variety
+    { href: "/dashboard/clicks", label: "Click History", icon: MousePointerClick },
     { href: "/dashboard/payout", label: "Request Payout", icon: Send },
-    { href: "/dashboard/payout-history", label: "Payout History", icon: List },
+    { href: "/dashboard/payout-history", label: "Payout History", icon: ReceiptText },
     { href: "/dashboard/referrals", label: "Refer & Earn", icon: Gift },
     { href: "/dashboard/settings", label: "Account Settings", icon: Settings },
   ];
@@ -91,7 +93,7 @@ export default function Header() {
   const handleSearchSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!searchTerm.trim()) return;
-    setIsSheetOpen(false); 
+    setIsSheetOpen(false);
     router.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`);
     setSearchTerm('');
   };
@@ -99,17 +101,28 @@ export default function Header() {
   const handleSheetLinkClick = () => {
       setIsSheetOpen(false);
   }
-  const sheetTitleId = "mobile-main-menu-title";
+  const sheetTitleId = "mobile-main-menu-title"; // For ARIA
+
+  const handleSignOut = () => {
+    if (typeof signOut === 'function') {
+      signOut();
+    } else {
+      console.error("Header: signOut function is not available from useAuth.");
+      toast({ variant: "destructive", title: "Logout Error", description: "Unable to logout at this moment. Please try again." });
+    }
+    setIsSheetOpen(false); // Also ensure sheet closes if this was in mobile menu
+  };
+
 
   if (!hasMounted) {
     // Render a minimal, consistent header for SSR and initial client render
+    // This helps prevent hydration mismatches with more complex conditional rendering.
     return (
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto flex h-14 items-center justify-between gap-2 px-4 md:px-6">
           <div className="flex items-center">
-            <Button variant="ghost" size="icon" className="mr-2 md:hidden">
+            <Button variant="ghost" size="icon" className="mr-2 md:hidden" aria-label="Open menu">
               <Menu className="h-5 w-5" />
-              <span className="sr-only">Toggle Menu</span>
             </Button>
             <Link href="/" className="flex items-center space-x-2 mr-4">
               <IndianRupee className="h-6 w-6 text-primary" />
@@ -117,8 +130,11 @@ export default function Header() {
             </Link>
           </div>
           <div className="flex items-center space-x-2">
-            {/* Placeholder for auth buttons/avatar to maintain structure */}
-            <Skeleton className="h-9 w-20 hidden md:block" /> 
+            {/* Static placeholders for desktop */}
+            <div className="hidden md:flex items-center space-x-1">
+              <Skeleton className="h-8 w-20 rounded-md" />
+              <Skeleton className="h-8 w-20 rounded-md" />
+            </div>
             <Skeleton className="h-9 w-9 rounded-full" />
           </div>
         </div>
@@ -126,17 +142,16 @@ export default function Header() {
     );
   }
 
-  // Render full header content once mounted
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex h-14 items-center justify-between gap-2 px-4 md:px-6">
+        {/* Left section: Mobile Menu Toggle and Logo */}
         <div className="flex items-center">
           {isMobile && (
             <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="mr-2">
+                <Button variant="ghost" size="icon" className="mr-2" aria-label="Open menu">
                   <Menu className="h-5 w-5" />
-                  <span className="sr-only">Toggle Menu</span>
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-full max-w-xs p-0 flex flex-col bg-background" aria-labelledby={sheetTitleId}>
@@ -147,7 +162,7 @@ export default function Header() {
                         <span className="font-bold text-lg text-foreground">MagicSaver</span>
                     </Link>
                     <SheetClose asChild>
-                        <Button variant="ghost" size="icon"> <X className="h-5 w-5"/> <span className="sr-only">Close Menu</span></Button>
+                        <Button variant="ghost" size="icon" aria-label="Close menu"> <X className="h-5 w-5"/> </Button>
                     </SheetClose>
                 </SheetHeader>
                 <div className="flex-grow overflow-y-auto">
@@ -205,7 +220,7 @@ export default function Header() {
                           </SheetClose>
                         )}
                         <Separator className="my-2" />
-                        <Button variant="ghost" onClick={() => { signOut(); setIsSheetOpen(false); }} className="w-full justify-start px-3 py-2.5 text-base font-medium">
+                        <Button variant="ghost" onClick={handleSignOut} className="w-full justify-start px-3 py-2.5 text-base font-medium">
                           <LogOut className="mr-3 h-5 w-5" /> Logout
                         </Button>
                       </>
@@ -236,8 +251,9 @@ export default function Header() {
           </Link>
         </div>
 
+        {/* Desktop Navigation - Centered */}
         {!isMobile && (
-          <nav className="flex-1 flex justify-center items-center gap-6 text-sm font-medium">
+          <nav className="flex-1 flex justify-center items-center gap-4 lg:gap-6 text-sm font-medium">
               {desktopNavLinks.map((link) => (
                 <Link
                   key={link.href}
@@ -253,9 +269,10 @@ export default function Header() {
             </nav>
         )}
         
-        <div className="flex items-center space-x-2">
+        {/* Right section: Desktop Search and Auth */}
+        <div className="flex items-center space-x-1 md:space-x-2">
           {!isMobile && (
-            <form onSubmit={handleSearchSubmit} className="w-full max-w-xs relative hidden lg:block">
+            <form onSubmit={handleSearchSubmit} className="w-full max-w-[150px] sm:max-w-xs relative hidden lg:block">
                 <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                 type="search"
@@ -309,9 +326,9 @@ export default function Header() {
                       </DropdownMenuItem>
                       )}
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={signOut}>
-                      <LogOut className="mr-2 h-4 w-4" />
-                      <span>Log out</span>
+                      <DropdownMenuItem onClick={handleSignOut}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        <span>Log out</span>
                       </DropdownMenuItem>
                   </DropdownMenuContent>
                   </DropdownMenu>
@@ -332,3 +349,4 @@ export default function Header() {
     </header>
   );
 }
+

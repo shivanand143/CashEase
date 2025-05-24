@@ -27,7 +27,7 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Coupon, Store } from '@/lib/types';
+import type { Coupon, Store, CouponFormValues as AppCouponFormValues } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -47,7 +47,7 @@ import { Label } from '@/components/ui/label';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, CheckCircle, XCircle, ExternalLink, CalendarIcon, Star, BadgePercent } from 'lucide-react';
+import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, ExternalLink, CalendarIcon, Star, BadgePercent } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -58,7 +58,6 @@ import {
   DialogDescription,
   DialogFooter,
   DialogClose,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -72,7 +71,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
-import { format, isValid } from 'date-fns';
+import { format } from 'date-fns';
 import { cn, safeToDate } from '@/lib/utils';
 import {
   DropdownMenu,
@@ -94,7 +93,7 @@ interface CouponWithStoreName extends Coupon {
 
 const couponSchema = z.object({
   storeId: z.string().min(1, 'Store is required'),
-  code: z.string().optional().nullable(),
+  code: z.string().max(50, "Code too long").optional().nullable(),
   description: z.string().min(5, 'Description is too short').max(250, 'Description too long'),
   link: z.string().url('Invalid URL format').optional().or(z.literal('')).nullable(),
   expiryDate: z.date().optional().nullable(),
@@ -105,7 +104,6 @@ const couponSchema = z.object({
   path: ["code"],
 });
 
-type CouponFormValues = z.infer<typeof couponSchema>;
 
 const getStatusVariant = (isActive: boolean, expiryDate?: Date | null): "default" | "secondary" | "destructive" | "outline" => {
    const isExpired = expiryDate ? expiryDate < new Date() : false;
@@ -156,7 +154,7 @@ export default function AdminCouponsPage() {
    useEffect(() => {
      let isMounted = true;
      const fetchStores = async () => {
-       if (!isMounted) return;
+       if (!isMounted || !isDialogOpen) return; // Only fetch if dialog is open
        if (!db || firebaseInitializationError) {
          if (isMounted) {
            setError(firebaseInitializationError || "Database not available for fetching stores.");
@@ -183,20 +181,20 @@ export default function AdminCouponsPage() {
          }
        }
      };
-     if (isDialogOpen) { 
-        fetchStores();
-     }
+     
+     fetchStores();
+     
      return () => { isMounted = false; };
-   }, [toast, isDialogOpen]);
+   }, [toast, isDialogOpen]); // Re-fetch stores when dialog opens
 
-  const form = useForm<CouponFormValues>({
+  const form = useForm<AppCouponFormValues>({ // Use AppCouponFormValues from types
     resolver: zodResolver(couponSchema),
     defaultValues: {
       storeId: '',
       code: null,
       description: '',
       link: null,
-      expiryDate: null,
+      expiryDate: null, // Form uses JS Date or null
       isFeatured: false,
       isActive: true,
     },
@@ -208,15 +206,13 @@ export default function AdminCouponsPage() {
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
   ) => {
     let isMounted = true;
-    if (!isMounted) return;
-
     if (!db || firebaseInitializationError) {
       if(isMounted) {
         setError(firebaseInitializationError || "Database connection not available.");
         if(!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
         setHasMore(false);
       }
-      return;
+      return () => { isMounted = false; };
     }
 
     if (!isLoadMoreOperation) {
@@ -224,7 +220,7 @@ export default function AdminCouponsPage() {
     } else {
       if (!docToStartAfter && isLoadMoreOperation) {
          if(isMounted) setLoadingMore(false);
-         return;
+         return () => { isMounted = false; };
       }
       setLoadingMore(true);
     }
@@ -259,7 +255,7 @@ export default function AdminCouponsPage() {
           code: data.code || null,
           description: data.description || '',
           link: data.link || null,
-          expiryDate: safeToDate(data.expiryDate),
+          expiryDate: safeToDate(data.expiryDate), // Converts Timestamp to Date or null
           isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
           isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
           createdAt: safeToDate(data.createdAt),
@@ -314,6 +310,7 @@ export default function AdminCouponsPage() {
         setIsSearching(false);
       }
     }
+    return () => { isMounted = false; };
   }, [toast]);
 
   useEffect(() => {
@@ -336,29 +333,37 @@ export default function AdminCouponsPage() {
       code: coupon.code ?? null,
       description: coupon.description,
       link: coupon.link ?? null,
-      expiryDate: coupon.expiryDate ? safeToDate(coupon.expiryDate) : null,
+      expiryDate: coupon.expiryDate ? safeToDate(coupon.expiryDate) : null, // Ensure JS Date for form
       isFeatured: coupon.isFeatured,
       isActive: coupon.isActive,
     });
     setIsDialogOpen(true);
   };
 
-  const onSubmit = async (data: CouponFormValues) => {
-    if (!db || !editingCoupon) { setError("Database not available or no coupon selected for edit."); setIsSaving(false); return; }
+  const onSubmit = async (data: AppCouponFormValues) => { // Use AppCouponFormValues from types
+    if (!db || !editingCoupon || firebaseInitializationError) { 
+        setError(firebaseInitializationError || "Database not available or no coupon selected for edit."); 
+        setIsSaving(false); return; 
+    }
     setIsSaving(true); setError(null);
+
+    const jsExpiryDate = data.expiryDate ? safeToDate(data.expiryDate) : null;
+
     const submissionData = {
         ...data,
         code: data.code || null,
         link: data.link || null,
-        expiryDate: data.expiryDate ? Timestamp.fromDate(data.expiryDate) : null,
+        expiryDate: jsExpiryDate ? Timestamp.fromDate(jsExpiryDate) : null, // Convert JS Date to Firestore Timestamp
     };
 
     try {
         const couponDocRef = doc(db, 'coupons', editingCoupon.id);
         await updateDoc(couponDocRef, { ...submissionData, updatedAt: serverTimestamp() });
          const updatedCoupon: CouponWithStoreName = {
-             ...editingCoupon, ...submissionData, updatedAt: new Date(),
-             expiryDate: data.expiryDate, 
+             ...editingCoupon, 
+             ...submissionData, 
+             updatedAt: new Date(),
+             expiryDate: jsExpiryDate, // Keep JS Date for UI
              storeName: storeList.find(s => s.id === submissionData.storeId)?.name || 'Unknown Store'
          };
          setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? updatedCoupon : c));
@@ -462,8 +467,8 @@ export default function AdminCouponsPage() {
                     </TableHeader>
                     <TableBody>
                     {coupons.map((coupon) => {
-                        const expiryDate = safeToDate(coupon.expiryDate);
-                        const isExpired = expiryDate ? expiryDate < new Date() : false;
+                        const expiryDateForDisplay = safeToDate(coupon.expiryDate); // Ensure it's a JS Date for formatting
+                        const isExpired = expiryDateForDisplay ? expiryDateForDisplay < new Date() : false;
                         return (
                             <TableRow key={coupon.id} className={!coupon.isActive || isExpired ? 'opacity-50 bg-muted/30' : ''}>
                             <TableCell className="font-medium text-xs">
@@ -477,7 +482,7 @@ export default function AdminCouponsPage() {
                                 {!coupon.code && !coupon.link && <span className="text-xs text-muted-foreground">-</span>}
                             </TableCell>
                             <TableCell className="text-xs whitespace-nowrap">
-                                {expiryDate ? format(expiryDate, 'PP') : 'N/A'}
+                                {expiryDateForDisplay ? format(expiryDateForDisplay, 'PP') : 'N/A'}
                                 {isExpired && <span className="text-xs text-destructive ml-1">(Expired)</span>}
                             </TableCell>
                                 <TableCell className="text-center">
@@ -553,6 +558,7 @@ export default function AdminCouponsPage() {
                 <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="codeEdit" className="text-right">Coupon Code</Label>
                 <Input id="codeEdit" {...form.register('code')} className="col-span-3" placeholder="Optional code (e.g., SAVE10)" disabled={isSaving} />
+                 {form.formState.errors.code && form.formState.errors.code.type !== 'refine' && <p className="col-span-4 text-sm text-destructive text-right">{form.formState.errors.code.message}</p>}
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="linkEdit" className="text-right">Link</Label>
@@ -567,7 +573,7 @@ export default function AdminCouponsPage() {
                             <Button variant={"outline"} className={cn( "col-span-3 justify-start text-left font-normal h-10", !field.value && "text-muted-foreground" )} disabled={isSaving} > 
                                 <CalendarIcon className="mr-2 h-4 w-4" /> 
                                 {(() => {
-                                    const date = safeToDate(field.value);
+                                    const date = field.value ? safeToDate(field.value) : null;
                                     return date ? format(date, "PPP") : <span>Optional: Pick a date</span>;
                                 })()}
                             </Button> 
@@ -599,4 +605,3 @@ export default function AdminCouponsPage() {
     </AdminGuard>
   );
 }
-
