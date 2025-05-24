@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { collection, addDoc, serverTimestamp, query, orderBy, getDocs, where } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, orderBy, getDocs, where, Timestamp } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { CouponFormValues, Store } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
@@ -25,19 +25,19 @@ import { ArrowLeft, Loader2, PlusCircle, CalendarIcon, BadgePercent } from 'luci
 import { Skeleton } from '@/components/ui/skeleton';
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { cn, safeToDate } from '@/lib/utils'; // Import safeToDate
 
 const couponSchema = z.object({
   storeId: z.string().min(1, 'Store is required'),
   code: z.string().optional().nullable(),
   description: z.string().min(5, 'Description is too short').max(250, 'Description too long'),
-  link: z.string().url('Invalid URL format').optional().nullable(),
+  link: z.string().url('Invalid URL format').optional().or(z.literal('')).nullable(), // Allow empty string for link
   expiryDate: z.date().optional().nullable(),
   isFeatured: z.boolean().default(false),
   isActive: z.boolean().default(true),
 }).refine(data => data.code || data.link, {
   message: "Either a Coupon Code or a Link is required",
-  path: ["code"],
+  path: ["code"], // Or path: ["link"] if you prefer the error on link
 });
 
 function AddCouponPageSkeleton() {
@@ -78,8 +78,12 @@ export default function AddCouponPage() {
   useEffect(() => {
     let isMounted = true;
     const fetchStores = async () => {
+      if (!isMounted) return;
       if (!db || firebaseInitializationError) {
-        if(isMounted) setLoadingStores(false);
+        if(isMounted) {
+            toast({ variant: 'destructive', title: 'Database Error', description: firebaseInitializationError || "Failed to connect to database." });
+            setLoadingStores(false);
+        }
         return;
       }
       setLoadingStores(true);
@@ -87,11 +91,18 @@ export default function AddCouponPage() {
         const storesCollection = collection(db, 'stores');
         const q = query(storesCollection, where('isActive', '==', true), orderBy('name'));
         const snapshot = await getDocs(q);
-        if(isMounted) setStoreList(snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name || 'Unnamed Store' })));
+        if(isMounted) {
+            setStoreList(snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name || 'Unnamed Store' })));
+        }
       } catch (storeFetchError) {
-        if(isMounted) toast({ variant: 'destructive', title: 'Store List Error', description: 'Could not load stores.' });
+        console.error("Error fetching stores:", storeFetchError);
+        if(isMounted) {
+            toast({ variant: 'destructive', title: 'Store List Error', description: 'Could not load stores.' });
+        }
       } finally {
-        if(isMounted) setLoadingStores(false);
+        if(isMounted) {
+            setLoadingStores(false);
+        }
       }
     };
     fetchStores();
@@ -108,7 +119,7 @@ export default function AddCouponPage() {
       ...data,
       code: data.code || null,
       link: data.link || null,
-      expiryDate: data.expiryDate ? data.expiryDate : null,
+      expiryDate: data.expiryDate ? Timestamp.fromDate(data.expiryDate) : null, // Convert JS Date to Firestore Timestamp
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -153,6 +164,8 @@ export default function AddCouponPage() {
                     <Select value={field.value} onValueChange={field.onChange} disabled={isSaving || loadingStores}>
                       <SelectTrigger id="storeId"><SelectValue placeholder="Select a store..." /></SelectTrigger>
                       <SelectContent>
+                        {loadingStores && <SelectItem value="loading" disabled>Loading stores...</SelectItem>}
+                        {!loadingStores && storeList.length === 0 && <SelectItem value="no-stores" disabled>No active stores available</SelectItem>}
                         {storeList.map(store => (<SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>))}
                       </SelectContent>
                     </Select>
@@ -184,10 +197,18 @@ export default function AddCouponPage() {
                       <PopoverTrigger asChild>
                         <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal h-10", !field.value && "text-muted-foreground")} disabled={isSaving}>
                           <CalendarIcon className="mr-2 h-4 w-4" />
-                          {field.value ? format(field.value, "PPP") : <span>Optional: Pick a date</span>}
+                          {const date = safeToDate(field.value); date ? format(date, "PPP") : <span>Optional: Pick a date</span>}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value || undefined} onSelect={(date) => field.onChange(date || null)} initialFocus /></PopoverContent>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar 
+                            mode="single" 
+                            selected={field.value ? safeToDate(field.value) : undefined} 
+                            onSelect={(date) => field.onChange(date || null)} 
+                            initialFocus 
+                            disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))} // Disable past dates
+                        />
+                      </PopoverContent>
                     </Popover>
                   )}/>
                 </div>
