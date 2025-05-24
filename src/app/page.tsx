@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from 'react';
@@ -22,26 +23,29 @@ import {
 } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowRight, ExternalLinkIcon, Tag, ShoppingBag, List, Search, AlertCircle, Sparkles, Percent, IndianRupee } from 'lucide-react';
+import { ArrowRight, ExternalLink, Tag, ShoppingBag, List, Search, AlertCircle, Sparkles, Percent } from 'lucide-react';
 import { safeToDate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 
 const ITEMS_PER_SECTION_STORES_CATEGORIES = 6;
-const ITEMS_PER_SECTION_PRODUCTS_COUPONS = 4; // Adjusted for potentially smaller product cards
+const ITEMS_PER_SECTION_PRODUCTS_COUPONS = 4;
 
+// Helper function to fetch and process items (e.g., products, coupons)
 async function fetchItemsWithStoreData<T extends Product | Coupon>(
   itemType: 'products' | 'coupons',
   constraints: QueryConstraint[],
   itemLimit: number
 ): Promise<(T & { store?: Store })[]> {
+  console.log(`HOMEPAGE_FETCH_HELPER: Fetching ${itemType}, limit ${itemLimit}`);
   if (!db || firebaseInitializationError) {
-    console.error(`HOMEPAGE_FETCH_HELPER: Firestore not initialized for fetchItemsWithStoreData (${itemType})`);
-    throw new Error("Firestore not initialized");
+    console.error(`HOMEPAGE_FETCH_HELPER: Firestore not initialized for ${itemType}`);
+    throw new Error(`Firestore not initialized when trying to fetch ${itemType}`);
   }
 
   const q = query(collection(db, itemType), ...constraints, limit(itemLimit));
   const snapshot = await getDocs(q);
+  console.log(`HOMEPAGE_FETCH_HELPER: Fetched ${snapshot.size} raw ${itemType}.`);
 
   const itemsDataPromises = snapshot.docs.map(async (docSnap) => {
     const data = docSnap.data();
@@ -79,8 +83,11 @@ async function fetchItemsWithStoreData<T extends Product | Coupon>(
     return { ...itemBase, store: storeData };
   });
 
-  return Promise.all(itemsDataPromises);
+  const results = await Promise.all(itemsDataPromises);
+  console.log(`HOMEPAGE_FETCH_HELPER: Enriched ${results.length} ${itemType} with store data.`);
+  return results;
 }
+
 
 function HomePageSkeleton() {
   return (
@@ -89,24 +96,50 @@ function HomePageSkeleton() {
       <Skeleton className="h-[250px] sm:h-[300px] md:h-[400px] w-full rounded-lg" />
 
       {/* Search Bar Skeleton */}
-      <Card className="max-w-2xl mx-auto shadow-md border-2 border-primary/50 p-1 rounded-xl">
+      <Card className="max-w-2xl mx-auto shadow-md border-2 border-primary/50 p-1 bg-gradient-to-r from-primary/5 via-background to-secondary/5 rounded-xl">
         <CardHeader className="pb-3 pt-4 text-center"><Skeleton className="h-7 w-3/4 mx-auto mb-1" /></CardHeader>
         <CardContent className="p-3 sm:p-4"><div className="flex gap-2 items-center"><Skeleton className="h-11 flex-grow rounded-md" /><Skeleton className="h-11 w-24 rounded-md" /></div></CardContent>
       </Card>
 
-      {/* Section Skeleton (repeated for Today's Picks, Featured Stores, Top Coupons, Popular Categories) */}
-      {[...Array(4)].map((_, sectionIndex) => (
-        <section key={`section-skel-${sectionIndex}`}>
-          <div className="flex justify-between items-center mb-4 md:mb-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-8 w-24" /></div>
-          <div className={`grid grid-cols-2 ${sectionIndex % 2 === 0 ? 'sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4' : 'sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6'} gap-3 md:gap-4`}>
-            {Array.from({ length: sectionIndex % 2 === 0 ? ITEMS_PER_SECTION_PRODUCTS_COUPONS : ITEMS_PER_SECTION_STORES_CATEGORIES }).map((_, i) => <Skeleton key={`item-skel-${sectionIndex}-${i}`} className={`${sectionIndex % 2 === 0 ? 'h-56' : 'h-36'} rounded-lg`} />)}
-          </div>
-        </section>
-      ))}
+      {/* Section Skeleton (Today's Picks Products) */}
+      <section>
+        <div className="flex justify-between items-center mb-4 md:mb-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-8 w-24" /></div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
+          {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tp-skel-${i}`} className="h-56 rounded-lg" />)}
+        </div>
+      </section>
+
+      {/* Section Skeleton (Featured Stores) */}
+      <section>
+        <div className="flex justify-between items-center mb-4 md:mb-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-8 w-24" /></div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
+          {Array.from({ length: ITEMS_PER_SECTION_STORES_CATEGORIES }).map((_, i) => <Skeleton key={`fs-skel-${i}`} className="h-36 rounded-lg" />)}
+        </div>
+      </section>
+
+      {/* Section Skeleton (Top Coupons) */}
+      <section>
+        <div className="flex justify-between items-center mb-4 md:mb-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-8 w-24" /></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+          {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tc-skel-${i}`} className="h-44 rounded-lg" />)}
+        </div>
+      </section>
+
+      {/* Section Skeleton (Popular Categories) */}
+       <section>
+        <div className="flex justify-between items-center mb-4 md:mb-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-8 w-24" /></div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
+          {Array.from({ length: ITEMS_PER_SECTION_STORES_CATEGORIES }).map((_, i) => (
+            <div key={`pc-skel-${i}`} className="flex flex-col items-center p-2 border rounded-lg bg-card shadow-sm">
+              <Skeleton className="w-16 h-16 rounded-full mb-2" />
+              <Skeleton className="h-4 w-20" />
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
-
 
 export default function HomePage() {
   const router = useRouter();
@@ -124,22 +157,29 @@ export default function HomePage() {
 
   React.useEffect(() => {
     let isMounted = true;
+    console.log("HOMEPAGE: useEffect for loadAllData triggered.");
 
-    const loadAllData = async () => {
-      if (!isMounted) return;
-      console.log("HOMEPAGE: Starting to load all data...");
-      // Ensure pageInitialLoading is true at the start of this effect if re-fetching is possible,
-      // or if it's the very first load. Since it's initialized to true, this is fine.
-      // If you had a pull-to-refresh or manual refresh button, you'd set it true here.
-      // setPageInitialLoading(true); 
-      setPageError([]); // Clear previous errors on new load attempt
+    async function loadAllData() {
+      if (!isMounted) {
+        console.log("HOMEPAGE: loadAllData: unmounted, bailing.");
+        return;
+      }
+      
+      // Ensure loading is true at the start of any fetch attempt by this effect.
+      // If it's already true from useState, this is fine.
+      // If this effect could re-run due to dependency changes, ensure this is reset.
+      // For now, assuming it's for initial load.
+      // setPageInitialLoading(true); // Re-enable if dependencies change, currently [] means it runs once
 
+      console.log("HOMEPAGE: loadAllData: Starting...");
       const currentErrors: string[] = [];
 
       if (firebaseInitializationError) {
+        console.error("HOMEPAGE: Firebase initialization error:", firebaseInitializationError);
         currentErrors.push(`Firebase initialization failed: ${firebaseInitializationError}`);
       }
       if (!db && !firebaseInitializationError) {
+        console.error("HOMEPAGE: Database connection not available.");
         currentErrors.push("Database connection not available.");
       }
 
@@ -147,11 +187,13 @@ export default function HomePage() {
         if (isMounted) {
           setPageError(currentErrors);
           toast({ variant: "destructive", title: "Setup Error", description: currentErrors.join(" "), duration: 10000 });
-          setPageInitialLoading(false); // Critical: Set loading false even if setup failed
+          setPageInitialLoading(false); // CRITICAL: Set loading false even if setup failed
+          console.log("HOMEPAGE: loadAllData: Setup error, loading finished (false).");
         }
         return;
       }
 
+      console.log("HOMEPAGE: loadAllData: Proceeding with data fetches.");
       const sectionFetchPromises = [
         (async () => {
           console.log("HOMEPAGE: Fetching banners...");
@@ -207,7 +249,7 @@ export default function HomePage() {
           if (isMounted) {
             if (currentErrors.length > 0) {
               const errorMessage = `Failed to load some data sections: ${currentErrors.join(', ')}. Some content may be missing.`;
-              setPageError(prev => [...prev, ...currentErrors.filter(e => !prev.includes(e))]); // Add new errors without duplicating
+              setPageError(prev => [...new Set([...prev, ...currentErrors])]); // Add new errors without duplicating
               toast({
                 variant: "destructive",
                 title: "Error Loading Page Data",
@@ -216,19 +258,19 @@ export default function HomePage() {
               });
             }
             setPageInitialLoading(false);
-            console.log("HOMEPAGE: All data loading attempts finished. Final loading state: false.");
+            console.log("HOMEPAGE: loadAllData: All fetches settled. Loading finished (false).");
           }
         });
-    };
+    }
 
     loadAllData();
 
     return () => {
+      console.log("HOMEPAGE: useEffect for loadAllData cleanup.");
       isMounted = false;
-      console.log("HOMEPAGE: Component unmounted.");
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast]); // toast is stable and should not cause re-runs.
+  }, [toast]); // Toast is stable, so this effect runs once on mount.
 
   const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -238,9 +280,11 @@ export default function HomePage() {
   };
 
   if (pageInitialLoading) {
+    console.log("HOMEPAGE: Rendering HomePageSkeleton because pageInitialLoading is true.");
     return <HomePageSkeleton />;
   }
 
+  console.log("HOMEPAGE: Rendering main content.");
   return (
     <div className="space-y-12 md:space-y-16 lg:space-y-20">
       {/* Banners Carousel */}
@@ -262,6 +306,7 @@ export default function HomePage() {
                       className="object-cover"
                       priority={index === 0}
                       data-ai-hint={banner.dataAiHint || "promotion offer sale"}
+                      onError={(e) => ((e.target as HTMLImageElement).src = 'https://placehold.co/1200x400.png?text=Banner+Error')}
                     />
                     {(banner.title || banner.subtitle) && (
                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent flex flex-col justify-end p-4 md:p-8">
@@ -310,86 +355,93 @@ export default function HomePage() {
 
       {/* Today's Picks (Products) */}
       <section>
-          <div className="flex justify-between items-center mb-4 md:mb-6">
-            <h2 className="text-2xl font-bold flex items-center gap-2">
-                <Sparkles className="w-6 h-6 text-amber-500" /> Today's Picks
-            </h2>
+        <div className="flex justify-between items-center mb-4 md:mb-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Sparkles className="w-6 h-6 text-amber-500" /> Today's Picks
+          </h2>
+          {/* Optional: Link to a page showing all today's picks if needed */}
+        </div>
+        {todaysPicksProducts.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
+            {todaysPicksProducts.map(product => (
+              <ProductCard key={product.id} product={product} storeContext={product.store} />
+            ))}
           </div>
-          {todaysPicksProducts.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
-                {todaysPicksProducts.map(product => (
-                <ProductCard key={product.id} product={product} storeContext={product.store} />
-                ))}
-            </div>
-          ) : pageError.some(e => e.includes("today's picks products")) ? null : (
-            <div className="text-center py-6 text-muted-foreground text-sm">No special product picks for today. Check back soon!</div>
-          )}
+        ) : pageError.some(e => e.includes("today's picks products")) ? null : (
+          <div className="text-center py-6 text-muted-foreground text-sm bg-muted/30 rounded-lg border p-4">No special product picks for today. Check back soon!</div>
+        )}
       </section>
-
 
       {/* Featured Stores */}
       <section>
-          <div className="flex justify-between items-center mb-4 md:mb-6">
-            <h2 className="text-2xl font-bold flex items-center gap-2"><ShoppingBag className="w-6 h-6 text-primary" /> Featured Stores</h2>
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/stores" className="flex items-center gap-1">View All <ArrowRight className="w-4 h-4" /></Link>
-            </Button>
+        <div className="flex justify-between items-center mb-4 md:mb-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2"><ShoppingBag className="w-6 h-6 text-primary" /> Featured Stores</h2>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/stores" className="flex items-center gap-1">View All <ArrowRight className="w-4 h-4" /></Link>
+          </Button>
+        </div>
+        {featuredStores.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
+            {featuredStores.map(store => <StoreCard key={store.id} store={store} />)}
           </div>
-          {featuredStores.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
-                {featuredStores.map(store => <StoreCard key={store.id} store={store} />)}
-            </div>
-          ): pageError.some(e => e.includes("featured stores")) ? null : (
-            <div className="text-center py-6 text-muted-foreground text-sm">No featured stores available right now.</div>
-          )}
+        ) : pageError.some(e => e.includes("featured stores")) ? null : (
+          <div className="text-center py-6 text-muted-foreground text-sm bg-muted/30 rounded-lg border p-4">No featured stores available right now.</div>
+        )}
       </section>
-
 
       {/* Top Coupons & Offers */}
       <section>
-          <div className="flex justify-between items-center mb-4 md:mb-6">
-            <h2 className="text-2xl font-bold flex items-center gap-2"><Percent className="w-6 h-6 text-destructive" /> Top Coupons & Offers</h2>
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/coupons" className="flex items-center gap-1">View All <ArrowRight className="w-4 h-4" /></Link>
-            </Button>
+        <div className="flex justify-between items-center mb-4 md:mb-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2"><Percent className="w-6 h-6 text-destructive" /> Top Coupons & Offers</h2>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/coupons" className="flex items-center gap-1">View All <ArrowRight className="w-4 h-4" /></Link>
+          </Button>
+        </div>
+        {topCoupons.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+            {topCoupons.map(coupon => <CouponCard key={coupon.id} coupon={coupon} />)}
           </div>
-          {topCoupons.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-                {topCoupons.map(coupon => <CouponCard key={coupon.id} coupon={coupon} />)}
-            </div>
-          ) : pageError.some(e => e.includes("top coupons")) ? null : (
-            <div className="text-center py-6 text-muted-foreground text-sm">No top coupons featured at the moment.</div>
-          )}
+        ) : pageError.some(e => e.includes("top coupons")) ? null : (
+          <div className="text-center py-6 text-muted-foreground text-sm bg-muted/30 rounded-lg border p-4">No top coupons featured at the moment.</div>
+        )}
       </section>
 
       {/* Popular Categories */}
       <section>
-          <div className="flex justify-between items-center mb-4 md:mb-6">
-            <h2 className="text-2xl font-bold flex items-center gap-2"><List className="w-6 h-6 text-secondary" /> Popular Categories</h2>
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/categories" className="flex items-center gap-1">View All <ArrowRight className="w-4 h-4" /></Link>
-            </Button>
+        <div className="flex justify-between items-center mb-4 md:mb-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2"><List className="w-6 h-6 text-secondary" /> Popular Categories</h2>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/categories" className="flex items-center gap-1">View All <ArrowRight className="w-4 h-4" /></Link>
+          </Button>
+        </div>
+        {categories.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
+            {categories.map(category => (
+              <Link key={category.id} href={`/category/${category.slug}`} className="block group">
+                <Card className="flex flex-col items-center text-center p-3 hover:shadow-lg transition-shadow duration-200 h-full bg-card hover:bg-muted/50">
+                  <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-2 overflow-hidden border group-hover:border-primary transition-colors">
+                    {category.imageUrl ? (
+                      <Image 
+                        src={category.imageUrl} 
+                        alt={category.name} 
+                        width={64} 
+                        height={64} 
+                        className="object-contain p-1" 
+                        data-ai-hint={category.dataAiHint || "category icon"}
+                        onError={(e) => ((e.target as HTMLImageElement).src = 'https://placehold.co/64x64.png?text=Icon')}
+                      />
+                    ) : (
+                      <List className="w-8 h-8 text-muted-foreground" />
+                    )}
+                  </div>
+                  <p className="text-sm font-medium group-hover:text-primary transition-colors">{category.name}</p>
+                </Card>
+              </Link>
+            ))}
           </div>
-          {categories.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
-                {categories.map(category => (
-                <Link key={category.id} href={`/category/${category.slug}`} className="block group">
-                    <Card className="flex flex-col items-center text-center p-3 hover:shadow-lg transition-shadow duration-200 h-full bg-card hover:bg-muted/50">
-                    <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-2 overflow-hidden border group-hover:border-primary transition-colors">
-                        {category.imageUrl ? (
-                        <Image src={category.imageUrl} alt={category.name} width={64} height={64} className="object-contain p-1" data-ai-hint={category.dataAiHint || "category icon"}/>
-                        ) : (
-                        <List className="w-8 h-8 text-muted-foreground" />
-                        )}
-                    </div>
-                    <p className="text-sm font-medium group-hover:text-primary transition-colors">{category.name}</p>
-                    </Card>
-                </Link>
-                ))}
-            </div>
-          ) : pageError.some(e => e.includes("categories")) ? null : (
-             <div className="text-center py-6 text-muted-foreground text-sm">No categories available right now.</div>
-          )}
+        ) : pageError.some(e => e.includes("categories")) ? null : (
+           <div className="text-center py-6 text-muted-foreground text-sm bg-muted/30 rounded-lg border p-4">No categories available right now.</div>
+        )}
       </section>
 
       {pageError.length > 0 && (
@@ -404,3 +456,5 @@ export default function HomePage() {
     </div>
   );
 }
+
+    
