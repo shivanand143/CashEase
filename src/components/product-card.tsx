@@ -16,7 +16,6 @@ import { useToast } from '@/hooks/use-toast';
 import * as React from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 
-
 interface ProductCardProps {
   product: Product | null | undefined;
   storeContext?: Store | null | undefined;
@@ -30,22 +29,22 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
 
   if (!product) {
     return (
-      <Card className="overflow-hidden h-full flex flex-col group border shadow-sm p-2"> {/* Reduced padding */}
-        <Skeleton className="h-32 w-full bg-muted mb-2" /> {/* Fixed height for image area */}
-        <Skeleton className="h-4 w-3/4 mb-1" /> {/* Reduced height */}
-        <Skeleton className="h-3 w-1/2 mb-1" /> {/* Reduced height */}
-        <Skeleton className="h-3 w-1/3 mb-2" /> {/* Reduced height & margin */}
+      <Card className="overflow-hidden h-full flex flex-col group border shadow-sm p-2">
+        <Skeleton className="h-32 w-full bg-muted mb-2" />
+        <Skeleton className="h-4 w-3/4 mb-1" />
+        <Skeleton className="h-3 w-1/2 mb-1" />
+        <Skeleton className="h-3 w-1/3 mb-2" />
         <Skeleton className="h-8 w-full" />
       </Card>
     );
   }
 
   const productTitle = product.name || 'Product Title';
-  const placeholderTextForImage = product.name ? product.name.substring(0, 10) : "Product"; // Shorter placeholder
+  const placeholderTextForImage = product.name ? product.name.substring(0, 15) : "Product";
 
   const imageUrl = product.imageUrl && isValidHttpUrl(product.imageUrl)
     ? product.imageUrl
-    : `https://placehold.co/200x200.png?text=${encodeURIComponent(placeholderTextForImage)}`; // Smaller placeholder
+    : `https://placehold.co/200x200.png?text=${encodeURIComponent(placeholderTextForImage)}`;
 
   const affiliateLinkToUse = product.affiliateLink || storeContext?.affiliateLink || '#';
   const priceDisplay = product.priceDisplay || (product.price !== null && product.price !== undefined ? formatCurrency(product.price) : 'N/A');
@@ -55,21 +54,25 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
   let calculatedCashbackValue: number | null = null;
   let priceAfterCashback: number | null = null;
 
-  // Determine cashback display string and type for icon
+  // 1. Prioritize product-specific cashback if "Cashback Display Text" is explicitly set
   if (product.productSpecificCashbackDisplay && product.productSpecificCashbackDisplay.trim() !== "") {
     cashbackDisplayString = product.productSpecificCashbackDisplay;
-    cashbackTypeForIconToUse = product.productSpecificCashbackType;
-  } else if (product.productSpecificCashbackRateValue != null && product.productSpecificCashbackRateValue >= 0 && product.productSpecificCashbackType) {
+    cashbackTypeForIconToUse = product.productSpecificCashbackType; // Use product's type
+  }
+  // 2. Else, if numerical product-specific cashback is set, construct a display string
+  else if (product.productSpecificCashbackRateValue != null && product.productSpecificCashbackRateValue >= 0 && product.productSpecificCashbackType) {
     cashbackTypeForIconToUse = product.productSpecificCashbackType;
     if (product.productSpecificCashbackType === 'fixed') {
-      cashbackDisplayString = `₹${product.productSpecificCashbackRateValue} Cashback`;
+      cashbackDisplayString = `${formatCurrency(product.productSpecificCashbackRateValue)} Cashback`;
     } else if (product.productSpecificCashbackType === 'percentage') {
       cashbackDisplayString = `${product.productSpecificCashbackRateValue}% Cashback`;
     }
-  } else if (storeContext?.cashbackRate) {
+  }
+  // 3. Else, fall back to store-level cashback display string
+  else if (storeContext?.cashbackRate) {
     cashbackDisplayString = storeContext.cashbackRate;
     cashbackTypeForIconToUse = storeContext.cashbackType;
-    // Heuristic if type is missing
+    // Heuristic for store cashback type if not explicitly defined
     if (!cashbackTypeForIconToUse) {
       if (cashbackDisplayString.toLowerCase().includes("₹") || cashbackDisplayString.toLowerCase().includes("flat")) {
         cashbackTypeForIconToUse = 'fixed';
@@ -79,51 +82,56 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
     }
   }
 
-  // Calculate cashback amount
+  // Calculate effective price after cashback
   if (product.price !== null && product.price !== undefined && product.price > 0) {
-    let rateToUse: number | null = null;
-    let typeToUse: CashbackType | null = null;
+    let rateValueForCalc: number | null = null;
+    let typeForCalc: CashbackType | null = null;
 
     if (product.productSpecificCashbackRateValue != null && product.productSpecificCashbackRateValue >= 0 && product.productSpecificCashbackType) {
-      rateToUse = product.productSpecificCashbackRateValue;
-      typeToUse = product.productSpecificCashbackType;
+      rateValueForCalc = product.productSpecificCashbackRateValue;
+      typeForCalc = product.productSpecificCashbackType;
     } else if (storeContext?.cashbackRateValue !== undefined && storeContext.cashbackRateValue >= 0 && storeContext.cashbackType) {
-      rateToUse = storeContext.cashbackRateValue;
-      typeToUse = storeContext.cashbackType;
+      rateValueForCalc = storeContext.cashbackRateValue;
+      typeForCalc = storeContext.cashbackType;
     }
 
-    if (rateToUse !== null && typeToUse !== null) {
-      if (typeToUse === 'fixed') {
-        calculatedCashbackValue = rateToUse;
-      } else if (typeToUse === 'percentage') {
-        calculatedCashbackValue = (product.price * rateToUse) / 100;
+    if (rateValueForCalc !== null && typeForCalc !== null) {
+      if (typeForCalc === 'fixed') {
+        calculatedCashbackValue = rateValueForCalc;
+      } else if (typeForCalc === 'percentage') {
+        calculatedCashbackValue = (product.price * rateValueForCalc) / 100;
       }
     }
   }
 
-  // Calculate price after cashback
   if (product.price !== null && product.price !== undefined && calculatedCashbackValue !== null && calculatedCashbackValue > 0) {
     priceAfterCashback = product.price - calculatedCashbackValue;
   }
 
   const handleShopNow = async () => {
     setIsProcessingClick(true);
+    console.log("ProductCard: handleShopNow triggered for product:", product.id, product.name);
+
     if (authLoading) {
       toast({ title: "Please wait", description: "Checking authentication..." });
       setIsProcessingClick(false);
       return;
     }
+
     if (affiliateLinkToUse === '#') {
       toast({ title: "Link Error", description: "Product link is not available.", variant: "destructive" });
       setIsProcessingClick(false);
       return;
     }
+
     const clickId = uuidv4();
     const finalAffiliateLinkWithClickId = appendClickIdToUrl(affiliateLinkToUse, clickId, storeContext?.affiliateLink);
+    console.log("ProductCard: Generated Click ID:", clickId, "Final URL:", finalAffiliateLinkWithClickId);
 
     if (!user) {
+      console.log("ProductCard: User not logged in. Storing redirect and navigating to login.");
       sessionStorage.setItem('loginRedirectUrl', finalAffiliateLinkWithClickId);
-      sessionStorage.setItem('loginRedirectSource', router.asPath);
+      sessionStorage.setItem('loginRedirectSource', router.asPath); // Store current page as source
       router.push(`/login?message=Login to track cashback & shop this product!`);
       setIsProcessingClick(false);
       return;
@@ -138,32 +146,39 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
       clickId: clickId,
       affiliateLink: finalAffiliateLinkWithClickId,
       originalLink: affiliateLinkToUse,
-      clickedCashbackDisplay: cashbackDisplayString,
+      clickedCashbackDisplay: cashbackDisplayString, // Log what was displayed
       clickedCashbackRateValue: product.productSpecificCashbackRateValue ?? storeContext?.cashbackRateValue ?? null,
-      clickedCashbackType: cashbackTypeForIconToUse ?? product.productSpecificCashbackType ?? storeContext?.cashbackType ?? null,
+      clickedCashbackType: product.productSpecificCashbackType ?? storeContext?.cashbackType ?? null,
     };
+
+    console.log("ProductCard: Tracking click with data (client-side):", clickData);
 
     try {
       const trackResult = await trackClickClientSide(clickData);
-      if (!trackResult.success) {
+      if (trackResult.success) {
+        console.log("ProductCard: Click tracked successfully (client-side), Click ID:", trackResult.clickId);
+      } else {
         toast({ title: "Tracking Issue", description: `Could not fully track click. Error: ${trackResult.error}. Proceeding to store.`, variant: "destructive", duration: 7000 });
+        console.error("ProductCard: Failed to track product click (client-side util error):", trackResult.error);
       }
     } catch (e: any) {
       toast({ title: "Tracking Error", description: `An error during click tracking: ${e.message}. Proceeding to store.`, variant: "destructive", duration: 7000 });
+      console.error("ProductCard: Exception during trackClickClientSide:", e);
     }
 
     if (finalAffiliateLinkWithClickId && finalAffiliateLinkWithClickId !== '#') {
-        window.open(finalAffiliateLinkWithClickId, '_blank', 'noopener,noreferrer');
+      window.open(finalAffiliateLinkWithClickId, '_blank', 'noopener,noreferrer');
     } else {
-        toast({title: "Navigation Error", description: "Could not determine a valid link to open.", variant: "destructive"});
+      toast({ title: "Navigation Error", description: "Could not determine a valid link to open.", variant: "destructive" });
     }
     setIsProcessingClick(false);
   };
 
+
   return (
     <Card className="overflow-hidden h-full flex flex-col group border shadow-sm hover:shadow-lg transition-shadow duration-300">
       <Link href={`/stores/${product.storeId}/products?highlight=${product.id}`} passHref legacyBehavior>
-        <a className="block h-32 w-full relative overflow-hidden bg-muted p-1"> {/* Fixed height, reduced padding */}
+        <a className="block aspect-[1/1] w-full relative overflow-hidden bg-muted p-1"> {/* Adjusted for smaller square-ish image, reduced padding */}
             <Image
             src={imageUrl}
             alt={productTitle}
@@ -172,49 +187,49 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
             className="object-contain group-hover:scale-105 transition-transform duration-300"
             data-ai-hint={product.dataAiHint || "product item"}
             onError={(e) => {
-                (e.target as HTMLImageElement).src = `https://placehold.co/200x200.png?text=${encodeURIComponent(placeholderTextForImage)}`;
+                (e.target as HTMLImageElement).src = `https://placehold.co/150x150.png?text=${encodeURIComponent(placeholderTextForImage)}`;
             }}
             />
         </a>
       </Link>
-      <CardContent className="p-2 flex flex-col flex-grow justify-between"> {/* Reduced padding */}
+      <CardContent className="p-2 flex flex-col flex-grow justify-between">
         <div>
-          <h3 className="text-xs font-medium leading-snug mb-0.5 h-8 line-clamp-2" title={productTitle}> {/* Smaller font, fixed height */}
+          <h3 className="text-xs font-medium leading-snug mb-0.5 h-8 line-clamp-2" title={productTitle}>
             <Link href={`/stores/${product.storeId}/products?highlight=${product.id}`} className="hover:text-primary transition-colors">
                 {productTitle}
             </Link>
           </h3>
            {(storeContext?.name || product.storeName) && (
-             <Link href={`/stores/${product.storeId}`} className="text-[11px] text-muted-foreground hover:text-primary transition-colors mb-0.5 block truncate"> {/* Smaller font */}
+             <Link href={`/stores/${product.storeId}`} className="text-[10px] text-muted-foreground hover:text-primary transition-colors mb-0.5 block truncate">
                From: {storeContext?.name || product.storeName}
              </Link>
            )}
         </div>
         <div className="mt-auto">
-          <p className="text-sm font-semibold text-foreground mb-0.5"> {/* Smaller font */}
+          <p className="text-sm font-semibold text-foreground mb-1">
             {priceDisplay}
           </p>
 
           {cashbackDisplayString && (
-            <p className="text-[10px] text-green-600 font-semibold mb-0.5 flex items-center"> {/* Smaller font */}
+            <p className="text-[10px] text-green-600 font-semibold mb-0.5 flex items-center">
               {cashbackTypeForIconToUse === 'fixed' ? <IndianRupee className="w-2.5 h-2.5 mr-0.5 flex-shrink-0"/> : cashbackTypeForIconToUse === 'percentage' ? <Percent className="w-2.5 h-2.5 mr-0.5 flex-shrink-0"/> : null}
               {cashbackDisplayString}
             </p>
           )}
 
-          {priceAfterCashback !== null && cashbackDisplayString ? ( // Only show if original cashback string was shown
-            <p className="text-[10px] font-bold text-primary mb-1"> {/* Smaller font */}
+          {priceAfterCashback !== null && priceAfterCashback >= 0 && product.price && product.price > priceAfterCashback ? (
+            <p className="text-[10px] font-bold text-primary mb-1.5">
               Effective Price: {formatCurrency(priceAfterCashback)}
             </p>
           ) : cashbackDisplayString ? (
-             <div className="mb-1 h-[15px]"></div> // Smaller spacer
+             <div className="mb-1.5 h-[15px]"></div>
           ) : (
-            <div className="mb-1 h-[30px]"></div> // Adjust spacer height
+            <div className="mb-1.5 h-[30px]"></div>
           )}
 
           <Button
             size="sm"
-            className="w-full text-xs h-8 px-2 py-1" // Custom smaller button
+            className="w-full text-xs h-8 px-2 py-1"
             onClick={handleShopNow}
             disabled={authLoading || isProcessingClick}
           >

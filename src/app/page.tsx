@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from 'react';
@@ -6,7 +5,7 @@ import {
   collection, query, where, orderBy, limit, getDocs, doc, getDoc, Timestamp, QueryConstraint
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Store, Coupon, Banner, Category, Product } from '@/lib/types';
+import type { Store, Coupon, Banner, Category, Product, CashbackType } from '@/lib/types'; // Ensure CashbackType is imported
 import { Skeleton } from '@/components/ui/skeleton';
 import StoreCard from '@/components/store-card';
 import CouponCard from '@/components/coupon-card';
@@ -15,22 +14,22 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Card, CardHeader, CardContent } from '@/components/ui/card'; // Removed CardDescription and CardTitle as they were not directly used here after refactor
 import {
   Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious,
 } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
-  ArrowRight, ShoppingBag, List, Search as SearchIcon, AlertCircle, Sparkles, Tag, Percent, ExternalLink
+  ArrowRight, ShoppingBag, List, Search as SearchIcon, AlertCircle, Sparkles, Tag, ExternalLink
 } from 'lucide-react';
 import { safeToDate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useHasMounted } from '@/hooks/use-has-mounted';
 
 const ITEMS_PER_SECTION_STORES_CATEGORIES = 6;
-const ITEMS_PER_SECTION_PRODUCTS_COUPONS = 4; // Increased from 3 to 4
+const ITEMS_PER_SECTION_PRODUCTS_COUPONS = 5; // Increased from 4 to 5 for more products
 
 async function fetchItemsWithStoreData<
   CollectionName extends 'products' | 'coupons',
@@ -41,19 +40,23 @@ async function fetchItemsWithStoreData<
   itemLimit: number,
   enrichWithStore: boolean = true
 ): Promise<(ItemType & { store?: Store })[]> {
+  const operation = `fetchItemsWithStoreData (${collectionName})`;
   if (firebaseInitializationError || !db) {
-    console.error(`HOMEPAGE_FETCH_ERROR: Firestore not initialized for fetching ${collectionName}. Error: ${firebaseInitializationError}`);
+    console.error(`HOMEPAGE_FETCH_ERROR: ${operation} - Firestore not initialized. Error: ${firebaseInitializationError}`);
     return [];
   }
 
   let itemsData: ItemType[] = [];
   try {
-    const q = query(collection(db, collectionName), ...constraints, limit(itemLimit));
+    // Ensure all constraints are valid QueryConstraint instances
+    const validConstraints = constraints.filter(c => c !== undefined && c !== null);
+    const q = query(collection(db, collectionName), ...validConstraints, limit(itemLimit));
     const snapshot = await getDocs(q);
+    console.log(`HOMEPAGE_FETCH: ${operation} - Fetched ${snapshot.size} raw items.`);
 
     itemsData = snapshot.docs.map(docSnap => {
       const data = docSnap.data();
-      const baseItem: any = {
+      const baseItem: any = { // Use any for baseItem to avoid excessive type casting here
         id: docSnap.id,
         ...data,
         createdAt: safeToDate(data.createdAt as Timestamp | undefined),
@@ -73,8 +76,9 @@ async function fetchItemsWithStoreData<
     const storeCache = new Map<string, Store>();
 
     if (storeIds.length > 0) {
+      console.log(`HOMEPAGE_FETCH: ${operation} - Enriching with ${storeIds.length} unique store IDs.`);
       const storeChunks: string[][] = [];
-      for (let i = 0; i < storeIds.length; i += 30) {
+      for (let i = 0; i < storeIds.length; i += 30) { // Firestore 'in' query limit
         storeChunks.push(storeIds.slice(i, i + 30));
       }
       for (const chunk of storeChunks) {
@@ -95,52 +99,59 @@ async function fetchItemsWithStoreData<
 
     return itemsData.map(item => ({
       ...item,
-      store: storeCache.get((item as any).storeId),
+      store: (item as any).storeId ? storeCache.get((item as any).storeId) : undefined,
     }));
 
   } catch (error) {
-      console.error(`HOMEPAGE_FETCH_ERROR: Error fetching ${collectionName}:`, error);
-      throw error;
+      console.error(`HOMEPAGE_FETCH_ERROR: ${operation} - Error fetching:`, error);
+      // Re-throw to be caught by the caller
+      throw new Error(`Failed during ${operation}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 function HomePageSkeleton() {
   return (
     <div className="space-y-12 md:space-y-16 lg:space-y-20">
+      {/* Banner Skeleton */}
       <Skeleton className="h-[250px] sm:h-[300px] md:h-[400px] w-full rounded-lg" />
-      <Card className="max-w-2xl mx-auto shadow-md border-2 border-primary/50 p-1 bg-gradient-to-r from-primary/5 via-background to-secondary/5 rounded-xl">
+
+      {/* Search Bar Skeleton (Simplified as its content is static) */}
+      <Card className="max-w-2xl mx-auto shadow-md border-2 border-primary/50 p-1 rounded-xl">
         <CardHeader className="pb-3 pt-4 text-center">
           <Skeleton className="h-7 w-3/4 mx-auto mb-1" />
         </CardHeader>
         <CardContent className="p-3 sm:p-4">
           <div className="flex gap-2 items-center">
-            <Skeleton className="h-5 w-5 ml-2 text-muted-foreground hidden sm:block" />
             <Skeleton className="h-11 flex-grow rounded-md" />
             <Skeleton className="h-11 w-24 rounded-md" />
           </div>
         </CardContent>
       </Card>
+
       {/* Today's Picks Products Skeleton */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6"><Skeleton className="h-8 w-48" /></div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6"> {/* Adjusted grid */}
-          {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tp-skel-${i}`} className="h-64 rounded-lg" />)} {/* Adjusted height */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
+          {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tp-skel-${i}`} className="h-56 rounded-lg" />)}
         </div>
       </section>
+
       {/* Featured Stores Skeleton */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-8 w-24" /></div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
-          {Array.from({ length: ITEMS_PER_SECTION_STORES_CATEGORIES }).map((_, i) => <Skeleton key={`fs-skel-${i}`} className="h-36 rounded-lg" />)} {/* Adjusted height */}
+          {Array.from({ length: ITEMS_PER_SECTION_STORES_CATEGORIES }).map((_, i) => <Skeleton key={`fs-skel-${i}`} className="h-36 rounded-lg" />)}
         </div>
       </section>
+
       {/* Top Coupons Skeleton */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-8 w-24" /></div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-          {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tc-skel-${i}`} className="h-40 rounded-lg" />)} {/* Adjusted height */}
+          {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tc-skel-${i}`} className="h-40 rounded-lg" />)}
         </div>
       </section>
+
       {/* Popular Categories Skeleton */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-8 w-24" /></div>
@@ -184,21 +195,18 @@ export default function HomePage() {
       console.log("HOMEPAGE: Not mounted yet, deferring data load.");
       return;
     }
-    console.log("HOMEPAGE: useEffect triggered. isMounted:", isMounted);
+    console.log("HOMEPAGE: useEffect triggered for data loading. isMounted:", isMounted);
 
     const loadAllData = async () => {
-      if (!isMounted) {
-        console.log("HOMEPAGE: loadAllData called but component unmounted.");
-        return;
-      }
+      if (!isMounted) return;
       console.log("HOMEPAGE: loadAllData called.");
       setPageInitialLoading(true);
-      setPageErrors([]);
+      setPageErrors([]); // Clear previous errors
 
       if (firebaseInitializationError || !db) {
         const errorMsg = firebaseInitializationError || "DB not available.";
         if (isMounted) {
-          setPageErrors(prev => [...new Set([...prev, errorMsg])]);
+          setPageErrors(prev => [...new Set([...prev, errorMsg])]); // Use Set to avoid duplicate general errors
           console.error("HOMEPAGE_ERROR:", errorMsg);
           setLoadingBanners(false); setLoadingCategories(false); setLoadingFeaturedStores(false);
           setLoadingTopCoupons(false); setLoadingTodaysPicks(false); setPageInitialLoading(false);
@@ -209,6 +217,7 @@ export default function HomePage() {
       const errorsAccumulator: string[] = [];
       const sectionFetchPromises = [];
 
+      // Fetch Banners
       setLoadingBanners(true);
       sectionFetchPromises.push(
         (async () => {
@@ -221,6 +230,7 @@ export default function HomePage() {
         })()
       );
 
+      // Fetch Categories
       setLoadingCategories(true);
       sectionFetchPromises.push(
         (async () => {
@@ -233,6 +243,7 @@ export default function HomePage() {
         })()
       );
 
+      // Fetch Featured Stores
       setLoadingFeaturedStores(true);
       sectionFetchPromises.push(
         (async () => {
@@ -245,6 +256,7 @@ export default function HomePage() {
         })()
       );
 
+      // Fetch Top Coupons
       setLoadingTopCoupons(true);
       sectionFetchPromises.push(
         (async () => {
@@ -259,6 +271,7 @@ export default function HomePage() {
         })()
       );
 
+      // Fetch Today's Picks Products
       setLoadingTodaysPicks(true);
       sectionFetchPromises.push(
         (async () => {
@@ -277,27 +290,33 @@ export default function HomePage() {
 
       if (isMounted) {
         if (errorsAccumulator.length > 0) {
-          const errorMessage = `Failed to load: ${errorsAccumulator.join(', ')}. Some content may be missing.`;
-          setPageErrors(prev => [...new Set([...prev, errorMessage])]);
-          toast({ variant: "destructive", title: "Data Loading Issues", description: errorMessage, duration: 10000 });
+          const errorMessage = `Failed to load some data sections: ${errorsAccumulator.join(', ')}.`;
+          setPageErrors(prev => [...new Set([...prev, errorMessage])]); // Use Set to avoid duplicates
+          toast({ variant: "destructive", title: "Data Loading Issues", description: `${errorMessage} Some content may be missing. Please try refreshing.`, duration: 10000 });
         }
         setPageInitialLoading(false);
+        console.log("HOMEPAGE: All data loading settled.");
       }
     };
 
     loadAllData();
-    return () => { isMounted = false; };
-  }, [hasMounted, toast]);
+
+    return () => {
+      isMounted = false;
+      console.log("HOMEPAGE: Component unmounted.");
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMounted, toast]); // toast is stable, fetchItemsWithStoreData is stable
 
   const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!searchTerm.trim()) return;
     router.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`);
-    setSearchTerm('');
+    setSearchTerm(''); // Clear search term after submit
   };
 
   if (!hasMounted) {
-    return null; // Render nothing on server or initial client render before mount
+    return null; // Or a very minimal universal skeleton if preferred for SSR
   }
 
   if (pageInitialLoading) {
@@ -325,7 +344,7 @@ export default function HomePage() {
                       alt={banner.altText || banner.title || 'Promotional Banner'}
                       fill
                       className="object-cover"
-                      priority={index === 0}
+                      priority={index === 0} // Prioritize first banner for LCP
                       data-ai-hint={banner.dataAiHint || "promotion offer"}
                     />
                     {(banner.title || banner.subtitle) && (
@@ -353,17 +372,18 @@ export default function HomePage() {
         )}
       </section>
 
+      {/* Search Bar Section */}
       <section className="py-6 md:py-8">
         <Card className="max-w-2xl mx-auto shadow-md border-2 border-primary/50 p-1 bg-gradient-to-r from-primary/5 via-background to-secondary/5 rounded-xl">
           <CardHeader className="pb-3 pt-4 text-center">
-            <CardTitle className="text-xl sm:text-2xl font-semibold">Find the Best Deals & Cashback</CardTitle>
+            <h2 className="text-xl sm:text-2xl font-semibold">Find the Best Deals & Cashback</h2> {/* Using h2 for semantic reasons */}
           </CardHeader>
           <CardContent className="p-3 sm:p-4">
             <form onSubmit={handleSearchSubmit} className="flex gap-2 items-center">
               <SearchIcon className="ml-2 h-5 w-5 text-muted-foreground hidden sm:block" />
               <Input
                 type="search"
-                name="search"
+                name="search" 
                 placeholder="Search for stores, brands or products..."
                 className="flex-grow h-11 text-base rounded-md shadow-inner"
                 value={searchTerm}
@@ -381,13 +401,14 @@ export default function HomePage() {
           <h2 className="text-2xl font-bold flex items-center gap-2">
             <Sparkles className="w-6 h-6 text-amber-500" /> Today's Picks
           </h2>
+          {/* Optional: Link to a page showing all today's picks if you implement such a page */}
         </div>
         {loadingTodaysPicks && todaysPicksProducts.length === 0 && !pageErrors.some(e => e.includes("today's picks products")) ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 md:gap-6"> {/* Adjusted columns for smaller cards */}
-            {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tp-skel-render-${i}`} className="h-64 rounded-lg" />)} {/* Slightly shorter skeleton */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
+            {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tp-skel-render-${i}`} className="h-56 rounded-lg" />)}
           </div>
         ) : todaysPicksProducts.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 md:gap-6"> {/* Adjusted columns */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
             {todaysPicksProducts.map(product => (
               <ProductCard key={product.id} product={product} storeContext={product.store} />
             ))}
@@ -400,6 +421,7 @@ export default function HomePage() {
         )}
       </section>
 
+      {/* Featured Stores */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6">
           <h2 className="text-2xl font-bold flex items-center gap-2"><ShoppingBag className="w-6 h-6 text-primary" /> Featured Stores</h2>
@@ -423,6 +445,7 @@ export default function HomePage() {
         )}
       </section>
 
+      {/* Top Coupons & Offers */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6">
           <h2 className="text-2xl font-bold flex items-center gap-2"><Tag className="w-6 h-6 text-destructive" /> Top Coupons & Offers</h2>
@@ -446,6 +469,7 @@ export default function HomePage() {
         )}
       </section>
 
+      {/* Popular Categories */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6">
           <h2 className="text-2xl font-bold flex items-center gap-2"><List className="w-6 h-6 text-secondary" /> Popular Categories</h2>
@@ -487,10 +511,11 @@ export default function HomePage() {
         )}
       </section>
 
+      {/* Global Error Display for unhandled section errors */}
       {pageErrors.length > 0 && !pageInitialLoading && (
          <Alert variant="destructive" className="mt-12">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Content Loading Issue</AlertTitle>
+            <AlertTitle>Page Loading Issues</AlertTitle>
             <AlertDescription>
                 {pageErrors.join(" ")}
             </AlertDescription>
