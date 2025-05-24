@@ -1,27 +1,25 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Your Next.js config options go here
-  // For example:
-  // reactStrictMode: true,
+  output: 'standalone', // Good for deployments, ensure your deployment platform supports this
   images: {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '**', // Wildcard to allow any hostname
+        hostname: '**', // Allows any HTTPS hostname
       },
        {
-        protocol: 'http', // Also allow http if needed, be cautious
+        protocol: 'http', // Allows any HTTP hostname (be cautious in production)
         hostname: '**',
       },
     ],
   },
    typescript: {
-      // !! WARN !!
-      // Dangerously allow production builds to successfully complete even if
-      // your project has type errors.
-      // !! WARN !!
-      ignoreBuildErrors: false, // CRITICAL: Set to false to reveal underlying errors
+      // CRITICAL: This MUST be false for production builds
+      // and to catch errors that can lead to missing chunks.
+      ignoreBuildErrors: false,
     },
+  // Add any other stable configurations you need here.
+  // Avoid highly experimental features if you're facing build issues.
 };
 
 module.exports = nextConfig;

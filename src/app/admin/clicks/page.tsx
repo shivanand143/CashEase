@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from 'react';
@@ -14,7 +15,7 @@ import {
   QueryDocumentSnapshot,
   Timestamp,
   doc,
-  getDoc
+  getDoc // Ensure getDoc is imported
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { Click, Conversion, UserProfile, Store } from '@/lib/types';
@@ -42,6 +43,7 @@ import { safeToDate, formatCurrency } from '@/lib/utils';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 const ITEMS_PER_PAGE = 15;
+const ADMIN_CLICKS_LOG_PREFIX = "ADMIN_CLICKS_PAGE:";
 
 interface CombinedClickData {
   click: Click;
@@ -102,45 +104,44 @@ export default function AdminClicksPage() {
   const [storeCache, setStoreCache] = React.useState<Record<string, Store>>({});
   const [conversionCache, setConversionCache] = React.useState<Record<string, Conversion>>({});
 
-
   const fetchClickDetails = React.useCallback(async (clicksToEnrich: Click[]): Promise<CombinedClickData[]> => {
+    console.log(`${ADMIN_CLICKS_LOG_PREFIX} fetchClickDetails called for ${clicksToEnrich.length} clicks.`);
     if (firebaseInitializationError || !db) {
-      console.error("ADMIN_CLICKS: Firestore not available for fetching details.");
-      // Return clicks without enriched data if db is not available
+      console.error(`${ADMIN_CLICKS_LOG_PREFIX} Firestore not available for fetching details.`);
+      setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchClickDetails."));
       return clicksToEnrich.map(click => ({ click }));
     }
 
     const enrichedDataPromises = clicksToEnrich.map(async (click): Promise<CombinedClickData> => {
       let userProfile: UserProfile | null = userCache[click.userId || ''] || null;
       let storeData: Store | null = storeCache[click.storeId || ''] || null;
-      let conversion: Conversion | null = conversionCache[click.clickId] || null; // Use click.clickId as key for conversionCache
+      let conversion: Conversion | null = conversionCache[click.clickId] || null;
 
       if (click.userId && !userProfile) {
         try {
-          const userRef = doc(db, 'users', click.userId);
+          const userRef = doc(db, 'users', click.userId); // db is checked above
           const userSnap = await getDoc(userRef);
           if (userSnap.exists()) {
             userProfile = { uid: userSnap.id, ...userSnap.data() } as UserProfile;
             setUserCache(prev => ({ ...prev, [click.userId!]: userProfile! }));
           }
-        } catch (e) { console.warn(`Failed to fetch user ${click.userId}`, e); }
+        } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch user ${click.userId}`, e); }
       }
 
-      if (click.storeId && !storeData) {
+      if (click.storeId && !storeData && !click.storeName /* Only fetch if name not on click */) {
         try {
-          const storeRef = doc(db, 'stores', click.storeId);
+          const storeRef = doc(db, 'stores', click.storeId); // db is checked above
           const storeSnap = await getDoc(storeRef);
           if (storeSnap.exists()) {
             storeData = { id: storeSnap.id, ...storeSnap.data() } as Store;
             setStoreCache(prev => ({ ...prev, [click.storeId!]: storeData! }));
           }
-        } catch (e) { console.warn(`Failed to fetch store ${click.storeId}`, e); }
+        } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch store ${click.storeId}`, e); }
       }
-      
-      // Fetch conversion if not already cached and clickId exists
+
       if (click.clickId && !conversion) {
         try {
-          const convQuery = query(collection(db, 'conversions'), where('clickId', '==', click.clickId), limit(1));
+          const convQuery = query(collection(db, 'conversions'), where('clickId', '==', click.clickId), limit(1)); // db is checked above
           const convSnap = await getDocs(convQuery);
           if (!convSnap.empty) {
             const convData = convSnap.docs[0].data();
@@ -151,21 +152,21 @@ export default function AdminClicksPage() {
             } as Conversion;
             setConversionCache(prev => ({ ...prev, [click.clickId]: conversion! }));
           }
-        } catch (e) { console.warn(`Failed to fetch conversion for click ${click.clickId}`, e); }
+        } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch conversion for click ${click.clickId}`, e); }
       }
-
       return { click, user: userProfile, conversion, store: storeData };
     });
 
     return Promise.all(enrichedDataPromises);
-  }, [userCache, storeCache, conversionCache]); // Dependencies for useCallback
+  }, [userCache, storeCache, conversionCache]);
 
   const fetchTrackingData = React.useCallback(async (
     loadMoreOperation = false,
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null
   ) => {
+    console.log(`${ADMIN_CLICKS_LOG_PREFIX} fetchTrackingData: loadMore=${loadMoreOperation}, term='${debouncedSearchTerm}', filter='${filterType}'`);
     if (firebaseInitializationError || !db) {
-      setPageError(firebaseInitializationError || "Database connection not available.");
+      setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchTrackingData."));
       setPageLoading(false); setLoadingMore(false); setHasMore(false);
       return;
     }
@@ -173,20 +174,19 @@ export default function AdminClicksPage() {
     if (!loadMoreOperation) {
       setPageLoading(true); setCombinedData([]); setLastVisibleClick(null); setHasMore(true);
     } else {
-      if (!docToStartAfter && loadMoreOperation) { setLoadingMore(false); return; }
+      if (!docToStartAfter) { setLoadingMore(false); return; }
       setLoadingMore(true);
     }
     if (!loadMoreOperation) setPageError(null);
     setIsSearching(debouncedSearchTerm !== '');
 
     try {
-      const clicksCollectionRef = collection(db, 'clicks');
+      const clicksCollectionRef = collection(db, 'clicks'); // db is checked above
       const constraints: QueryConstraint[] = [];
 
-      // Apply filters based on filterType and debouncedSearchTerm
       if (debouncedSearchTerm.trim() && filterType !== 'all') {
           if (filterType === 'clickId') {
-              const clickDocRef = doc(db, 'clicks', debouncedSearchTerm.trim());
+              const clickDocRef = doc(db, 'clicks', debouncedSearchTerm.trim()); // db is checked above
               const clickDocSnap = await getDoc(clickDocRef);
               if (clickDocSnap.exists()) {
                   const clickData = { id: clickDocSnap.id, ...clickDocSnap.data(), timestamp: safeToDate(clickDocSnap.data().timestamp as Timestamp | undefined) || new Date(0) } as Click;
@@ -199,7 +199,7 @@ export default function AdminClicksPage() {
               setPageLoading(false); setLoadingMore(false); setIsSearching(false);
               return;
           } else if (filterType === 'orderId') {
-              const convQuery = query(collection(db, 'conversions'), where('orderId', '==', debouncedSearchTerm.trim()), limit(1));
+              const convQuery = query(collection(db, 'conversions'), where('orderId', '==', debouncedSearchTerm.trim()), limit(1)); // db is checked above
               const convSnap = await getDocs(convQuery);
               if (!convSnap.empty) {
                   const convData = convSnap.docs[0].data() as Conversion;
@@ -217,12 +217,14 @@ export default function AdminClicksPage() {
 
       const q = query(clicksCollectionRef, ...constraints);
       const clickQuerySnapshot = await getDocs(q);
+      console.log(`${ADMIN_CLICKS_LOG_PREFIX} Firestore query executed, got ${clickQuerySnapshot.size} click docs.`);
 
       const fetchedClicks = clickQuerySnapshot.docs.map(docSnap => ({
         id: docSnap.id, ...docSnap.data(), timestamp: safeToDate(docSnap.data().timestamp as Timestamp | undefined) || new Date(0),
       } as Click));
       
       const enrichedResults = await fetchClickDetails(fetchedClicks);
+      console.log(`${ADMIN_CLICKS_LOG_PREFIX} Enriched ${enrichedResults.length} clicks.`);
       
       let finalResults = enrichedResults;
       if (debouncedSearchTerm.trim() && filterType === 'all') {
@@ -240,21 +242,23 @@ export default function AdminClicksPage() {
       setCombinedData(prev => loadMoreOperation ? [...prev, ...finalResults] : finalResults);
       setLastVisibleClick(clickQuerySnapshot.docs[clickQuerySnapshot.docs.length - 1] || null);
       setHasMore(clickQuerySnapshot.docs.length === ITEMS_PER_PAGE && fetchedClicks.length > 0);
+      console.log(`${ADMIN_CLICKS_LOG_PREFIX} State updated. HasMore: ${clickQuerySnapshot.docs.length === ITEMS_PER_PAGE && fetchedClicks.length > 0}`);
 
     } catch (err) {
-      console.error("Error fetching tracking data:", err);
+      console.error(`${ADMIN_CLICKS_LOG_PREFIX} Error fetching tracking data:`, err);
       const errorMsg = err instanceof Error ? err.message : "Failed to fetch data";
       setPageError(errorMsg);
       toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
       setHasMore(false);
     } finally {
       setPageLoading(false); setLoadingMore(false); setIsSearching(false);
+      console.log(`${ADMIN_CLICKS_LOG_PREFIX} fetchTrackingData finished. pageLoading: false, loadingMore: false.`);
     }
   }, [debouncedSearchTerm, filterType, toast, fetchClickDetails]);
 
   React.useEffect(() => {
     fetchTrackingData(false, null);
-  }, [filterType, debouncedSearchTerm, fetchTrackingData]); // Added fetchTrackingData
+  }, [filterType, debouncedSearchTerm, fetchTrackingData]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
       e.preventDefault();
@@ -274,7 +278,7 @@ export default function AdminClicksPage() {
     <AdminGuard>
       <div className="space-y-6">
         <h1 className="text-3xl font-bold flex items-center gap-2">
-            <FileText className="w-7 h-7"/> Tracking Overview (Clicks & Conversions)
+            <FileText className="w-7 h-7"/> Tracking Overview (Clicks &amp; Conversions)
         </h1>
 
         {pageError && (
@@ -290,9 +294,9 @@ export default function AdminClicksPage() {
           </CardHeader>
           <CardContent className="flex flex-col sm:flex-row gap-4 items-end">
             <div className="w-full sm:w-auto flex-shrink-0">
-              <Label htmlFor="filterTypeSel" className="sr-only">Filter By</Label>
+              <label htmlFor="filterTypeSelClicks" className="sr-only">Filter By</label>
               <Select value={filterType} onValueChange={(value) => setFilterType(value as any)}>
-                <SelectTrigger id="filterTypeSel" className="h-10"><SelectValue placeholder="Filter by..." /></SelectTrigger>
+                <SelectTrigger id="filterTypeSelClicks" className="h-10"><SelectValue placeholder="Filter by..." /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Fields (General Search)</SelectItem>
                   <SelectItem value="clickId">Click ID</SelectItem>
@@ -350,83 +354,86 @@ export default function AdminClicksPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {combinedData.map(({ click, user, conversion, store }) => (
-                      <TableRow key={click.id}>
-                        <TableCell>
-                          {user ? (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <div className="font-medium truncate max-w-[150px]" title={user.displayName || user.uid}>
-                                    {user.displayName || user.uid}
-                                  </div>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>UID: {user.uid}</p>
-                                  {user.email && <p>Email: {user.email}</p>}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          ) : click.userId ? (
-                            <span className="text-xs text-muted-foreground">UID: {click.userId}</span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground italic">Guest</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                           <div className="font-mono text-xs truncate max-w-[120px]" title={click.clickId}>ID: {click.clickId}</div>
-                        </TableCell>
-                        <TableCell className="truncate max-w-[180px]" title={click.productId ? `Product: ${click.productName || click.productId}` : click.couponId ? `Coupon: ${click.couponId}` : 'Store Visit'}>
-                          {click.productId ? <><ShoppingCart className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> {click.productName || click.productId}</> :
-                           click.couponId ? <><Tag className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> Coupon Click</> : 
-                           'Store Page Visit'}
-                        </TableCell>
-                        <TableCell className="font-medium truncate max-w-[150px]" title={store?.name || click.storeName || click.storeId || 'N/A'}>
-                           {store?.name || click.storeName || click.storeId || 'N/A'}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          {click.timestamp ? format(new Date(click.timestamp), 'PPp') : 'N/A'}
-                        </TableCell>
-                        <TableCell>
-                          {conversion ? (
-                            <Badge variant={conversion.status === 'received' || conversion.status === 'processed' ? 'default' : conversion.status === 'unmatched_click' ? 'secondary' : 'outline'} className="text-[10px] capitalize">
-                              Converted
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-[10px]">No Conversion</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {conversion ? (
-                            <div>
-                              <div className="font-mono text-xs truncate max-w-[120px]" title={`Order ID: ${conversion.orderId}`}>OID: {conversion.orderId}</div>
-                              <div className="text-xs" title={`Sale: ${formatCurrency(conversion.saleAmount)}`}>Sale: {formatCurrency(conversion.saleAmount)}</div>
-                              <div className="text-[10px] text-muted-foreground mt-0.5">
-                                 {conversion.timestamp ? format(new Date(conversion.timestamp), 'Pp') : 'N/A'}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground italic">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs">
-                                    <a href={click.affiliateLink || '#'} target="_blank" rel="noopener noreferrer" className="truncate block max-w-[200px]">
-                                      View Link <ExternalLink className="h-3 w-3 ml-1 inline-block align-middle"/>
-                                    </a>
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                    <p className="max-w-md break-all">{click.affiliateLink || 'No Link'}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {combinedData.map(({ click, user, conversion, store: storeFromClickDetails }) => {
+                       const displayStoreName = click.storeName || storeFromClickDetails?.name || click.storeId || 'N/A';
+                       return (
+                        <TableRow key={click.id}>
+                            <TableCell>
+                            {user ? (
+                                <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                    <div className="font-medium truncate max-w-[150px]" title={user.displayName || user.uid}>
+                                        {user.displayName || user.uid}
+                                    </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                    <p>UID: {user.uid}</p>
+                                    {user.email && <p>Email: {user.email}</p>}
+                                    </TooltipContent>
+                                </Tooltip>
+                                </TooltipProvider>
+                            ) : click.userId ? (
+                                <span className="text-xs text-muted-foreground">UID: {click.userId}</span>
+                            ) : (
+                                <span className="text-xs text-muted-foreground italic">Guest</span>
+                            )}
+                            </TableCell>
+                            <TableCell>
+                            <div className="font-mono text-xs truncate max-w-[120px]" title={click.clickId}>ID: {click.clickId}</div>
+                            </TableCell>
+                            <TableCell className="truncate max-w-[180px]" title={click.productId ? `Product: ${click.productName || click.productId}` : click.couponId ? `Coupon ID: ${click.couponId}` : 'Store Page Visit'}>
+                            {click.productId ? <><ShoppingCart className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> {click.productName || click.productId}</> :
+                            click.couponId ? <><Tag className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> Coupon Click</> :
+                            'Store Page Visit'}
+                            </TableCell>
+                            <TableCell className="font-medium truncate max-w-[150px]" title={displayStoreName}>
+                            {displayStoreName}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                            {click.timestamp ? format(new Date(click.timestamp), 'PPp') : 'N/A'}
+                            </TableCell>
+                            <TableCell>
+                            {conversion ? (
+                                <Badge variant={conversion.status === 'received' || conversion.status === 'processed' ? 'default' : conversion.status === 'unmatched_click' ? 'secondary' : 'outline'} className="text-[10px] capitalize">
+                                Converted ({conversion.status.replace('_', ' ')})
+                                </Badge>
+                            ) : (
+                                <Badge variant="outline" className="text-[10px]">No Conversion</Badge>
+                            )}
+                            </TableCell>
+                            <TableCell>
+                            {conversion ? (
+                                <div>
+                                <div className="font-mono text-xs truncate max-w-[120px]" title={`Order ID: ${conversion.orderId}`}>OID: {conversion.orderId}</div>
+                                <div className="text-xs" title={`Sale: ${formatCurrency(conversion.saleAmount)}`}>Sale: {formatCurrency(conversion.saleAmount)}</div>
+                                <div className="text-[10px] text-muted-foreground mt-0.5">
+                                    {conversion.timestamp ? format(new Date(conversion.timestamp), 'Pp') : 'N/A'}
+                                </div>
+                                </div>
+                            ) : (
+                                <span className="text-xs text-muted-foreground italic">-</span>
+                            )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                                <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                    <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs">
+                                        <a href={click.affiliateLink || '#'} target="_blank" rel="noopener noreferrer" className="truncate block max-w-[200px]">
+                                        View Link <ExternalLink className="h-3 w-3 ml-1 inline-block align-middle"/>
+                                        </a>
+                                    </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p className="max-w-md break-all">{click.affiliateLink || 'No Link'}</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                                </TooltipProvider>
+                            </TableCell>
+                        </TableRow>
+                       );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -446,3 +453,4 @@ export default function AdminClicksPage() {
     </AdminGuard>
   );
 }
+
