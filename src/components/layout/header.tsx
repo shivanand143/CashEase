@@ -17,10 +17,11 @@ import {
   Sheet,
   SheetContent,
   SheetHeader,
-  SheetTitle, // Keep SheetTitle for accessibility if needed by SheetHeader
+  SheetTitle,
   SheetTrigger,
   SheetClose,
 } from "@/components/ui/sheet";
+import { VisuallyHidden } from '@/components/ui/visually-hidden';
 import {
     LogIn, LogOut, User, IndianRupee, ShoppingBag, LayoutDashboard, Settings, Menu,
     Tag, ShieldCheck, Gift, History, Send, X, List, HelpCircle, BookOpen, Search as SearchIcon
@@ -31,9 +32,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Separator } from "@/components/ui/separator";
 import { Input } from '@/components/ui/input';
-import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useIsMobile } from '@/hooks/use-mobile';
-// Removed useHasMounted
+import { useHasMounted } from '@/hooks/use-has-mounted'; // Import the new hook
 
 export default function Header() {
   const { user, userProfile, loading: authLoadingHook, signOut } = useAuth();
@@ -42,7 +42,7 @@ export default function Header() {
   const [isSheetOpen, setIsSheetOpen] = React.useState(false);
   const router = useRouter();
   const isMobile = useIsMobile();
-  // Removed hasMounted state
+  const hasMounted = useHasMounted();
 
   const getInitials = (name?: string | null) => {
     if (!name) return 'MS';
@@ -61,7 +61,7 @@ export default function Header() {
   ];
 
   const sheetNavLinks = [
-    { href: "/", label: "Home", icon: ShoppingBag }, // Home icon might be better if not using bottom nav
+    { href: "/", label: "Home", icon: ShoppingBag },
     { href: "/stores", label: "All Stores", icon: ShoppingBag },
     { href: "/coupons", label: "All Coupons", icon: Tag },
     { href: "/categories", label: "Categories", icon: List },
@@ -74,7 +74,9 @@ export default function Header() {
   const userMenuItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/dashboard/history", label: "Cashback History", icon: History },
+    { href: "/dashboard/clicks", label: "Click History", icon: User }, // Changed icon for variety
     { href: "/dashboard/payout", label: "Request Payout", icon: Send },
+    { href: "/dashboard/payout-history", label: "Payout History", icon: List },
     { href: "/dashboard/referrals", label: "Refer & Earn", icon: Gift },
     { href: "/dashboard/settings", label: "Account Settings", icon: Settings },
   ];
@@ -89,7 +91,7 @@ export default function Header() {
   const handleSearchSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!searchTerm.trim()) return;
-    setIsSheetOpen(false); // Close sheet on search submit
+    setIsSheetOpen(false); 
     router.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`);
     setSearchTerm('');
   };
@@ -97,9 +99,34 @@ export default function Header() {
   const handleSheetLinkClick = () => {
       setIsSheetOpen(false);
   }
-  const sheetTitleId = "mobile-main-menu-title"; // For accessibility
+  const sheetTitleId = "mobile-main-menu-title";
 
-  // Render based on isMobile. There might be a brief flash before JS runs.
+  if (!hasMounted) {
+    // Render a minimal, consistent header for SSR and initial client render
+    return (
+      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container mx-auto flex h-14 items-center justify-between gap-2 px-4 md:px-6">
+          <div className="flex items-center">
+            <Button variant="ghost" size="icon" className="mr-2 md:hidden">
+              <Menu className="h-5 w-5" />
+              <span className="sr-only">Toggle Menu</span>
+            </Button>
+            <Link href="/" className="flex items-center space-x-2 mr-4">
+              <IndianRupee className="h-6 w-6 text-primary" />
+              <span className="font-bold text-xl hidden sm:inline-block text-foreground">MagicSaver</span>
+            </Link>
+          </div>
+          <div className="flex items-center space-x-2">
+            {/* Placeholder for auth buttons/avatar to maintain structure */}
+            <Skeleton className="h-9 w-20 hidden md:block" /> 
+            <Skeleton className="h-9 w-9 rounded-full" />
+          </div>
+        </div>
+      </header>
+    );
+  }
+
+  // Render full header content once mounted
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex h-14 items-center justify-between gap-2 px-4 md:px-6">
@@ -107,14 +134,14 @@ export default function Header() {
           {isMobile && (
             <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="mr-2 md:hidden"> {/* Ensure it's hidden on md+ */}
+                <Button variant="ghost" size="icon" className="mr-2">
                   <Menu className="h-5 w-5" />
                   <span className="sr-only">Toggle Menu</span>
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-full max-w-xs p-0 flex flex-col bg-background" aria-labelledby={sheetTitleId}>
+                 <VisuallyHidden><SheetTitle id={sheetTitleId}>Main Navigation Menu</SheetTitle></VisuallyHidden>
                 <SheetHeader className="p-4 border-b flex flex-row items-center justify-between">
-                    <SheetTitle id={sheetTitleId} className="sr-only">Main Navigation Menu</SheetTitle> {/* Accessible title */}
                     <Link href="/" className="flex items-center space-x-2" onClick={handleSheetLinkClick}>
                         <IndianRupee className="h-6 w-6 text-primary" />
                         <span className="font-bold text-lg text-foreground">MagicSaver</span>
