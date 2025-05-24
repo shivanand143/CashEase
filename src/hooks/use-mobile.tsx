@@ -6,7 +6,13 @@ import * as React from "react";
 const MOBILE_BREAKPOINT = 768; // Standard Tailwind md breakpoint
 
 export function useIsMobile() {
-  const [isMobile, setIsMobile] = React.useState<boolean>(false); // Default to false initially
+  const [isMobile, setIsMobile] = React.useState<boolean>(() => {
+    // Initialize state based on current window size if available, otherwise default to false
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < MOBILE_BREAKPOINT;
+    }
+    return false; // Default for SSR or if window is not defined
+  });
 
   React.useEffect(() => {
     // Check if window is defined (prevents errors during SSR)
@@ -17,9 +23,6 @@ export function useIsMobile() {
     const checkDevice = () => {
       setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
     };
-
-    // Initial check
-    checkDevice();
 
     // Listener for window resize
     window.addEventListener('resize', checkDevice);

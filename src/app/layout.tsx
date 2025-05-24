@@ -7,8 +7,8 @@ import { AuthProvider } from '@/hooks/use-auth';
 import Header from '@/components/layout/header';
 import Footer from '@/components/layout/footer';
 import { Toaster } from "@/components/ui/toaster";
-import * as React from 'react'; 
-import { TooltipProvider } from "@/components/ui/tooltip"; // Ensure TooltipProvider is here
+import * as React from 'react';
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const fontSans = FontSans({
   subsets: ["latin"],
@@ -34,10 +34,12 @@ export default function RootLayout({
         )}
       >
         <AuthProvider>
-          <TooltipProvider> {/* TooltipProvider wraps the main content */}
+          <TooltipProvider>
             <div className="relative flex min-h-screen flex-col bg-background">
               <Header />
-              <main className="flex-1 container mx-auto px-4 py-8 md:py-12">
+              {/* Add padding-bottom on mobile to prevent content from being hidden by the fixed bottom navigation */}
+              {/* pb-16 is a common height for bottom navigation bars (h-16) */}
+              <main className="flex-1 container mx-auto px-4 py-8 md:py-12 pb-20 md:pb-12"> {/* Increased bottom padding for mobile */}
                 <React.Suspense fallback={<div className="flex justify-center items-center min-h-[calc(100vh-20rem)]"><p>Loading page...</p></div>}>
                   {children}
                 </React.Suspense>

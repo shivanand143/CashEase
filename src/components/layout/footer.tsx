@@ -1,8 +1,20 @@
 
+"use client"; // Footer might need to be client if it uses hooks for conditional rendering
+
+import * as React from 'react';
 import Link from 'next/link';
 import { IndianRupee, Facebook, Instagram, Twitter } from 'lucide-react';
+import BottomNavigation from './bottom-navigation';
+import { useIsMobile } from '@/hooks/use-mobile'; // Assuming you have this hook
 
 export default function Footer() {
+  const isMobile = useIsMobile();
+
+  if (isMobile) {
+    return <BottomNavigation />;
+  }
+
+  // Desktop Footer
   return (
     <footer className="bg-muted text-muted-foreground border-t mt-16">
       <div className="container mx-auto px-4 md:px-6 py-8 md:py-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
