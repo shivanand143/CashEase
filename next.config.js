@@ -20,7 +20,7 @@ const nextConfig = {
       // Dangerously allow production builds to successfully complete even if
       // your project has type errors.
       // !! WARN !!
-      ignoreBuildErrors: true, // Added to ignore build errors temporarily
+      ignoreBuildErrors: false, // CRITICAL: Set to false to reveal underlying errors
     },
 };
 
