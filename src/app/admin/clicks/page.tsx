@@ -15,7 +15,7 @@ import {
   QueryDocumentSnapshot,
   Timestamp,
   doc,
-  getDoc // Ensure getDoc is imported
+  getDoc
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { Click, Conversion, UserProfile, Store } from '@/lib/types';
@@ -33,7 +33,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Loader2, Search, ExternalLink, FileText, Tag, ShoppingCart, User as UserIcon } from 'lucide-react';
+import { AlertCircle, Loader2, Search, ExternalLink, FileText, Tag, ShoppingCart, User as UserIcon, CheckCircle, XCircle } from 'lucide-react'; // Added CheckCircle, XCircle
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import AdminGuard from '@/components/guards/admin-guard';
@@ -49,7 +49,7 @@ interface CombinedClickData {
   click: Click;
   user?: UserProfile | null;
   conversion?: Conversion | null;
-  store?: Store | null;
+  store?: Store | null; // Store data from the click document itself or fetched
 }
 
 function AdminClicksPageSkeleton() {
@@ -99,49 +99,66 @@ export default function AdminClicksPage() {
   const debouncedSearchTerm = useDebounce(searchTermInput, 500);
   const [isSearching, setIsSearching] = React.useState(false);
 
-  // Cache for fetched details to avoid re-fetching
   const [userCache, setUserCache] = React.useState<Record<string, UserProfile>>({});
   const [storeCache, setStoreCache] = React.useState<Record<string, Store>>({});
   const [conversionCache, setConversionCache] = React.useState<Record<string, Conversion>>({});
+  const isMountedRef = React.useRef(true);
+
+  React.useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const fetchClickDetails = React.useCallback(async (clicksToEnrich: Click[]): Promise<CombinedClickData[]> => {
     console.log(`${ADMIN_CLICKS_LOG_PREFIX} fetchClickDetails called for ${clicksToEnrich.length} clicks.`);
-    if (firebaseInitializationError || !db) {
+    if (firebaseInitializationError || !db) { // Guard for db being null
       console.error(`${ADMIN_CLICKS_LOG_PREFIX} Firestore not available for fetching details.`);
-      setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchClickDetails."));
+      if (isMountedRef.current) {
+        setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchClickDetails."));
+      }
       return clicksToEnrich.map(click => ({ click }));
     }
+    const currentDb = db; // Assign to a non-null typed variable for TypeScript
 
     const enrichedDataPromises = clicksToEnrich.map(async (click): Promise<CombinedClickData> => {
       let userProfile: UserProfile | null = userCache[click.userId || ''] || null;
-      let storeData: Store | null = storeCache[click.storeId || ''] || null;
+      let storeDataFromCache: Store | null = storeCache[click.storeId || ''] || null; // Renamed to avoid conflict
       let conversion: Conversion | null = conversionCache[click.clickId] || null;
 
       if (click.userId && !userProfile) {
         try {
-          const userRef = doc(db, 'users', click.userId); // db is checked above
+          const userRef = doc(currentDb, 'users', click.userId);
           const userSnap = await getDoc(userRef);
           if (userSnap.exists()) {
             userProfile = { uid: userSnap.id, ...userSnap.data() } as UserProfile;
-            setUserCache(prev => ({ ...prev, [click.userId!]: userProfile! }));
+            if (isMountedRef.current) setUserCache(prev => ({ ...prev, [click.userId!]: userProfile! }));
           }
         } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch user ${click.userId}`, e); }
       }
 
-      if (click.storeId && !storeData && !click.storeName /* Only fetch if name not on click */) {
-        try {
-          const storeRef = doc(db, 'stores', click.storeId); // db is checked above
-          const storeSnap = await getDoc(storeRef);
-          if (storeSnap.exists()) {
-            storeData = { id: storeSnap.id, ...storeSnap.data() } as Store;
-            setStoreCache(prev => ({ ...prev, [click.storeId!]: storeData! }));
-          }
-        } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch store ${click.storeId}`, e); }
+      // Use storeName from click if available, otherwise fetch store details for logo/etc.
+      let storeForCard: Store | null = null;
+      if (click.storeId) {
+        if (storeDataFromCache) {
+            storeForCard = storeDataFromCache;
+        } else {
+            try {
+                const storeRef = doc(currentDb, 'stores', click.storeId);
+                const storeSnap = await getDoc(storeRef);
+                if (storeSnap.exists()) {
+                    storeForCard = { id: storeSnap.id, ...storeSnap.data() } as Store;
+                   if (isMountedRef.current) setStoreCache(prev => ({ ...prev, [click.storeId!]: storeForCard! }));
+                }
+            } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch store ${click.storeId}`, e); }
+        }
       }
 
-      if (click.clickId && !conversion) {
+
+      if (click.clickId && !conversion) { // Use click.clickId to search for conversion
         try {
-          const convQuery = query(collection(db, 'conversions'), where('clickId', '==', click.clickId), limit(1)); // db is checked above
+          const convQuery = query(collection(currentDb, 'conversions'), where('clickId', '==', click.clickId), limit(1));
           const convSnap = await getDocs(convQuery);
           if (!convSnap.empty) {
             const convData = convSnap.docs[0].data();
@@ -150,62 +167,67 @@ export default function AdminClicksPage() {
               ...convData,
               timestamp: safeToDate(convData.timestamp as Timestamp | undefined) || new Date(0),
             } as Conversion;
-            setConversionCache(prev => ({ ...prev, [click.clickId]: conversion! }));
+            if (isMountedRef.current) setConversionCache(prev => ({ ...prev, [click.clickId]: conversion! }));
           }
         } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch conversion for click ${click.clickId}`, e); }
       }
-      return { click, user: userProfile, conversion, store: storeData };
+      return { click, user: userProfile, conversion, store: storeForCard };
     });
 
     return Promise.all(enrichedDataPromises);
   }, [userCache, storeCache, conversionCache]);
+
 
   const fetchTrackingData = React.useCallback(async (
     loadMoreOperation = false,
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null
   ) => {
     console.log(`${ADMIN_CLICKS_LOG_PREFIX} fetchTrackingData: loadMore=${loadMoreOperation}, term='${debouncedSearchTerm}', filter='${filterType}'`);
-    if (firebaseInitializationError || !db) {
-      setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchTrackingData."));
-      setPageLoading(false); setLoadingMore(false); setHasMore(false);
+    if (!isMountedRef.current) return;
+
+    if (firebaseInitializationError || !db) { // Guard for db being null
+      if (isMountedRef.current) {
+        setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchTrackingData."));
+        setPageLoading(false); setLoadingMore(false); setHasMore(false);
+      }
       return;
     }
+    const currentDb = db; // Assign to a non-null typed variable
 
     if (!loadMoreOperation) {
       setPageLoading(true); setCombinedData([]); setLastVisibleClick(null); setHasMore(true);
     } else {
-      if (!docToStartAfter) { setLoadingMore(false); return; }
+      if (!docToStartAfter) { if (isMountedRef.current) setLoadingMore(false); return; }
       setLoadingMore(true);
     }
     if (!loadMoreOperation) setPageError(null);
     setIsSearching(debouncedSearchTerm !== '');
 
     try {
-      const clicksCollectionRef = collection(db, 'clicks'); // db is checked above
+      const clicksCollectionRef = collection(currentDb, 'clicks');
       const constraints: QueryConstraint[] = [];
 
       if (debouncedSearchTerm.trim() && filterType !== 'all') {
           if (filterType === 'clickId') {
-              const clickDocRef = doc(db, 'clicks', debouncedSearchTerm.trim()); // db is checked above
+              const clickDocRef = doc(currentDb, 'clicks', debouncedSearchTerm.trim());
               const clickDocSnap = await getDoc(clickDocRef);
               if (clickDocSnap.exists()) {
                   const clickData = { id: clickDocSnap.id, ...clickDocSnap.data(), timestamp: safeToDate(clickDocSnap.data().timestamp as Timestamp | undefined) || new Date(0) } as Click;
                   const enrichedSingle = await fetchClickDetails([clickData]);
-                  setCombinedData(enrichedSingle);
-                  setHasMore(false);
+                  if (isMountedRef.current) { setCombinedData(enrichedSingle); setHasMore(false); }
               } else {
-                  setCombinedData([]); setHasMore(false);
+                  if (isMountedRef.current) { setCombinedData([]); setHasMore(false); }
               }
-              setPageLoading(false); setLoadingMore(false); setIsSearching(false);
+              if (isMountedRef.current) { setPageLoading(false); setLoadingMore(false); setIsSearching(false); }
               return;
           } else if (filterType === 'orderId') {
-              const convQuery = query(collection(db, 'conversions'), where('orderId', '==', debouncedSearchTerm.trim()), limit(1)); // db is checked above
+              const convQuery = query(collection(currentDb, 'conversions'), where('orderId', '==', debouncedSearchTerm.trim()), limit(1));
               const convSnap = await getDocs(convQuery);
               if (!convSnap.empty) {
                   const convData = convSnap.docs[0].data() as Conversion;
-                  if (convData.clickId) constraints.push(where('clickId', '==', convData.clickId));
-                  else { setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); return; }
-              } else { setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); return; }
+                  if (convData.clickId) constraints.push(where('clickId', '==', convData.clickId)); // Query clicks by clickId from conversion
+                  else { if (isMountedRef.current) { setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); } return; }
+              } else { if (isMountedRef.current) { setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); } return; }
           } else if (filterType === 'userId' || filterType === 'storeId') {
              constraints.push(where(filterType, '==', debouncedSearchTerm.trim()));
           }
@@ -231,6 +253,7 @@ export default function AdminClicksPage() {
         const lowerSearch = debouncedSearchTerm.toLowerCase();
         finalResults = enrichedResults.filter(item => 
           item.click.storeName?.toLowerCase().includes(lowerSearch) ||
+          item.store?.name?.toLowerCase().includes(lowerSearch) || // Check fetched store name
           item.click.productName?.toLowerCase().includes(lowerSearch) ||
           item.user?.displayName?.toLowerCase().includes(lowerSearch) ||
           item.user?.email?.toLowerCase().includes(lowerSearch) ||
@@ -239,26 +262,32 @@ export default function AdminClicksPage() {
         );
       }
 
-      setCombinedData(prev => loadMoreOperation ? [...prev, ...finalResults] : finalResults);
-      setLastVisibleClick(clickQuerySnapshot.docs[clickQuerySnapshot.docs.length - 1] || null);
-      setHasMore(clickQuerySnapshot.docs.length === ITEMS_PER_PAGE && fetchedClicks.length > 0);
-      console.log(`${ADMIN_CLICKS_LOG_PREFIX} State updated. HasMore: ${clickQuerySnapshot.docs.length === ITEMS_PER_PAGE && fetchedClicks.length > 0}`);
+      if (isMountedRef.current) {
+        setCombinedData(prev => loadMoreOperation ? [...prev, ...finalResults] : finalResults);
+        setLastVisibleClick(clickQuerySnapshot.docs[clickQuerySnapshot.docs.length - 1] || null);
+        setHasMore(clickQuerySnapshot.docs.length === ITEMS_PER_PAGE && fetchedClicks.length > 0);
+        console.log(`${ADMIN_CLICKS_LOG_PREFIX} State updated. HasMore: ${clickQuerySnapshot.docs.length === ITEMS_PER_PAGE && fetchedClicks.length > 0}`);
+      }
 
     } catch (err) {
       console.error(`${ADMIN_CLICKS_LOG_PREFIX} Error fetching tracking data:`, err);
       const errorMsg = err instanceof Error ? err.message : "Failed to fetch data";
-      setPageError(errorMsg);
-      toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
-      setHasMore(false);
+      if (isMountedRef.current) {
+        setPageError(errorMsg);
+        toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+        setHasMore(false);
+      }
     } finally {
-      setPageLoading(false); setLoadingMore(false); setIsSearching(false);
-      console.log(`${ADMIN_CLICKS_LOG_PREFIX} fetchTrackingData finished. pageLoading: false, loadingMore: false.`);
+      if (isMountedRef.current) {
+        setPageLoading(false); setLoadingMore(false); setIsSearching(false);
+        console.log(`${ADMIN_CLICKS_LOG_PREFIX} fetchTrackingData finished. pageLoading: false, loadingMore: false.`);
+      }
     }
   }, [debouncedSearchTerm, filterType, toast, fetchClickDetails]);
 
   React.useEffect(() => {
     fetchTrackingData(false, null);
-  }, [filterType, debouncedSearchTerm, fetchTrackingData]);
+  }, [filterType, debouncedSearchTerm, fetchTrackingData]); // fetchTrackingData is memoized
 
   const handleSearchSubmit = (e: React.FormEvent) => {
       e.preventDefault();
@@ -354,8 +383,8 @@ export default function AdminClicksPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {combinedData.map(({ click, user, conversion, store: storeFromClickDetails }) => {
-                       const displayStoreName = click.storeName || storeFromClickDetails?.name || click.storeId || 'N/A';
+                    {combinedData.map(({ click, user, conversion, store: storeFromDetails }) => {
+                       const displayStoreName = click.storeName || storeFromDetails?.name || click.storeId || 'N/A';
                        return (
                         <TableRow key={click.id}>
                             <TableCell>
@@ -384,7 +413,7 @@ export default function AdminClicksPage() {
                             </TableCell>
                             <TableCell className="truncate max-w-[180px]" title={click.productId ? `Product: ${click.productName || click.productId}` : click.couponId ? `Coupon ID: ${click.couponId}` : 'Store Page Visit'}>
                             {click.productId ? <><ShoppingCart className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> {click.productName || click.productId}</> :
-                            click.couponId ? <><Tag className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> Coupon Click</> :
+                            click.couponId ? <><Tag className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> Coupon: {click.couponId}</> : // Display couponId
                             'Store Page Visit'}
                             </TableCell>
                             <TableCell className="font-medium truncate max-w-[150px]" title={displayStoreName}>
@@ -396,10 +425,10 @@ export default function AdminClicksPage() {
                             <TableCell>
                             {conversion ? (
                                 <Badge variant={conversion.status === 'received' || conversion.status === 'processed' ? 'default' : conversion.status === 'unmatched_click' ? 'secondary' : 'outline'} className="text-[10px] capitalize">
-                                Converted ({conversion.status.replace('_', ' ')})
+                                 <CheckCircle className="mr-1 h-3 w-3 text-green-500" /> Converted ({conversion.status.replace('_', ' ')})
                                 </Badge>
                             ) : (
-                                <Badge variant="outline" className="text-[10px]">No Conversion</Badge>
+                                <Badge variant="outline" className="text-[10px]"> <XCircle className="mr-1 h-3 w-3 text-destructive"/> No Conversion</Badge>
                             )}
                             </TableCell>
                             <TableCell>
@@ -453,4 +482,3 @@ export default function AdminClicksPage() {
     </AdminGuard>
   );
 }
-
