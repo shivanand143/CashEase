@@ -34,13 +34,11 @@ export default function RootLayout({
         )}
       >
         <AuthProvider>
-          <TooltipProvider>
+          <TooltipProvider delayDuration={0}> {/* Ensure delayDuration is suitable */}
             <div className="relative flex min-h-screen flex-col bg-background">
               <Header />
-              {/* Add padding-bottom on mobile to prevent content from being hidden by the fixed bottom navigation */}
-              {/* pb-16 is a common height for bottom navigation bars (h-16) */}
-              <main className="flex-1 container mx-auto px-4 py-8 md:py-12 pb-20 md:pb-12"> {/* Increased bottom padding for mobile */}
-                <React.Suspense fallback={<div className="flex justify-center items-center min-h-[calc(100vh-20rem)]"><p>Loading page...</p></div>}>
+              <main className="flex-1 container mx-auto px-4 py-8 md:py-12 pb-20 md:pb-12">
+                <React.Suspense fallback={<div className="flex justify-center items-center min-h-[calc(100vh-10rem)] w-full"><p>Loading page content...</p></div>}>
                   {children}
                 </React.Suspense>
               </main>
@@ -53,3 +51,5 @@ export default function RootLayout({
     </html>
   );
 }
+    
+    

@@ -1,0 +1,625 @@
+[debug] [2025-05-24T12:09:09.428Z] ----------------------------------------------------------------------
+[debug] [2025-05-24T12:09:09.432Z] Command:       /nix/store/rbdrkcs5kkwpalxcd7c6bnm33lk2955n-nodejs-20.19.0/bin/node /home/user/.global_modules/bin/firebase deploy
+[debug] [2025-05-24T12:09:09.432Z] CLI Version:   14.4.0
+[debug] [2025-05-24T12:09:09.433Z] Platform:      linux
+[debug] [2025-05-24T12:09:09.433Z] Node Version:  v20.19.0
+[debug] [2025-05-24T12:09:09.436Z] Time:          Sat May 24 2025 12:09:09 GMT+0000 (Coordinated Universal Time)
+[debug] [2025-05-24T12:09:09.437Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-05-24T12:09:10.072Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T12:09:20.112Z] Running auto auth
+[debug] [2025-05-24T12:09:20.151Z] [iam] checking project ai-resume-be9c1 for permissions ["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]
+[debug] [2025-05-24T12:09:20.157Z] No OAuth tokens found
+[debug] [2025-05-24T12:09:20.163Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/ai-resume-be9c1:testIamPermissions [none]
+[debug] [2025-05-24T12:09:20.164Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/ai-resume-be9c1:testIamPermissions x-goog-quota-user=projects/ai-resume-be9c1
+[debug] [2025-05-24T12:09:20.164Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/ai-resume-be9c1:testIamPermissions {"permissions":["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]}
+[debug] [2025-05-24T12:09:20.970Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/ai-resume-be9c1:testIamPermissions 200
+[debug] [2025-05-24T12:09:20.971Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/ai-resume-be9c1:testIamPermissions {"permissions":["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]}
+[debug] [2025-05-24T12:09:20.972Z] No OAuth tokens found
+[debug] [2025-05-24T12:09:20.974Z] >>> [apiv2][query] POST https://iam.googleapis.com/v1/projects/ai-resume-be9c1/serviceAccounts/ai-resume-be9c1@appspot.gserviceaccount.com:testIamPermissions [none]
+[debug] [2025-05-24T12:09:20.974Z] >>> [apiv2][body] POST https://iam.googleapis.com/v1/projects/ai-resume-be9c1/serviceAccounts/ai-resume-be9c1@appspot.gserviceaccount.com:testIamPermissions {"permissions":["iam.serviceAccounts.actAs"]}
+[debug] [2025-05-24T12:09:21.979Z] <<< [apiv2][status] POST https://iam.googleapis.com/v1/projects/ai-resume-be9c1/serviceAccounts/ai-resume-be9c1@appspot.gserviceaccount.com:testIamPermissions 200
+[debug] [2025-05-24T12:09:21.979Z] <<< [apiv2][body] POST https://iam.googleapis.com/v1/projects/ai-resume-be9c1/serviceAccounts/ai-resume-be9c1@appspot.gserviceaccount.com:testIamPermissions {"permissions":["iam.serviceAccounts.actAs"]}
+[debug] [2025-05-24T12:09:21.980Z] No OAuth tokens found
+[debug] [2025-05-24T12:09:21.981Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/ai-resume-be9c1 [none]
+[debug] [2025-05-24T12:09:22.217Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/ai-resume-be9c1 200
+[debug] [2025-05-24T12:09:22.218Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/ai-resume-be9c1 {"projectId":"ai-resume-be9c1","projectNumber":"735738546972","displayName":"ai resume","name":"projects/ai-resume-be9c1","resources":{"hostingSite":"ai-resume-be9c1"},"state":"ACTIVE","etag":"1_a79f9441-b677-4109-bd36-1a9f99d307ab"}
+[debug] [2025-05-24T12:09:24.446Z] No OAuth tokens found
+[debug] [2025-05-24T12:09:24.447Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/ai-resume-be9c1/sites pageToken=&pageSize=10
+[debug] [2025-05-24T12:09:24.825Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/ai-resume-be9c1/sites 200
+[debug] [2025-05-24T12:09:24.826Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/ai-resume-be9c1/sites {"sites":[{"name":"projects/ai-resume-be9c1/sites/ai-resume-be9c1","defaultUrl":"https://ai-resume-be9c1.web.app","appId":"1:735738546972:web:95e25c818a44c6356f88d9","type":"DEFAULT_SITE"}]}
+[debug] [2025-05-24T12:09:24.826Z] No OAuth tokens found
+[debug] [2025-05-24T12:09:24.827Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/-/webApps/1:735738546972:web:95e25c818a44c6356f88d9/config [none]
+[debug] [2025-05-24T12:09:25.610Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/-/webApps/1:735738546972:web:95e25c818a44c6356f88d9/config 200
+[debug] [2025-05-24T12:09:25.611Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/-/webApps/1:735738546972:web:95e25c818a44c6356f88d9/config {"projectId":"ai-resume-be9c1","appId":"1:735738546972:web:95e25c818a44c6356f88d9","storageBucket":"ai-resume-be9c1.firebasestorage.app","apiKey":"AIzaSyBLOI6MWvq0DcCHqtUu7D1m3y3THz8Xrpw","authDomain":"ai-resume-be9c1.firebaseapp.com","messagingSenderId":"735738546972","measurementId":"G-XW31ZGH3T3"}
+[info] 
+   Thank you for trying our early preview of Next.js support on Firebase Hosting.
+   During the preview, support is best-effort and breaking changes can be expected. Proceed with caution.
+
+   Documentation: https://firebase.google.com/docs/hosting/frameworks/nextjs
+   File a bug: https://github.com/firebase/firebase-tools/issues/new?template=bug_report.md
+   Submit a feature request: https://github.com/firebase/firebase-tools/issues/new?template=feature_request.md
+
+   We'd love to learn from you. Express your interest in helping us shape the future of Firebase Hosting: https://goo.gle/41enW5X
+
+[debug] [2025-05-24T12:09:31.305Z] No OAuth tokens found
+[debug] [2025-05-24T12:09:31.306Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/ai-resume-be9c1/sites/ai-resume-be9c1 [none]
+[debug] [2025-05-24T12:09:31.602Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/ai-resume-be9c1/sites/ai-resume-be9c1 200
+[debug] [2025-05-24T12:09:31.603Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/ai-resume-be9c1/sites/ai-resume-be9c1 {"name":"projects/ai-resume-be9c1/sites/ai-resume-be9c1","defaultUrl":"https://ai-resume-be9c1.web.app","appId":"1:735738546972:web:95e25c818a44c6356f88d9","type":"DEFAULT_SITE"}
+[info]   ▲ Next.js 14.2.5
+
+[info]   - Environments: .env.local
+
+
+[info]    Creating an optimized production build ...
+
+[info]  ✓ Compiled successfully
+
+[info]    Skipping validation of types
+   Linting ...
+
+[info]    Collecting page data ...
+
+[info]    Generating static pages (0/39) ...
+
+[info] Firebase initialized successfully.
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/404". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/_not-found". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/login". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/login". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/signup". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/signup". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/about". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/about". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]    Generating static pages (9/39) 
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/admin/banners". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/admin/banners". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/admin/categories". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/admin/categories". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/admin/clicks". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/admin/clicks". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/admin/coupons/new". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/admin/coupons/new". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/admin/coupons". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/admin/coupons". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/admin". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/admin". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/admin/payouts". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/admin/payouts". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/admin/products/new". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/admin/products/new". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/admin/products". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/admin/products". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/admin/reports". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/admin/reports". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]    Generating static pages (19/39) 
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/admin/stores/new". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/admin/stores/new". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/admin/stores". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/admin/stores". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/admin/transactions". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/admin/transactions". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/admin/users". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/admin/users". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/blog". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/blog". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/categories". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/categories". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/contact". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/contact". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/coupons". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/coupons". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/dashboard/clicks". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/dashboard/clicks". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/dashboard/history". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/dashboard/history". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]    Generating static pages (29/39) 
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/dashboard". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/dashboard". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/dashboard/payout-history". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/dashboard/payout-history". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/dashboard/payout". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/dashboard/payout". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/dashboard/referrals". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/dashboard/referrals". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/dashboard/settings". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/dashboard/settings". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/faq". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/faq". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/how-it-works". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/how-it-works". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/search". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/search". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/stores". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at s (/home/user/studio/.next/server/chunks/1309.js:185:11664)
+    at c (/home/user/studio/.next/server/chunks/1309.js:185:22700)
+    at h (/home/user/studio/.next/server/chunks/6384.js:1:29032)
+    at nj (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:46251)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:47571)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:61546)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+    at nB (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:67538)
+    at nM (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:58560)
+    at nN (/home/user/studio/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:64546)
+
+Error occurred prerendering page "/stores". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+[info]  ✓ Generating static pages (39/39)
+
+[info] 
+
+[info] > Export encountered errors on following paths:
+	/(auth)/login/page: /login
+	/(auth)/signup/page: /signup
+	/_not-found/page: /_not-found
+	/about/page: /about
+	/admin/banners/page: /admin/banners
+	/admin/categories/page: /admin/categories
+	/admin/clicks/page: /admin/clicks
+	/admin/coupons/new/page: /admin/coupons/new
+	/admin/coupons/page: /admin/coupons
+	/admin/page: /admin
+	/admin/payouts/page: /admin/payouts
+	/admin/products/new/page: /admin/products/new
+	/admin/products/page: /admin/products
+	/admin/reports/page: /admin/reports
+	/admin/stores/new/page: /admin/stores/new
+	/admin/stores/page: /admin/stores
+	/admin/transactions/page: /admin/transactions
+	/admin/users/page: /admin/users
+	/blog/page: /blog
+	/categories/page: /categories
+	/contact/page: /contact
+	/coupons/page: /coupons
+	/dashboard/clicks/page: /dashboard/clicks
+	/dashboard/history/page: /dashboard/history
+	/dashboard/page: /dashboard
+	/dashboard/payout-history/page: /dashboard/payout-history
+	/dashboard/payout/page: /dashboard/payout
+	/dashboard/referrals/page: /dashboard/referrals
+	/dashboard/settings/page: /dashboard/settings
+	/faq/page: /faq
+	/how-it-works/page: /how-it-works
+	/page: /
+	/search/page: /search
+	/stores/page: /stores
+
+[debug] [2025-05-24T12:11:02.926Z] Error: ENOENT: no such file or directory, open '/home/user/studio/.next/export-marker.json'
+[error] 
+[error] Error: An unexpected error has occurred.
