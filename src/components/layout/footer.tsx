@@ -6,23 +6,23 @@ import Link from 'next/link';
 import { IndianRupee, Facebook, Instagram, Twitter } from 'lucide-react';
 import BottomNavigation from './bottom-navigation';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useHasMounted } from '@/hooks/use-has-mounted'; // Import useHasMounted
+// Removed useHasMounted
 
 export default function Footer() {
-  const hasMounted = useHasMounted();
   const isMobile = useIsMobile();
+  // Removed hasMounted logic
 
-  if (!hasMounted) {
-    // Render null on the server and on the initial client render
-    // to avoid hydration mismatch before client-specific logic runs.
-    return null;
-  }
+  // The rendering will now depend directly on isMobile.
+  // This might cause a hydration mismatch if the server renders desktop footer
+  // and client quickly determines it's mobile. However, this is simpler
+  // and sometimes preferred over useHasMounted if minor flashes are acceptable.
+  // If hydration errors persist, useHasMounted might be needed back, but with
+  // careful initial render matching.
 
   if (isMobile) {
     return <BottomNavigation />;
   }
 
-  // Desktop Footer (rendered only on client after mount, if not mobile)
   return (
     <footer className="bg-muted text-muted-foreground border-t mt-16">
       <div className="container mx-auto px-4 md:px-6 py-8 md:py-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">

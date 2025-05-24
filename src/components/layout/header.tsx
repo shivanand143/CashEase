@@ -17,13 +17,13 @@ import {
   Sheet,
   SheetContent,
   SheetHeader,
-  SheetTitle,
+  SheetTitle, // Keep SheetTitle for accessibility if needed by SheetHeader
   SheetTrigger,
   SheetClose,
 } from "@/components/ui/sheet";
 import {
     LogIn, LogOut, User, IndianRupee, ShoppingBag, LayoutDashboard, Settings, Menu,
-    Tag, ShieldCheck, Gift, History, Send, X, List, HelpCircle, BookOpen, Search as SearchIcon, Home
+    Tag, ShieldCheck, Gift, History, Send, X, List, HelpCircle, BookOpen, Search as SearchIcon
 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -33,17 +33,16 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from '@/components/ui/input';
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useHasMounted } from '@/hooks/use-has-mounted'; // Import useHasMounted
-
+// Removed useHasMounted
 
 export default function Header() {
-  const { user, userProfile, loading: authLoadingHook, signOut } = useAuth(); // Renamed loading to authLoadingHook
+  const { user, userProfile, loading: authLoadingHook, signOut } = useAuth();
   const pathname = usePathname();
   const [searchTerm, setSearchTerm] = React.useState('');
   const [isSheetOpen, setIsSheetOpen] = React.useState(false);
   const router = useRouter();
   const isMobile = useIsMobile();
-  const hasMounted = useHasMounted();
+  // Removed hasMounted state
 
   const getInitials = (name?: string | null) => {
     if (!name) return 'MS';
@@ -62,7 +61,7 @@ export default function Header() {
   ];
 
   const sheetNavLinks = [
-    { href: "/", label: "Home", icon: Home },
+    { href: "/", label: "Home", icon: ShoppingBag }, // Home icon might be better if not using bottom nav
     { href: "/stores", label: "All Stores", icon: ShoppingBag },
     { href: "/coupons", label: "All Coupons", icon: Tag },
     { href: "/categories", label: "Categories", icon: List },
@@ -90,7 +89,7 @@ export default function Header() {
   const handleSearchSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!searchTerm.trim()) return;
-    setIsSheetOpen(false);
+    setIsSheetOpen(false); // Close sheet on search submit
     router.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`);
     setSearchTerm('');
   };
@@ -98,34 +97,9 @@ export default function Header() {
   const handleSheetLinkClick = () => {
       setIsSheetOpen(false);
   }
-  const sheetTitleId = "mobile-main-menu-title";
+  const sheetTitleId = "mobile-main-menu-title"; // For accessibility
 
-  // Render a minimal consistent header if not mounted, or if auth is still loading initially
-  if (!hasMounted) {
-    return (
-      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto flex h-14 items-center justify-between gap-2 px-4 md:px-6">
-          <div className="flex items-center">
-             {/* Placeholder for mobile menu trigger space */}
-            <div className="md:hidden mr-2 h-10 w-10"></div>
-            <Link href="/" className="flex items-center space-x-2 mr-4">
-              <IndianRupee className="h-6 w-6 text-primary" />
-              <span className="font-bold text-xl hidden sm:inline-block text-foreground">MagicSaver</span>
-            </Link>
-          </div>
-          <div className="flex items-center space-x-2">
-             {/* Placeholder for desktop search & auth */}
-            <div className="hidden lg:block w-48 h-9"></div> {/* Approx search width */}
-            <div className="hidden md:flex items-center space-x-1">
-              <Skeleton className="h-9 w-20 rounded-md" />
-              <Skeleton className="h-9 w-24 rounded-md" />
-            </div>
-          </div>
-        </div>
-      </header>
-    );
-  }
-
+  // Render based on isMobile. There might be a brief flash before JS runs.
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex h-14 items-center justify-between gap-2 px-4 md:px-6">
@@ -133,26 +107,21 @@ export default function Header() {
           {isMobile && (
             <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="mr-2">
+                <Button variant="ghost" size="icon" className="mr-2 md:hidden"> {/* Ensure it's hidden on md+ */}
                   <Menu className="h-5 w-5" />
                   <span className="sr-only">Toggle Menu</span>
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-full max-w-xs p-0 flex flex-col bg-background" aria-labelledby={sheetTitleId}>
-                <VisuallyHidden>
-                    <SheetTitle id={sheetTitleId}>Main Navigation Menu</SheetTitle>
-                </VisuallyHidden>
                 <SheetHeader className="p-4 border-b flex flex-row items-center justify-between">
-                  <Link href="/" className="flex items-center space-x-2" onClick={handleSheetLinkClick}>
-                    <IndianRupee className="h-6 w-6 text-primary" />
-                    <span className="font-bold text-lg text-foreground">MagicSaver</span>
-                  </Link>
-                  <SheetClose asChild>
-                    <Button variant="ghost" size="icon">
-                      <X className="h-5 w-5" />
-                      <span className="sr-only">Close Menu</span>
-                    </Button>
-                  </SheetClose>
+                    <SheetTitle id={sheetTitleId} className="sr-only">Main Navigation Menu</SheetTitle> {/* Accessible title */}
+                    <Link href="/" className="flex items-center space-x-2" onClick={handleSheetLinkClick}>
+                        <IndianRupee className="h-6 w-6 text-primary" />
+                        <span className="font-bold text-lg text-foreground">MagicSaver</span>
+                    </Link>
+                    <SheetClose asChild>
+                        <Button variant="ghost" size="icon"> <X className="h-5 w-5"/> <span className="sr-only">Close Menu</span></Button>
+                    </SheetClose>
                 </SheetHeader>
                 <div className="flex-grow overflow-y-auto">
                   <nav className="flex flex-col space-y-1 p-4">
@@ -263,6 +232,7 @@ export default function Header() {
                 <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                 type="search"
+                name="search"
                 placeholder="Search stores..."
                 className="pl-8 w-full h-9 text-sm rounded-md"
                 value={searchTerm}

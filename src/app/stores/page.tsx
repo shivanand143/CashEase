@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from 'react';
@@ -73,39 +74,22 @@ export default function StoresPage() {
     currentSearchTerm: string,
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
   ) => {
-    let isMounted = true;
+    if (!isLoadMoreOperation) setLoading(true);
+    else setLoadingMore(true);
+    
+    setError(null);
+    setIsSearching(currentSearchTerm !== '');
 
     if (firebaseInitializationError) {
-      if (isMounted) {
-        setError(firebaseInitializationError);
-        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
-        setHasMore(false);
-      }
+      setError(firebaseInitializationError);
+      setLoading(false); setLoadingMore(false); setHasMore(false);
       return;
     }
     if (!db) {
-      if (isMounted) {
-        setError("Database connection not available.");
-        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
-        setHasMore(false);
-      }
+      setError("Database connection not available.");
+      setLoading(false); setLoadingMore(false); setHasMore(false);
       return;
     }
-
-    if (!isLoadMoreOperation) {
-      setLoading(true);
-      setStores([]);
-      setLastVisible(null);
-      setHasMore(true);
-    } else {
-      if (!docToStartAfter && isLoadMoreOperation) {
-        if(isMounted) setLoadingMore(false);
-        return;
-      }
-      setLoadingMore(true);
-    }
-    if (!isLoadMoreOperation) setError(null);
-    setIsSearching(currentSearchTerm !== '');
 
     try {
       const storesCollection = collection(db, 'stores');
@@ -137,29 +121,24 @@ export default function StoresPage() {
         updatedAt: safeToDate(docSnap.data().updatedAt as Timestamp | undefined),
       } as Store));
 
-      if (isMounted) {
-        if (isLoadMoreOperation) {
-          setStores(prev => [...prev, ...storesData]);
-        } else {
-          setStores(storesData);
-        }
-        const newLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
-        setLastVisible(newLastVisible);
-        setHasMore(storesData.length === STORES_PER_PAGE);
+      if (isLoadMoreOperation) {
+        setStores(prev => [...prev, ...storesData]);
+      } else {
+        setStores(storesData);
       }
+      const newLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
+      setLastVisible(newLastVisible);
+      setHasMore(storesData.length === STORES_PER_PAGE);
     } catch (err) {
       console.error("Error fetching stores:", err);
-      if (isMounted) {
-        const errorMsg = err instanceof Error ? err.message : "Failed to fetch stores";
-        setError(errorMsg);
-        toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
-        setHasMore(false);
-      }
+      const errorMsg = err instanceof Error ? err.message : "Failed to fetch stores";
+      setError(errorMsg);
+      toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+      setHasMore(false);
     } finally {
-      if (isMounted) {
-        if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
-        setIsSearching(false);
-      }
+      if (!isLoadMoreOperation) setLoading(false);
+      else setLoadingMore(false);
+      setIsSearching(false);
     }
   }, [toast]);
 
@@ -174,11 +153,11 @@ export default function StoresPage() {
   };
 
   const handleLoadMore = () => {
-    if (!loadingMore && hasMore && lastVisible) { // Ensure lastVisible is not null
+    if (!loadingMore && hasMore && lastVisible) {
       fetchStores(true, debouncedSearchTerm, lastVisible);
     }
   };
-
+  
   if (loading && stores.length === 0 && !error) {
     return <StoresPageSkeleton />;
   }
