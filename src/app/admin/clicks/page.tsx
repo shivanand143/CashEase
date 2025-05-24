@@ -1,4 +1,5 @@
 
+// src/app/admin/clicks/page.tsx
 "use client";
 
 import * as React from 'react';
@@ -33,7 +34,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Loader2, Search, ExternalLink, FileText, Tag, ShoppingCart, User as UserIcon, CheckCircle, XCircle } from 'lucide-react'; // Added CheckCircle, XCircle
+import { AlertCircle, Loader2, Search, ExternalLink, FileText, Tag, ShoppingCart, User as UserIcon, CheckCircle, XCircle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import AdminGuard from '@/components/guards/admin-guard';
@@ -49,7 +50,7 @@ interface CombinedClickData {
   click: Click;
   user?: UserProfile | null;
   conversion?: Conversion | null;
-  store?: Store | null; // Store data from the click document itself or fetched
+  store?: Store | null;
 }
 
 function AdminClicksPageSkeleton() {
@@ -102,63 +103,50 @@ export default function AdminClicksPage() {
   const [userCache, setUserCache] = React.useState<Record<string, UserProfile>>({});
   const [storeCache, setStoreCache] = React.useState<Record<string, Store>>({});
   const [conversionCache, setConversionCache] = React.useState<Record<string, Conversion>>({});
-  const isMountedRef = React.useRef(true);
-
-  React.useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
 
   const fetchClickDetails = React.useCallback(async (clicksToEnrich: Click[]): Promise<CombinedClickData[]> => {
     console.log(`${ADMIN_CLICKS_LOG_PREFIX} fetchClickDetails called for ${clicksToEnrich.length} clicks.`);
-    if (firebaseInitializationError || !db) { // Guard for db being null
+    if (firebaseInitializationError || !db) {
       console.error(`${ADMIN_CLICKS_LOG_PREFIX} Firestore not available for fetching details.`);
-      if (isMountedRef.current) {
-        setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchClickDetails."));
-      }
+      setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchClickDetails."));
       return clicksToEnrich.map(click => ({ click }));
     }
-    const currentDb = db; // Assign to a non-null typed variable for TypeScript
 
     const enrichedDataPromises = clicksToEnrich.map(async (click): Promise<CombinedClickData> => {
       let userProfile: UserProfile | null = userCache[click.userId || ''] || null;
-      let storeDataFromCache: Store | null = storeCache[click.storeId || ''] || null; // Renamed to avoid conflict
-      let conversion: Conversion | null = conversionCache[click.clickId] || null;
+      let storeDataFromCache: Store | null = storeCache[click.storeId || ''] || null;
+      let conversion: Conversion | null = click.clickId ? conversionCache[click.clickId] || null : null;
 
-      if (click.userId && !userProfile) {
+      if (db && click.userId && !userProfile) {
         try {
-          const userRef = doc(currentDb, 'users', click.userId);
+          const userRef = doc(db, 'users', click.userId);
           const userSnap = await getDoc(userRef);
           if (userSnap.exists()) {
             userProfile = { uid: userSnap.id, ...userSnap.data() } as UserProfile;
-            if (isMountedRef.current) setUserCache(prev => ({ ...prev, [click.userId!]: userProfile! }));
+            setUserCache(prev => ({ ...prev, [click.userId!]: userProfile! }));
           }
         } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch user ${click.userId}`, e); }
       }
 
-      // Use storeName from click if available, otherwise fetch store details for logo/etc.
       let storeForCard: Store | null = null;
-      if (click.storeId) {
+      if (db && click.storeId) {
         if (storeDataFromCache) {
-            storeForCard = storeDataFromCache;
+          storeForCard = storeDataFromCache;
         } else {
-            try {
-                const storeRef = doc(currentDb, 'stores', click.storeId);
-                const storeSnap = await getDoc(storeRef);
-                if (storeSnap.exists()) {
-                    storeForCard = { id: storeSnap.id, ...storeSnap.data() } as Store;
-                   if (isMountedRef.current) setStoreCache(prev => ({ ...prev, [click.storeId!]: storeForCard! }));
-                }
-            } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch store ${click.storeId}`, e); }
+          try {
+            const storeRef = doc(db, 'stores', click.storeId);
+            const storeSnap = await getDoc(storeRef);
+            if (storeSnap.exists()) {
+              storeForCard = { id: storeSnap.id, ...storeSnap.data() } as Store;
+              setStoreCache(prev => ({ ...prev, [click.storeId!]: storeForCard! }));
+            }
+          } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch store ${click.storeId}`, e); }
         }
       }
 
-
-      if (click.clickId && !conversion) { // Use click.clickId to search for conversion
+      if (db && click.clickId && !conversion) {
         try {
-          const convQuery = query(collection(currentDb, 'conversions'), where('clickId', '==', click.clickId), limit(1));
+          const convQuery = query(collection(db, 'conversions'), where('clickId', '==', click.clickId), limit(1));
           const convSnap = await getDocs(convQuery);
           if (!convSnap.empty) {
             const convData = convSnap.docs[0].data();
@@ -167,7 +155,9 @@ export default function AdminClicksPage() {
               ...convData,
               timestamp: safeToDate(convData.timestamp as Timestamp | undefined) || new Date(0),
             } as Conversion;
-            if (isMountedRef.current) setConversionCache(prev => ({ ...prev, [click.clickId]: conversion! }));
+            if (click.clickId) {
+              setConversionCache(prev => ({ ...prev, [click.clickId!]: conversion! }));
+            }
           }
         } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch conversion for click ${click.clickId}`, e); }
       }
@@ -183,54 +173,54 @@ export default function AdminClicksPage() {
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null
   ) => {
     console.log(`${ADMIN_CLICKS_LOG_PREFIX} fetchTrackingData: loadMore=${loadMoreOperation}, term='${debouncedSearchTerm}', filter='${filterType}'`);
-    if (!isMountedRef.current) return;
-
-    if (firebaseInitializationError || !db) { // Guard for db being null
-      if (isMountedRef.current) {
-        setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchTrackingData."));
-        setPageLoading(false); setLoadingMore(false); setHasMore(false);
-      }
+    
+    if (firebaseInitializationError || !db) {
+      setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchTrackingData."));
+      setPageLoading(false); setLoadingMore(false); setHasMore(false);
       return;
     }
-    const currentDb = db; // Assign to a non-null typed variable
 
     if (!loadMoreOperation) {
       setPageLoading(true); setCombinedData([]); setLastVisibleClick(null); setHasMore(true);
     } else {
-      if (!docToStartAfter) { if (isMountedRef.current) setLoadingMore(false); return; }
+      if (!docToStartAfter && loadMoreOperation) { setLoadingMore(false); return; }
       setLoadingMore(true);
     }
     if (!loadMoreOperation) setPageError(null);
     setIsSearching(debouncedSearchTerm !== '');
 
     try {
-      const clicksCollectionRef = collection(currentDb, 'clicks');
+      const clicksCollectionRef = collection(db, 'clicks');
       const constraints: QueryConstraint[] = [];
 
       if (debouncedSearchTerm.trim() && filterType !== 'all') {
-          if (filterType === 'clickId') {
-              const clickDocRef = doc(currentDb, 'clicks', debouncedSearchTerm.trim());
-              const clickDocSnap = await getDoc(clickDocRef);
-              if (clickDocSnap.exists()) {
-                  const clickData = { id: clickDocSnap.id, ...clickDocSnap.data(), timestamp: safeToDate(clickDocSnap.data().timestamp as Timestamp | undefined) || new Date(0) } as Click;
-                  const enrichedSingle = await fetchClickDetails([clickData]);
-                  if (isMountedRef.current) { setCombinedData(enrichedSingle); setHasMore(false); }
-              } else {
-                  if (isMountedRef.current) { setCombinedData([]); setHasMore(false); }
-              }
-              if (isMountedRef.current) { setPageLoading(false); setLoadingMore(false); setIsSearching(false); }
-              return;
-          } else if (filterType === 'orderId') {
-              const convQuery = query(collection(currentDb, 'conversions'), where('orderId', '==', debouncedSearchTerm.trim()), limit(1));
-              const convSnap = await getDocs(convQuery);
-              if (!convSnap.empty) {
-                  const convData = convSnap.docs[0].data() as Conversion;
-                  if (convData.clickId) constraints.push(where('clickId', '==', convData.clickId)); // Query clicks by clickId from conversion
-                  else { if (isMountedRef.current) { setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); } return; }
-              } else { if (isMountedRef.current) { setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); } return; }
-          } else if (filterType === 'userId' || filterType === 'storeId') {
-             constraints.push(where(filterType, '==', debouncedSearchTerm.trim()));
+        if (filterType === 'clickId') {
+          const clickDocRef = doc(db, 'clicks', debouncedSearchTerm.trim());
+          const clickDocSnap = await getDoc(clickDocRef);
+          if (clickDocSnap.exists()) {
+            const clickData = { 
+              id: clickDocSnap.id, 
+              ...clickDocSnap.data(), 
+              timestamp: safeToDate(clickDocSnap.data().timestamp as Timestamp | undefined) || new Date(0) 
+            } as Click;
+            const enrichedSingle = await fetchClickDetails([clickData]);
+            setCombinedData(enrichedSingle); setHasMore(false);
+          } else {
+            setCombinedData([]); setHasMore(false);
           }
+          setPageLoading(false); setLoadingMore(false); setIsSearching(false);
+          return;
+        } else if (filterType === 'orderId') {
+          const convQuery = query(collection(db, 'conversions'), where('orderId', '==', debouncedSearchTerm.trim()), limit(1));
+          const convSnap = await getDocs(convQuery);
+          if (!convSnap.empty) {
+            const convData = convSnap.docs[0].data() as Conversion;
+            if (convData.clickId) constraints.push(where('clickId', '==', convData.clickId));
+            else { setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); return; }
+          } else { setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); return; }
+        } else if (filterType === 'userId' || filterType === 'storeId') {
+          constraints.push(where(filterType, '==', debouncedSearchTerm.trim()));
+        }
       }
       
       constraints.push(orderBy('timestamp', 'desc'));
@@ -242,7 +232,8 @@ export default function AdminClicksPage() {
       console.log(`${ADMIN_CLICKS_LOG_PREFIX} Firestore query executed, got ${clickQuerySnapshot.size} click docs.`);
 
       const fetchedClicks = clickQuerySnapshot.docs.map(docSnap => ({
-        id: docSnap.id, ...docSnap.data(), timestamp: safeToDate(docSnap.data().timestamp as Timestamp | undefined) || new Date(0),
+        id: docSnap.id, ...docSnap.data(), 
+        timestamp: safeToDate(docSnap.data().timestamp as Timestamp | undefined) || new Date(0),
       } as Click));
       
       const enrichedResults = await fetchClickDetails(fetchedClicks);
@@ -253,45 +244,37 @@ export default function AdminClicksPage() {
         const lowerSearch = debouncedSearchTerm.toLowerCase();
         finalResults = enrichedResults.filter(item => 
           item.click.storeName?.toLowerCase().includes(lowerSearch) ||
-          item.store?.name?.toLowerCase().includes(lowerSearch) || // Check fetched store name
+          item.store?.name?.toLowerCase().includes(lowerSearch) ||
           item.click.productName?.toLowerCase().includes(lowerSearch) ||
           item.user?.displayName?.toLowerCase().includes(lowerSearch) ||
           item.user?.email?.toLowerCase().includes(lowerSearch) ||
           item.conversion?.orderId?.toLowerCase().includes(lowerSearch) ||
-          item.click.clickId?.toLowerCase().includes(lowerSearch)
+          (item.click.clickId && item.click.clickId.toLowerCase().includes(lowerSearch))
         );
       }
-
-      if (isMountedRef.current) {
-        setCombinedData(prev => loadMoreOperation ? [...prev, ...finalResults] : finalResults);
-        setLastVisibleClick(clickQuerySnapshot.docs[clickQuerySnapshot.docs.length - 1] || null);
-        setHasMore(clickQuerySnapshot.docs.length === ITEMS_PER_PAGE && fetchedClicks.length > 0);
-        console.log(`${ADMIN_CLICKS_LOG_PREFIX} State updated. HasMore: ${clickQuerySnapshot.docs.length === ITEMS_PER_PAGE && fetchedClicks.length > 0}`);
-      }
+      setCombinedData(prev => loadMoreOperation ? [...prev, ...finalResults] : finalResults);
+      setLastVisibleClick(clickQuerySnapshot.docs[clickQuerySnapshot.docs.length - 1] || null);
+      setHasMore(clickQuerySnapshot.docs.length === ITEMS_PER_PAGE && fetchedClicks.length > 0);
+      console.log(`${ADMIN_CLICKS_LOG_PREFIX} State updated. HasMore: ${clickQuerySnapshot.docs.length === ITEMS_PER_PAGE && fetchedClicks.length > 0}`);
 
     } catch (err) {
       console.error(`${ADMIN_CLICKS_LOG_PREFIX} Error fetching tracking data:`, err);
       const errorMsg = err instanceof Error ? err.message : "Failed to fetch data";
-      if (isMountedRef.current) {
-        setPageError(errorMsg);
-        toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
-        setHasMore(false);
-      }
+      setPageError(errorMsg);
+      toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+      setHasMore(false);
     } finally {
-      if (isMountedRef.current) {
-        setPageLoading(false); setLoadingMore(false); setIsSearching(false);
-        console.log(`${ADMIN_CLICKS_LOG_PREFIX} fetchTrackingData finished. pageLoading: false, loadingMore: false.`);
-      }
+      setPageLoading(false); setLoadingMore(false); setIsSearching(false);
+      console.log(`${ADMIN_CLICKS_LOG_PREFIX} fetchTrackingData finished. pageLoading: false, loadingMore: false.`);
     }
   }, [debouncedSearchTerm, filterType, toast, fetchClickDetails]);
 
   React.useEffect(() => {
     fetchTrackingData(false, null);
-  }, [filterType, debouncedSearchTerm, fetchTrackingData]); // fetchTrackingData is memoized
+  }, [filterType, debouncedSearchTerm, fetchTrackingData]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
-      e.preventDefault();
-      // Fetching is handled by useEffect listening to debouncedSearchTerm and filterType
+    e.preventDefault();
   };
   const handleLoadMore = () => {
     if (!loadingMore && hasMore && lastVisibleClick) {
@@ -385,6 +368,8 @@ export default function AdminClicksPage() {
                   <TableBody>
                     {combinedData.map(({ click, user, conversion, store: storeFromDetails }) => {
                        const displayStoreName = click.storeName || storeFromDetails?.name || click.storeId || 'N/A';
+                       const clickTimestamp = safeToDate(click.timestamp);
+                       const conversionTimestamp = conversion ? safeToDate(conversion.timestamp) : null;
                        return (
                         <TableRow key={click.id}>
                             <TableCell>
@@ -409,18 +394,18 @@ export default function AdminClicksPage() {
                             )}
                             </TableCell>
                             <TableCell>
-                            <div className="font-mono text-xs truncate max-w-[120px]" title={click.clickId}>ID: {click.clickId}</div>
+                            <div className="font-mono text-xs truncate max-w-[120px]" title={click.clickId || undefined}>{click.clickId ? `ID: ${click.clickId}`: 'N/A'}</div>
                             </TableCell>
                             <TableCell className="truncate max-w-[180px]" title={click.productId ? `Product: ${click.productName || click.productId}` : click.couponId ? `Coupon ID: ${click.couponId}` : 'Store Page Visit'}>
                             {click.productId ? <><ShoppingCart className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> {click.productName || click.productId}</> :
-                            click.couponId ? <><Tag className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> Coupon: {click.couponId}</> : // Display couponId
+                            click.couponId ? <><Tag className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> Coupon: {click.couponId}</> : 
                             'Store Page Visit'}
                             </TableCell>
                             <TableCell className="font-medium truncate max-w-[150px]" title={displayStoreName}>
                             {displayStoreName}
                             </TableCell>
                             <TableCell className="whitespace-nowrap">
-                            {click.timestamp ? format(new Date(click.timestamp), 'PPp') : 'N/A'}
+                            {clickTimestamp ? format(clickTimestamp, 'PPp') : 'N/A'}
                             </TableCell>
                             <TableCell>
                             {conversion ? (
@@ -437,7 +422,7 @@ export default function AdminClicksPage() {
                                 <div className="font-mono text-xs truncate max-w-[120px]" title={`Order ID: ${conversion.orderId}`}>OID: {conversion.orderId}</div>
                                 <div className="text-xs" title={`Sale: ${formatCurrency(conversion.saleAmount)}`}>Sale: {formatCurrency(conversion.saleAmount)}</div>
                                 <div className="text-[10px] text-muted-foreground mt-0.5">
-                                    {conversion.timestamp ? format(new Date(conversion.timestamp), 'Pp') : 'N/A'}
+                                    {conversionTimestamp ? format(conversionTimestamp, 'Pp') : 'N/A'}
                                 </div>
                                 </div>
                             ) : (
