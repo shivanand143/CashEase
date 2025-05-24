@@ -6,23 +6,18 @@ import Link from 'next/link';
 import { IndianRupee, Facebook, Instagram, Twitter } from 'lucide-react';
 import BottomNavigation from './bottom-navigation';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useHasMounted } from '@/hooks/use-has-mounted'; // Import useHasMounted
 
 export default function Footer() {
-  const [hasMounted, setHasMounted] = React.useState(false);
-  const isMobile = useIsMobile(); // isMobile will be false on server, correct value on client after mount
-
-  React.useEffect(() => {
-    setHasMounted(true);
-  }, []);
+  const hasMounted = useHasMounted();
+  const isMobile = useIsMobile();
 
   if (!hasMounted) {
-    // On the server, and on the initial client render before useEffect runs, render nothing.
-    // This ensures server and initial client render for this component match (both render null).
-    // The actual footer/bottom-nav will pop in after client-side hydration and mount.
+    // Render null on the server and on the initial client render
+    // to avoid hydration mismatch before client-specific logic runs.
     return null;
   }
 
-  // After mounting, we know the client environment and can render correctly.
   if (isMobile) {
     return <BottomNavigation />;
   }

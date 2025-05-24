@@ -2,7 +2,9 @@
 "use client";
 
 import * as React from 'react';
-import { collection, query, where, orderBy, limit, getDocs, doc, getDoc, Timestamp, QueryConstraint } from 'firebase/firestore';
+import {
+  collection, query, where, orderBy, limit, getDocs, doc, getDoc, Timestamp, QueryConstraint
+} from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { Store, Coupon, Banner, Category, Product } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,25 +15,23 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { Card, CardHeader, CardContent } from '@/components/ui/card'; // Removed CardDescription
+import { Input } from '@/components/ui/input'; // Ensure Input is imported
 import {
-  Carousel,
-  CarouselContent,
-  CarouselItem,
-  CarouselNext,
-  CarouselPrevious,
+  Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious,
 } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowRight, ExternalLink, ShoppingBag, List, Search, AlertCircle, Sparkles, Percent, Tag } from 'lucide-react';
+import {
+  ArrowRight, ExternalLink, ShoppingBag, List, Search, AlertCircle, Sparkles, Percent, Tag
+} from 'lucide-react';
 import { safeToDate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useHasMounted } from '@/hooks/use-has-mounted'; // Import useHasMounted
 
 const ITEMS_PER_SECTION_STORES_CATEGORIES = 6;
 const ITEMS_PER_SECTION_PRODUCTS_COUPONS = 3;
 
-// Helper function to fetch items and optionally enrich with store data
 async function fetchItemsWithStoreData<
   CollectionName extends 'products' | 'coupons',
   ItemType extends Product | Coupon
@@ -39,18 +39,15 @@ async function fetchItemsWithStoreData<
   collectionName: CollectionName,
   constraints: QueryConstraint[],
   itemLimit: number,
-  enrichWithStore: boolean = true // Default to true
+  enrichWithStore: boolean = true
 ): Promise<(ItemType & { store?: Store })[]> {
-  if (!db) {
-    console.error(`Firestore not initialized for fetching ${collectionName}.`);
+  if (firebaseInitializationError || !db) {
+    console.error(`HOMEPAGE_FETCH_ERROR: Firestore not initialized for fetching ${collectionName}. Error: ${firebaseInitializationError}`);
     throw new Error("Firestore not initialized.");
   }
-  console.log(`Fetching ${collectionName} with limit ${itemLimit} and constraints:`, constraints.map(c => (c as any)._field ? `${(c as any)._field.toString()} ${(c as any)._op} ${(c as any)._value}` : c.type));
-
 
   const q = query(collection(db, collectionName), ...constraints, limit(itemLimit));
   const snapshot = await getDocs(q);
-  console.log(`Fetched ${snapshot.size} documents for ${collectionName}.`);
 
   const itemsData = snapshot.docs.map(docSnap => {
     const data = docSnap.data();
@@ -74,9 +71,8 @@ async function fetchItemsWithStoreData<
   const storeCache = new Map<string, Store>();
 
   if (storeIds.length > 0) {
-    console.log(`Enriching ${collectionName}: Found ${storeIds.length} unique storeIDs to fetch.`);
     const storeChunks: string[][] = [];
-    for (let i = 0; i < storeIds.length; i += 30) {
+    for (let i = 0; i < storeIds.length; i += 30) { // Firestore 'in' query supports up to 30 elements
       storeChunks.push(storeIds.slice(i, i + 30));
     }
     for (const chunk of storeChunks) {
@@ -93,7 +89,6 @@ async function fetchItemsWithStoreData<
         } as Store);
       });
     }
-    console.log(`Enriching ${collectionName}: Fetched ${storeCache.size} stores for cache.`);
   }
 
   return itemsData.map(item => ({
@@ -102,19 +97,18 @@ async function fetchItemsWithStoreData<
   }));
 }
 
-
 function HomePageSkeleton() {
   return (
     <div className="space-y-12 md:space-y-16 lg:space-y-20">
       <Skeleton className="h-[250px] sm:h-[300px] md:h-[400px] w-full rounded-lg" />
-      <Card className="max-w-2xl mx-auto shadow-md border-2 border-primary/50 p-1 rounded-xl">
+      <Card className="max-w-2xl mx-auto shadow-md border-2 border-primary/50 p-1 bg-gradient-to-r from-primary/5 via-background to-secondary/5 rounded-xl">
         <CardHeader className="pb-3 pt-4 text-center">
           <Skeleton className="h-7 w-3/4 mx-auto mb-1" />
-          <Skeleton className="h-5 w-1/2 mx-auto" />
+          {/* <Skeleton className="h-5 w-1/2 mx-auto" /> // CardDescription removed */}
         </CardHeader>
         <CardContent className="p-3 sm:p-4">
           <div className="flex gap-2 items-center">
-            <Skeleton className="h-5 w-5 rounded-full hidden sm:block" />
+            <Search className="ml-2 h-5 w-5 text-muted-foreground hidden sm:block opacity-0" /> {/* Keep for spacing, hide visually */}
             <Skeleton className="h-11 flex-grow rounded-md" />
             <Skeleton className="h-11 w-24 rounded-md" />
           </div>
@@ -156,6 +150,7 @@ function HomePageSkeleton() {
 export default function HomePage() {
   const router = useRouter();
   const { toast } = useToast();
+  const hasMounted = useHasMounted();
 
   const [banners, setBanners] = React.useState<Banner[]>([]);
   const [categories, setCategories] = React.useState<Category[]>([]);
@@ -168,26 +163,38 @@ export default function HomePage() {
   const [loadingFeaturedStores, setLoadingFeaturedStores] = React.useState(true);
   const [loadingTopCoupons, setLoadingTopCoupons] = React.useState(true);
   const [loadingTodaysPicks, setLoadingTodaysPicks] = React.useState(true);
+  const [pageInitialLoading, setPageInitialLoading] = React.useState(true);
 
   const [pageErrors, setPageErrors] = React.useState<string[]>([]);
   const [searchTerm, setSearchTerm] = React.useState('');
 
   React.useEffect(() => {
     let isMounted = true;
+    console.log("HomePage: useEffect triggered. isMounted:", isMounted);
+
     const loadAllData = async () => {
-      console.log("HomePage: Starting to load all data sections...");
+      console.log("HomePage: loadAllData called.");
+      setPageInitialLoading(true);
+      setPageErrors([]); // Clear previous errors
+
       if (firebaseInitializationError) {
-        if (isMounted) setPageErrors(prev => [...prev, `Firebase initialization failed: ${firebaseInitializationError}`]);
-        if (isMounted) { setLoadingBanners(false); setLoadingCategories(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingTodaysPicks(false); }
+        if (isMounted) {
+          setPageErrors(prev => [...prev, `Firebase init failed: ${firebaseInitializationError}`]);
+          setLoadingBanners(false); setLoadingCategories(false); setLoadingFeaturedStores(false);
+          setLoadingTopCoupons(false); setLoadingTodaysPicks(false); setPageInitialLoading(false);
+        }
         return;
       }
       if (!db) {
-        if (isMounted) setPageErrors(prev => [...prev, "Database connection not available."]);
-        if (isMounted) { setLoadingBanners(false); setLoadingCategories(false); setLoadingFeaturedStores(false); setLoadingTopCoupons(false); setLoadingTodaysPicks(false); }
+        if (isMounted) {
+          setPageErrors(prev => [...prev, "DB not available."]);
+          setLoadingBanners(false); setLoadingCategories(false); setLoadingFeaturedStores(false);
+          setLoadingTopCoupons(false); setLoadingTodaysPicks(false); setPageInitialLoading(false);
+        }
         return;
       }
 
-      const errors: string[] = [];
+      const errorsAccumulator: string[] = [];
       const sectionFetchPromises = [];
 
       // Fetch Banners
@@ -195,12 +202,10 @@ export default function HomePage() {
       sectionFetchPromises.push(
         (async () => {
           try {
-            console.log("HomePage: Fetching banners...");
             const bannersQuery = query(collection(db, 'banners'), where('isActive', '==', true), orderBy('order', 'asc'));
             const bannerSnap = await getDocs(bannersQuery);
             if (isMounted) setBanners(bannerSnap.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: safeToDate(doc.data().createdAt as Timestamp | undefined), updatedAt: safeToDate(doc.data().updatedAt as Timestamp | undefined) } as Banner)));
-            console.log(`HomePage: Fetched ${bannerSnap.size} banners.`);
-          } catch (err) { console.error("Error fetching banners:", err); errors.push("banners"); }
+          } catch (err) { console.error("Error fetching banners:", err); errorsAccumulator.push("banners"); }
           finally { if (isMounted) setLoadingBanners(false); }
         })()
       );
@@ -210,12 +215,10 @@ export default function HomePage() {
       sectionFetchPromises.push(
         (async () => {
           try {
-            console.log("HomePage: Fetching categories...");
             const categoriesQuery = query(collection(db, 'categories'), where('isActive', '==', true), orderBy('order', 'asc'), orderBy('name', 'asc'), limit(ITEMS_PER_SECTION_STORES_CATEGORIES));
             const categorySnap = await getDocs(categoriesQuery);
             if (isMounted) setCategories(categorySnap.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: safeToDate(doc.data().createdAt as Timestamp | undefined), updatedAt: safeToDate(doc.data().updatedAt as Timestamp | undefined) } as Category)));
-            console.log(`HomePage: Fetched ${categorySnap.size} categories.`);
-          } catch (err) { console.error("Error fetching categories:", err); errors.push("categories"); }
+          } catch (err) { console.error("Error fetching categories:", err); errorsAccumulator.push("categories"); }
           finally { if (isMounted) setLoadingCategories(false); }
         })()
       );
@@ -225,12 +228,10 @@ export default function HomePage() {
       sectionFetchPromises.push(
         (async () => {
           try {
-            console.log("HomePage: Fetching featured stores...");
             const storesQuery = query(collection(db, 'stores'), where('isActive', '==', true), where('isFeatured', '==', true), orderBy('name', 'asc'), limit(ITEMS_PER_SECTION_STORES_CATEGORIES));
             const storeSnap = await getDocs(storesQuery);
             if (isMounted) setFeaturedStores(storeSnap.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: safeToDate(doc.data().createdAt as Timestamp | undefined), updatedAt: safeToDate(doc.data().updatedAt as Timestamp | undefined) } as Store)));
-            console.log(`HomePage: Fetched ${storeSnap.size} featured stores.`);
-          } catch (err) { console.error("Error fetching featured stores:", err); errors.push("stores"); }
+          } catch (err) { console.error("Error fetching featured stores:", err); errorsAccumulator.push("stores"); }
           finally { if (isMounted) setLoadingFeaturedStores(false); }
         })()
       );
@@ -240,14 +241,12 @@ export default function HomePage() {
       sectionFetchPromises.push(
         (async () => {
           try {
-            console.log("HomePage: Fetching top coupons...");
             const couponConstraints: QueryConstraint[] = [
               where('isActive', '==', true), where('isFeatured', '==', true), orderBy('createdAt', 'desc'),
             ];
             const fetchedCoupons = await fetchItemsWithStoreData<'coupons', Coupon>('coupons', couponConstraints, ITEMS_PER_SECTION_PRODUCTS_COUPONS, true);
             if (isMounted) setTopCoupons(fetchedCoupons);
-            console.log(`HomePage: Fetched ${fetchedCoupons.length} top coupons.`);
-          } catch (err) { console.error("Error fetching top coupons:", err); errors.push("coupons"); }
+          } catch (err) { console.error("Error fetching top coupons:", err); errorsAccumulator.push("coupons"); }
           finally { if (isMounted) setLoadingTopCoupons(false); }
         })()
       );
@@ -257,39 +256,40 @@ export default function HomePage() {
       sectionFetchPromises.push(
         (async () => {
           try {
-            console.log("HomePage: Fetching today's picks products...");
             const productConstraints: QueryConstraint[] = [
               where('isActive', '==', true), where('isTodaysPick', '==', true), orderBy('updatedAt', 'desc')
             ];
             const fetchedProducts = await fetchItemsWithStoreData<'products', Product>('products', productConstraints, ITEMS_PER_SECTION_PRODUCTS_COUPONS, true);
             if (isMounted) setTodaysPicksProducts(fetchedProducts);
-            console.log(`HomePage: Fetched ${fetchedProducts.length} today's picks products.`);
-          } catch (err) { console.error("Error fetching today's picks products:", err); errors.push("today's picks products"); }
+          } catch (err) { console.error("Error fetching today's picks products:", err); errorsAccumulator.push("today's picks products"); }
           finally { if (isMounted) setLoadingTodaysPicks(false); }
         })()
       );
 
-      await Promise.all(sectionFetchPromises);
+      await Promise.allSettled(sectionFetchPromises); // Use allSettled to wait for all, regardless of individual errors
 
-      if (errors.length > 0 && isMounted) {
-        const errorMessage = `Failed to load: ${errors.join(', ')}. Some content may be missing.`;
-        setPageErrors(prev => [...new Set([...prev, errorMessage])]); // Use Set to avoid duplicate main error messages
-        toast({
-          variant: "destructive",
-          title: "Data Loading Issues",
-          description: errorMessage,
-          duration: 10000,
-        });
-        console.error("HomePage: Data loading errors occurred for sections:", errors);
-      } else if (isMounted) {
-        console.log("HomePage: All data sections attempted to load.");
+      if (isMounted) {
+        if (errorsAccumulator.length > 0) {
+          const errorMessage = `Failed to load: ${errorsAccumulator.join(', ')}.`;
+          setPageErrors(prev => [...new Set([...prev, errorMessage])]);
+          toast({ variant: "destructive", title: "Data Loading Issues", description: errorMessage, duration: 10000 });
+        }
+        setPageInitialLoading(false);
+        console.log("HomePage: loadAllData finished.");
       }
     };
 
-    loadAllData();
-    return () => { isMounted = false; console.log("HomePage: Component unmounted or effect re-running."); };
+    if (hasMounted) { // Only fetch data if component has mounted
+        loadAllData();
+    }
+
+
+    return () => {
+      isMounted = false;
+      console.log("HomePage: Component unmounted or useEffect re-running.");
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast]);
+  }, [hasMounted, toast]); // Add hasMounted to dependency array
 
   const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -298,9 +298,12 @@ export default function HomePage() {
     setSearchTerm('');
   };
 
-  const allSectionsInitialLoading = loadingBanners && loadingCategories && loadingFeaturedStores && loadingTopCoupons && loadingTodaysPicks;
+  if (!hasMounted) {
+    // Render null on the server and on the initial client render to match Suspense fallback
+    return null;
+  }
 
-  if (allSectionsInitialLoading && pageErrors.length === 0) {
+  if (pageInitialLoading) {
     return <HomePageSkeleton />;
   }
 
@@ -308,7 +311,7 @@ export default function HomePage() {
     <div className="space-y-12 md:space-y-16 lg:space-y-20">
       {/* Banners Carousel */}
       <section className="relative -mx-4 sm:-mx-6 md:-mx-0">
-        {loadingBanners && banners.length === 0 ? (
+        {loadingBanners && banners.length === 0 && !pageErrors.some(e => e.includes("banners")) ? (
           <Skeleton className="h-[250px] sm:h-[300px] md:h-[400px] w-full rounded-lg" />
         ) : banners.length > 0 ? (
           <Carousel
@@ -345,10 +348,11 @@ export default function HomePage() {
               </>
             )}
           </Carousel>
-        ) : (!loadingBanners && pageErrors.some(e => e.includes("banners"))) ? (
-            <Alert variant="destructive" className="my-4"><AlertCircle className="h-4 w-4" /><AlertTitle>Banners Unavailable</AlertTitle><AlertDescription>Promotional banners could not be loaded at this time.</AlertDescription></Alert>
-        ) : (
-          !loadingBanners && banners.length === 0 && <div className="text-center py-10 text-muted-foreground bg-muted/30 rounded-lg border">No promotional banners available.</div>
+        ) : !loadingBanners && banners.length === 0 && !pageErrors.some(e => e.includes("banners")) ? (
+          <div className="text-center py-10 text-muted-foreground bg-muted/30 rounded-lg border">No promotional banners available.</div>
+        ): null}
+        {pageErrors.some(e => e.includes("banners")) && (
+            <Alert variant="destructive" className="mt-4"><AlertCircle className="h-4 w-4" /><AlertTitle>Banners Unavailable</AlertTitle><AlertDescription>Promotional banners could not be loaded.</AlertDescription></Alert>
         )}
       </section>
 
@@ -374,11 +378,12 @@ export default function HomePage() {
         </Card>
       </section>
 
+      {/* Today's Picks Products */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6">
           <h2 className="text-2xl font-bold flex items-center gap-2"><Sparkles className="w-6 h-6 text-amber-500" /> Today's Picks</h2>
         </div>
-        {loadingTodaysPicks && todaysPicksProducts.length === 0 ? (
+        {loadingTodaysPicks && todaysPicksProducts.length === 0 && !pageErrors.some(e => e.includes("today's picks products")) ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tp-skel-render-${i}`} className="h-72 rounded-lg" />)}
           </div>
@@ -388,13 +393,15 @@ export default function HomePage() {
               <ProductCard key={product.id} product={product} storeContext={product.store} />
             ))}
           </div>
-        ) : (!loadingTodaysPicks && pageErrors.some(e => e.includes("today's picks products"))) ? (
-            <Alert variant="destructive" className="my-4"><AlertCircle className="h-4 w-4" /><AlertTitle>Today's Picks Unavailable</AlertTitle><AlertDescription>Could not load today's picks products.</AlertDescription></Alert>
-        ) : (
-          !loadingTodaysPicks && todaysPicksProducts.length === 0 && <div className="text-center py-6 text-muted-foreground text-sm">No special product picks for today. Check back soon!</div>
+        ) : !loadingTodaysPicks && todaysPicksProducts.length === 0 && !pageErrors.some(e => e.includes("today's picks products"))? (
+          <div className="text-center py-6 text-muted-foreground text-sm">No special product picks for today. Check back soon!</div>
+        ) : null}
+         {pageErrors.some(e => e.includes("today's picks products")) && (
+            <Alert variant="destructive" className="mt-4"><AlertCircle className="h-4 w-4" /><AlertTitle>Today's Picks Unavailable</AlertTitle><AlertDescription>Could not load today's picks products.</AlertDescription></Alert>
         )}
       </section>
 
+      {/* Featured Stores */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6">
           <h2 className="text-2xl font-bold flex items-center gap-2"><ShoppingBag className="w-6 h-6 text-primary" /> Featured Stores</h2>
@@ -402,7 +409,7 @@ export default function HomePage() {
             <Link href="/stores" className="flex items-center gap-1">View All <ArrowRight className="w-4 h-4" /></Link>
           </Button>
         </div>
-        {loadingFeaturedStores && featuredStores.length === 0 ? (
+        {loadingFeaturedStores && featuredStores.length === 0 && !pageErrors.some(e => e.includes("stores"))? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
             {Array.from({ length: ITEMS_PER_SECTION_STORES_CATEGORIES }).map((_, i) => <Skeleton key={`fs-skel-render-${i}`} className="h-40 rounded-lg" />)}
           </div>
@@ -410,13 +417,15 @@ export default function HomePage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
             {featuredStores.map(store => <StoreCard key={store.id} store={store} />)}
           </div>
-        ) : (!loadingFeaturedStores && pageErrors.some(e => e.includes("stores"))) ? (
-             <Alert variant="destructive" className="my-4"><AlertCircle className="h-4 w-4" /><AlertTitle>Stores Unavailable</AlertTitle><AlertDescription>Could not load featured stores.</AlertDescription></Alert>
-        ) : (
-          !loadingFeaturedStores && featuredStores.length === 0 && <div className="text-center py-6 text-muted-foreground text-sm">No featured stores available right now.</div>
+        ) : !loadingFeaturedStores && featuredStores.length === 0 && !pageErrors.some(e => e.includes("stores"))? (
+          <div className="text-center py-6 text-muted-foreground text-sm">No featured stores available right now.</div>
+        ): null}
+        {pageErrors.some(e => e.includes("stores")) && (
+             <Alert variant="destructive" className="mt-4"><AlertCircle className="h-4 w-4" /><AlertTitle>Stores Unavailable</AlertTitle><AlertDescription>Could not load featured stores.</AlertDescription></Alert>
         )}
       </section>
 
+      {/* Top Coupons & Offers */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6">
           <h2 className="text-2xl font-bold flex items-center gap-2"><Tag className="w-6 h-6 text-destructive" /> Top Coupons & Offers</h2>
@@ -424,7 +433,7 @@ export default function HomePage() {
             <Link href="/coupons" className="flex items-center gap-1">View All <ArrowRight className="w-4 h-4" /></Link>
           </Button>
         </div>
-        {loadingTopCoupons && topCoupons.length === 0 ? (
+        {loadingTopCoupons && topCoupons.length === 0 && !pageErrors.some(e => e.includes("coupons")) ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tc-skel-render-${i}`} className="h-44 rounded-lg" />)}
           </div>
@@ -432,13 +441,15 @@ export default function HomePage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {topCoupons.map(coupon => <CouponCard key={coupon.id} coupon={coupon} />)}
           </div>
-        ) : (!loadingTopCoupons && pageErrors.some(e => e.includes("coupons"))) ? (
-             <Alert variant="destructive" className="my-4"><AlertCircle className="h-4 w-4" /><AlertTitle>Coupons Unavailable</AlertTitle><AlertDescription>Could not load top coupons.</AlertDescription></Alert>
-        ) : (
-          !loadingTopCoupons && topCoupons.length === 0 && <div className="text-center py-6 text-muted-foreground text-sm">No top coupons featured at the moment.</div>
+        ) : !loadingTopCoupons && topCoupons.length === 0 && !pageErrors.some(e => e.includes("coupons")) ? (
+          <div className="text-center py-6 text-muted-foreground text-sm">No top coupons featured at the moment.</div>
+        ) : null}
+        {pageErrors.some(e => e.includes("coupons")) && (
+             <Alert variant="destructive" className="mt-4"><AlertCircle className="h-4 w-4" /><AlertTitle>Coupons Unavailable</AlertTitle><AlertDescription>Could not load top coupons.</AlertDescription></Alert>
         )}
       </section>
 
+      {/* Popular Categories */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6">
           <h2 className="text-2xl font-bold flex items-center gap-2"><List className="w-6 h-6 text-secondary" /> Popular Categories</h2>
@@ -446,7 +457,7 @@ export default function HomePage() {
             <Link href="/categories" className="flex items-center gap-1">View All <ArrowRight className="w-4 h-4" /></Link>
           </Button>
         </div>
-        {loadingCategories && categories.length === 0 ? (
+        {loadingCategories && categories.length === 0 && !pageErrors.some(e => e.includes("categories")) ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
             {Array.from({ length: ITEMS_PER_SECTION_STORES_CATEGORIES }).map((_, i) => (
               <div key={`pc-skel-render-${i}`} className="flex flex-col items-center p-2 border rounded-lg bg-card shadow-sm">
@@ -472,24 +483,23 @@ export default function HomePage() {
               </Link>
             ))}
           </div>
-        ) : (!loadingCategories && pageErrors.some(e => e.includes("categories"))) ? (
-            <Alert variant="destructive" className="my-4"><AlertCircle className="h-4 w-4" /><AlertTitle>Categories Unavailable</AlertTitle><AlertDescription>Could not load popular categories.</AlertDescription></Alert>
-        ) : (
-          !loadingCategories && categories.length === 0 && <div className="text-center py-6 text-muted-foreground text-sm">No categories available right now.</div>
+        ) : !loadingCategories && categories.length === 0 && !pageErrors.some(e => e.includes("categories")) ? (
+          <div className="text-center py-6 text-muted-foreground text-sm">No categories available right now.</div>
+        ) : null}
+        {pageErrors.some(e => e.includes("categories")) && (
+            <Alert variant="destructive" className="mt-4"><AlertCircle className="h-4 w-4" /><AlertTitle>Categories Unavailable</AlertTitle><AlertDescription>Could not load popular categories.</AlertDescription></Alert>
         )}
       </section>
 
-      {pageErrors.length > 0 && !allSectionsInitialLoading && (
+      {pageErrors.length > 0 && !pageInitialLoading && (
          <Alert variant="destructive" className="mt-12">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Content Loading Issue</AlertTitle>
+            <AlertTitle>Content Loading Issues</AlertTitle>
             <AlertDescription>
-                One or more sections on the page failed to load. Specific errors: {pageErrors.join("; ")}
+                One or more sections on the page failed to load. Please check your internet connection or try refreshing. Specific issues: {pageErrors.join("; ")}
             </AlertDescription>
          </Alert>
       )}
     </div>
   );
 }
-
-    
