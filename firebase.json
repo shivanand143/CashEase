@@ -5,17 +5,12 @@
     "indexes": "firestore.indexes.json"
   },
   "hosting": {
-    "public": "out",
-    "ignore": [
+    "source": ".", "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
+      "**/node_modules/**",
+      ".firebase",
+      "out"
     ]
   },
   "emulators": {
