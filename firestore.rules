@@ -6,7 +6,8 @@ service cloud.firestore {
 
     // Helper function to check if the user is an admin
     function isAdmin() {
-      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
@@ -15,42 +16,48 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Helper function to check if the user owns the resource (based on a userId field in the document)
-    function isOwner(docUserId) {
-      return isAuthenticated() && request.auth.uid == docUserId;
+    // Helper function to check if the user owns the resource
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
     // Users Collection
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      // Allow user to create their own document during signup.
-      // Ensure essential fields like uid, email, role (default 'user'), createdAt are set by user (or validated by function).
-      allow create: if isAuthenticated() && request.auth.uid == userId &&
-                       request.resource.data.uid == userId &&
-                       request.resource.data.email == request.auth.email &&
-                       (!('role' in request.resource.data) || request.resource.data.role == 'user' || (request.resource.data.role == 'admin' && request.auth.uid == request.resource.data.initialAdminUid)); // initialAdminUid should be passed if seeding admin
+      // User can read their own profile if they are authenticated and their UID matches the document ID.
+      // Admins can read any profile.
+      allow read: if (request.auth != null && request.auth.uid == userId) || isAdmin();
 
-      // Admins can update any field on any user document.
-      // Users can update specific, non-critical fields on their own document.
-      allow update: if isAdmin() ||
-                       (isOwner(userId) &&
-                        // Fields users CANNOT change directly (admin or specific functions must)
-                        request.resource.data.uid == resource.data.uid && // Cannot change UID
-                        request.resource.data.email == resource.data.email && // Email change via separate Firebase Auth flow
-                        request.resource.data.role == resource.data.role &&   // Role change only by admin
-                        request.resource.data.isDisabled == resource.data.isDisabled && // Disabling only by admin
-                        request.resource.data.cashbackBalance == resource.data.cashbackBalance && // Balances updated by system/admin
-                        request.resource.data.pendingCashback == resource.data.pendingCashback &&
-                        request.resource.data.lifetimeCashback == resource.data.lifetimeCashback &&
-                        request.resource.data.referralCode == resource.data.referralCode && // System assigned
-                        request.resource.data.referralCount == resource.data.referralCount &&
-                        request.resource.data.referralBonusEarned == resource.data.referralBonusEarned &&
-                        request.resource.data.referredBy == resource.data.referredBy &&
-                        request.resource.data.createdAt == resource.data.createdAt && // Cannot change creation date
-                        // Allow update if ONLY displayName, photoURL, payoutDetails, or updatedAt are changing
-                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'payoutDetails', 'updatedAt', 'lastPayoutRequestAt']))
-                       );
-      allow delete: if false; // Prevent accidental deletion, use isDisabled instead
+      // Authenticated users can create their own profile (on signup), uid must match.
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+
+      // Update rules:
+      // - Admins can update any field.
+      // - Users can update specific, non-critical fields on their own profile.
+      // - Users can trigger a cashbackBalance decrement and lastPayoutRequestAt update only when making a payout.
+      allow update: if isAdmin() || (
+        isOwner(userId) &&
+        request.resource.data.uid == resource.data.uid && // Cannot change UID
+        request.resource.data.email == resource.data.email && // Cannot change email via this rule
+        request.resource.data.role == resource.data.role && // Cannot change role
+        request.resource.data.isDisabled == resource.data.isDisabled && // Cannot change disable status
+        request.resource.data.referralCode == resource.data.referralCode &&
+        request.resource.data.referralCount == resource.data.referralCount &&
+        request.resource.data.referralBonusEarned == resource.data.referralBonusEarned &&
+        request.resource.data.pendingCashback == resource.data.pendingCashback && // Cannot directly change pending cashback
+        request.resource.data.lifetimeCashback == resource.data.lifetimeCashback && // Cannot directly change lifetime cashback
+        // Allow update if only displayName, photoURL, payoutDetails, or updatedAt are changing
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'payoutDetails', 'updatedAt']) ||
+          // OR if making a payout request (balance decreases, lastPayoutRequestAt updates)
+          (
+            request.resource.data.cashbackBalance < resource.data.cashbackBalance && // Balance is decreasing
+            request.resource.data.lastPayoutRequestAt != resource.data.lastPayoutRequestAt &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cashbackBalance', 'lastPayoutRequestAt', 'payoutDetails', 'updatedAt'])
+            // Ensure only these fields are changing during payout request balance update
+          )
+        )
+      );
+      allow delete: if false; // Prevent accidental/direct deletion
     }
 
     // Stores Collection
@@ -73,7 +80,7 @@ service cloud.firestore {
 
     // Categories Collection
     match /categories/{categoryId} {
-      allow read: if resource.data.isActive == true || isAdmin();
+      allow read: if resource.data.isActive == true || isAdmin(); // Only active categories public
       allow create, update, delete: if isAdmin();
     }
 
@@ -85,49 +92,39 @@ service cloud.firestore {
 
     // Clicks Collection
     match /clicks/{clickId} {
-      // User can create their own click record. Click document ID should match clickId field.
       allow create: if isAuthenticated() &&
                        request.resource.data.userId == request.auth.uid &&
-                       request.resource.data.clickId == clickId;
+                       request.resource.data.clickId == clickId; // Ensure clickId in data matches doc ID
       allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow update: if isAdmin(); // Admins might need to correct clicks
-      allow delete: if isAdmin();
+      allow update, delete: if isAdmin();
     }
 
-    // Conversions Collection
-    // Typically written by a trusted backend (Firebase Function) using Admin SDK (bypasses rules)
-    // or by an admin user directly.
+    // Conversions Collection (Created by Firebase Function, read by admin)
     match /conversions/{conversionId} {
-      allow read: if isAdmin() || isOwner(resource.data.userId); // User might read their own if linked
-      allow create, update, delete: if isAdmin(); // Or by Function using Admin SDK
+      allow read: if isAdmin();
+      // Writes should ideally be restricted to your Firebase Function's service account
+      // For simplicity if functions run with admin, this is covered by isAdmin() check on write.
+      // If function runs with less privilege, you'd need a more specific rule or use security tokens.
+      allow create, update, delete: if isAdmin(); // Or a specific service account role
     }
 
     // Transactions Collection
     match /transactions/{transactionId} {
       allow read: if isOwner(resource.data.userId) || isAdmin();
-      // Creation should happen via backend/trusted environment (Firebase Function based on conversion) or by Admin.
-      allow create: if isAdmin();
-      // Status updates (pending -> confirmed/rejected, confirmed -> paid) by admin.
+      // Transactions are created by Firebase Function or by Admin
+      allow create: if isAdmin(); // Function (with admin privileges) or direct admin action
+      // Status updates and notes by admin
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
     // PayoutRequests Collection
     match /payoutRequests/{requestId} {
-      allow create: if isAuthenticated() &&
-                       request.resource.data.userId == request.auth.uid &&
-                       // Ensure user is requesting their own balance and payoutDetails match what's on their profile.
-                       // Or simply trust the client-side validation and ensure amount is within balance in Function/Action.
-                       request.resource.data.amount > 0; // Basic check
+      // User creates their own, and cashbackBalance must be sufficient (checked in code, can add rule too)
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow read: if isOwner(resource.data.userId) || isAdmin();
-      // Only admins can update the status, adminNotes, etc.
-      allow update: if isAdmin();
+      allow update: if isAdmin(); // Admin processes (approve/reject/pay)
       allow delete: if isAdmin();
     }
-
-    // Special ACL collection for Function permissions if needed (not used in current simple isAdmin)
-    // match /functionsACL/{userId} {
-    //   allow read: if isAdmin(); // Or specific logic
-    // }
   }
 }
