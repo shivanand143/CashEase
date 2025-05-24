@@ -15,7 +15,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'; // Added CardTitle
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
   Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious,
@@ -23,14 +23,14 @@ import {
 import Autoplay from "embla-carousel-autoplay";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
-  ArrowRight, ShoppingBag, List, Search as SearchIcon, AlertCircle, Sparkles, Tag, Percent
+  ArrowRight, ShoppingBag, List, Search as SearchIcon, AlertCircle, Sparkles, Tag, Percent, ExternalLink
 } from 'lucide-react';
 import { safeToDate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useHasMounted } from '@/hooks/use-has-mounted';
 
 const ITEMS_PER_SECTION_STORES_CATEGORIES = 6;
-const ITEMS_PER_SECTION_PRODUCTS_COUPONS = 3; // For Today's Picks and Top Coupons
+const ITEMS_PER_SECTION_PRODUCTS_COUPONS = 4; // Increased from 3 to 4
 
 async function fetchItemsWithStoreData<
   CollectionName extends 'products' | 'coupons',
@@ -43,8 +43,7 @@ async function fetchItemsWithStoreData<
 ): Promise<(ItemType & { store?: Store })[]> {
   if (firebaseInitializationError || !db) {
     console.error(`HOMEPAGE_FETCH_ERROR: Firestore not initialized for fetching ${collectionName}. Error: ${firebaseInitializationError}`);
-    // Return an empty array or throw an error to be caught by the caller
-    return []; // Or throw new Error("Firestore not initialized.");
+    return [];
   }
 
   let itemsData: ItemType[] = [];
@@ -75,7 +74,7 @@ async function fetchItemsWithStoreData<
 
     if (storeIds.length > 0) {
       const storeChunks: string[][] = [];
-      for (let i = 0; i < storeIds.length; i += 30) { // Firestore 'in' query supports up to 30 elements
+      for (let i = 0; i < storeIds.length; i += 30) {
         storeChunks.push(storeIds.slice(i, i + 30));
       }
       for (const chunk of storeChunks) {
@@ -101,8 +100,7 @@ async function fetchItemsWithStoreData<
 
   } catch (error) {
       console.error(`HOMEPAGE_FETCH_ERROR: Error fetching ${collectionName}:`, error);
-      // Propagate the error or return empty array, depending on desired behavior
-      throw error; // Or return [];
+      throw error;
   }
 }
 
@@ -113,11 +111,10 @@ function HomePageSkeleton() {
       <Card className="max-w-2xl mx-auto shadow-md border-2 border-primary/50 p-1 bg-gradient-to-r from-primary/5 via-background to-secondary/5 rounded-xl">
         <CardHeader className="pb-3 pt-4 text-center">
           <Skeleton className="h-7 w-3/4 mx-auto mb-1" />
-          {/* <Skeleton className="h-5 w-1/2 mx-auto" /> // CardDescription removed */}
         </CardHeader>
         <CardContent className="p-3 sm:p-4">
           <div className="flex gap-2 items-center">
-            <Skeleton className="h-5 w-5 ml-2 text-muted-foreground hidden sm:block" /> {/* Search Icon Placeholder */}
+            <Skeleton className="h-5 w-5 ml-2 text-muted-foreground hidden sm:block" />
             <Skeleton className="h-11 flex-grow rounded-md" />
             <Skeleton className="h-11 w-24 rounded-md" />
           </div>
@@ -126,22 +123,22 @@ function HomePageSkeleton() {
       {/* Today's Picks Products Skeleton */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6"><Skeleton className="h-8 w-48" /></div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-          {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tp-skel-${i}`} className="h-72 rounded-lg" />)}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6"> {/* Adjusted grid */}
+          {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tp-skel-${i}`} className="h-64 rounded-lg" />)} {/* Adjusted height */}
         </div>
       </section>
       {/* Featured Stores Skeleton */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-8 w-24" /></div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
-          {Array.from({ length: ITEMS_PER_SECTION_STORES_CATEGORIES }).map((_, i) => <Skeleton key={`fs-skel-${i}`} className="h-40 rounded-lg" />)}
+          {Array.from({ length: ITEMS_PER_SECTION_STORES_CATEGORIES }).map((_, i) => <Skeleton key={`fs-skel-${i}`} className="h-36 rounded-lg" />)} {/* Adjusted height */}
         </div>
       </section>
       {/* Top Coupons Skeleton */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-8 w-24" /></div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-          {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tc-skel-${i}`} className="h-44 rounded-lg" />)}
+          {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tc-skel-${i}`} className="h-40 rounded-lg" />)} {/* Adjusted height */}
         </div>
       </section>
       {/* Popular Categories Skeleton */}
@@ -183,7 +180,11 @@ export default function HomePage() {
 
   React.useEffect(() => {
     let isMounted = true;
-    console.log("HOMEPAGE: useEffect triggered. isMounted:", isMounted, "hasMounted (hook):", hasMounted);
+    if (!hasMounted) {
+      console.log("HOMEPAGE: Not mounted yet, deferring data load.");
+      return;
+    }
+    console.log("HOMEPAGE: useEffect triggered. isMounted:", isMounted);
 
     const loadAllData = async () => {
       if (!isMounted) {
@@ -192,21 +193,11 @@ export default function HomePage() {
       }
       console.log("HOMEPAGE: loadAllData called.");
       setPageInitialLoading(true);
-      setPageErrors([]); // Clear previous errors
+      setPageErrors([]);
 
-      if (firebaseInitializationError) {
+      if (firebaseInitializationError || !db) {
+        const errorMsg = firebaseInitializationError || "DB not available.";
         if (isMounted) {
-          const errorMsg = `Firebase init failed: ${firebaseInitializationError}`;
-          setPageErrors(prev => [...new Set([...prev, errorMsg])]); // Avoid duplicate errors
-          console.error("HOMEPAGE_ERROR:", errorMsg);
-          setLoadingBanners(false); setLoadingCategories(false); setLoadingFeaturedStores(false);
-          setLoadingTopCoupons(false); setLoadingTodaysPicks(false); setPageInitialLoading(false);
-        }
-        return;
-      }
-      if (!db) {
-        if (isMounted) {
-          const errorMsg = "DB not available.";
           setPageErrors(prev => [...new Set([...prev, errorMsg])]);
           console.error("HOMEPAGE_ERROR:", errorMsg);
           setLoadingBanners(false); setLoadingCategories(false); setLoadingFeaturedStores(false);
@@ -218,54 +209,43 @@ export default function HomePage() {
       const errorsAccumulator: string[] = [];
       const sectionFetchPromises = [];
 
-      // Fetch Banners
       setLoadingBanners(true);
-      console.log("HOMEPAGE: Initiating Banners fetch.");
       sectionFetchPromises.push(
         (async () => {
           try {
             const bannersQuery = query(collection(db, 'banners'), where('isActive', '==', true), orderBy('order', 'asc'));
             const bannerSnap = await getDocs(bannersQuery);
             if (isMounted) setBanners(bannerSnap.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: safeToDate(doc.data().createdAt as Timestamp | undefined), updatedAt: safeToDate(doc.data().updatedAt as Timestamp | undefined) } as Banner)));
-            console.log(`HOMEPAGE: Banners fetch complete. Count: ${bannerSnap.size}`);
           } catch (err) { console.error("Error fetching banners:", err); errorsAccumulator.push("banners"); }
           finally { if (isMounted) setLoadingBanners(false); }
         })()
       );
 
-      // Fetch Categories
       setLoadingCategories(true);
-      console.log("HOMEPAGE: Initiating Categories fetch.");
       sectionFetchPromises.push(
         (async () => {
           try {
             const categoriesQuery = query(collection(db, 'categories'), where('isActive', '==', true), orderBy('order', 'asc'), orderBy('name', 'asc'), limit(ITEMS_PER_SECTION_STORES_CATEGORIES));
             const categorySnap = await getDocs(categoriesQuery);
             if (isMounted) setCategories(categorySnap.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: safeToDate(doc.data().createdAt as Timestamp | undefined), updatedAt: safeToDate(doc.data().updatedAt as Timestamp | undefined) } as Category)));
-            console.log(`HOMEPAGE: Categories fetch complete. Count: ${categorySnap.size}`);
           } catch (err) { console.error("Error fetching categories:", err); errorsAccumulator.push("categories"); }
           finally { if (isMounted) setLoadingCategories(false); }
         })()
       );
 
-      // Fetch Featured Stores
       setLoadingFeaturedStores(true);
-      console.log("HOMEPAGE: Initiating Featured Stores fetch.");
       sectionFetchPromises.push(
         (async () => {
           try {
             const storesQuery = query(collection(db, 'stores'), where('isActive', '==', true), where('isFeatured', '==', true), orderBy('name', 'asc'), limit(ITEMS_PER_SECTION_STORES_CATEGORIES));
             const storeSnap = await getDocs(storesQuery);
             if (isMounted) setFeaturedStores(storeSnap.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: safeToDate(doc.data().createdAt as Timestamp | undefined), updatedAt: safeToDate(doc.data().updatedAt as Timestamp | undefined) } as Store)));
-            console.log(`HOMEPAGE: Featured Stores fetch complete. Count: ${storeSnap.size}`);
           } catch (err) { console.error("Error fetching featured stores:", err); errorsAccumulator.push("stores"); }
           finally { if (isMounted) setLoadingFeaturedStores(false); }
         })()
       );
 
-      // Fetch Top Coupons
       setLoadingTopCoupons(true);
-      console.log("HOMEPAGE: Initiating Top Coupons fetch.");
       sectionFetchPromises.push(
         (async () => {
           try {
@@ -274,15 +254,12 @@ export default function HomePage() {
             ];
             const fetchedCoupons = await fetchItemsWithStoreData<'coupons', Coupon>('coupons', couponConstraints, ITEMS_PER_SECTION_PRODUCTS_COUPONS, true);
             if (isMounted) setTopCoupons(fetchedCoupons);
-            console.log(`HOMEPAGE: Top Coupons fetch complete. Count: ${fetchedCoupons.length}`);
           } catch (err) { console.error("Error fetching top coupons:", err); errorsAccumulator.push("coupons"); }
           finally { if (isMounted) setLoadingTopCoupons(false); }
         })()
       );
 
-      // Fetch Today's Picks Products
       setLoadingTodaysPicks(true);
-      console.log("HOMEPAGE: Initiating Today's Picks Products fetch.");
       sectionFetchPromises.push(
         (async () => {
           try {
@@ -291,7 +268,6 @@ export default function HomePage() {
             ];
             const fetchedProducts = await fetchItemsWithStoreData<'products', Product>('products', productConstraints, ITEMS_PER_SECTION_PRODUCTS_COUPONS, true);
             if (isMounted) setTodaysPicksProducts(fetchedProducts);
-            console.log(`HOMEPAGE: Today's Picks Products fetch complete. Count: ${fetchedProducts.length}`);
           } catch (err) { console.error("Error fetching today's picks products:", err); errorsAccumulator.push("today's picks products"); }
           finally { if (isMounted) setLoadingTodaysPicks(false); }
         })()
@@ -301,36 +277,27 @@ export default function HomePage() {
 
       if (isMounted) {
         if (errorsAccumulator.length > 0) {
-          const errorMessage = `Failed to load some data sections: ${errorsAccumulator.join(', ')}. Some content may be missing. Please try refreshing the page. If the problem persists, contact support.`;
-          setPageErrors(prev => [...new Set([...prev, errorMessage])]); // Use Set to avoid duplicate combined messages
+          const errorMessage = `Failed to load: ${errorsAccumulator.join(', ')}. Some content may be missing.`;
+          setPageErrors(prev => [...new Set([...prev, errorMessage])]);
           toast({ variant: "destructive", title: "Data Loading Issues", description: errorMessage, duration: 10000 });
         }
         setPageInitialLoading(false);
-        console.log("HOMEPAGE: loadAllData finished. Page initial loading set to false.");
       }
     };
 
-    if (hasMounted) {
-      loadAllData();
-    }
-
-    return () => {
-      isMounted = false;
-      console.log("HOMEPAGE: Component unmounted or useEffect re-running.");
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMounted, toast]); // fetchItemsWithStoreData is stable if defined outside or memoized
+    loadAllData();
+    return () => { isMounted = false; };
+  }, [hasMounted, toast]);
 
   const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!searchTerm.trim()) return;
     router.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`);
-    setSearchTerm(''); // Clear search term after submit
+    setSearchTerm('');
   };
 
   if (!hasMounted) {
-    // Render nothing on the server and on the initial client render to match Suspense fallback in layout
-    return null;
+    return null; // Render nothing on server or initial client render before mount
   }
 
   if (pageInitialLoading) {
@@ -386,7 +353,6 @@ export default function HomePage() {
         )}
       </section>
 
-      {/* Search Bar Section */}
       <section className="py-6 md:py-8">
         <Card className="max-w-2xl mx-auto shadow-md border-2 border-primary/50 p-1 bg-gradient-to-r from-primary/5 via-background to-secondary/5 rounded-xl">
           <CardHeader className="pb-3 pt-4 text-center">
@@ -397,7 +363,7 @@ export default function HomePage() {
               <SearchIcon className="ml-2 h-5 w-5 text-muted-foreground hidden sm:block" />
               <Input
                 type="search"
-                name="search" // Add name attribute
+                name="search"
                 placeholder="Search for stores, brands or products..."
                 className="flex-grow h-11 text-base rounded-md shadow-inner"
                 value={searchTerm}
@@ -415,14 +381,13 @@ export default function HomePage() {
           <h2 className="text-2xl font-bold flex items-center gap-2">
             <Sparkles className="w-6 h-6 text-amber-500" /> Today's Picks
           </h2>
-          {/* Optional: Link to a page showing all today's picks if you implement such a page */}
         </div>
         {loadingTodaysPicks && todaysPicksProducts.length === 0 && !pageErrors.some(e => e.includes("today's picks products")) ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-            {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tp-skel-render-${i}`} className="h-72 rounded-lg" />)}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 md:gap-6"> {/* Adjusted columns for smaller cards */}
+            {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tp-skel-render-${i}`} className="h-64 rounded-lg" />)} {/* Slightly shorter skeleton */}
           </div>
         ) : todaysPicksProducts.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 md:gap-6"> {/* Adjusted columns */}
             {todaysPicksProducts.map(product => (
               <ProductCard key={product.id} product={product} storeContext={product.store} />
             ))}
@@ -435,8 +400,6 @@ export default function HomePage() {
         )}
       </section>
 
-
-      {/* Featured Stores */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6">
           <h2 className="text-2xl font-bold flex items-center gap-2"><ShoppingBag className="w-6 h-6 text-primary" /> Featured Stores</h2>
@@ -446,7 +409,7 @@ export default function HomePage() {
         </div>
         {loadingFeaturedStores && featuredStores.length === 0 && !pageErrors.some(e => e.includes("stores"))? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
-            {Array.from({ length: ITEMS_PER_SECTION_STORES_CATEGORIES }).map((_, i) => <Skeleton key={`fs-skel-render-${i}`} className="h-40 rounded-lg" />)}
+            {Array.from({ length: ITEMS_PER_SECTION_STORES_CATEGORIES }).map((_, i) => <Skeleton key={`fs-skel-render-${i}`} className="h-36 rounded-lg" />)}
           </div>
         ) : featuredStores.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
@@ -460,8 +423,6 @@ export default function HomePage() {
         )}
       </section>
 
-
-      {/* Top Coupons & Offers */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6">
           <h2 className="text-2xl font-bold flex items-center gap-2"><Tag className="w-6 h-6 text-destructive" /> Top Coupons & Offers</h2>
@@ -471,7 +432,7 @@ export default function HomePage() {
         </div>
         {loadingTopCoupons && topCoupons.length === 0 && !pageErrors.some(e => e.includes("coupons")) ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-            {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tc-skel-render-${i}`} className="h-44 rounded-lg" />)}
+            {Array.from({ length: ITEMS_PER_SECTION_PRODUCTS_COUPONS }).map((_, i) => <Skeleton key={`tc-skel-render-${i}`} className="h-40 rounded-lg" />)}
           </div>
         ) : topCoupons.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
@@ -485,7 +446,6 @@ export default function HomePage() {
         )}
       </section>
 
-      {/* Popular Categories */}
       <section>
         <div className="flex justify-between items-center mb-4 md:mb-6">
           <h2 className="text-2xl font-bold flex items-center gap-2"><List className="w-6 h-6 text-secondary" /> Popular Categories</h2>
@@ -527,12 +487,12 @@ export default function HomePage() {
         )}
       </section>
 
-      {pageErrors.length > 0 && !pageInitialLoading && ( // Show general error if any section failed and page is done with initial load attempt
+      {pageErrors.length > 0 && !pageInitialLoading && (
          <Alert variant="destructive" className="mt-12">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Content Loading Issue</AlertTitle>
             <AlertDescription>
-                Some sections on the page failed to load: {pageErrors.join("; ")}. Please check your internet connection or try refreshing.
+                {pageErrors.join(" ")}
             </AlertDescription>
          </Alert>
       )}
