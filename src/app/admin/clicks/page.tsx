@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from 'react';
@@ -33,15 +32,14 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Loader2, Search, ExternalLink, MousePointerClick, User as UserIcon, ShoppingCart, FileText } from 'lucide-react';
+import { AlertCircle, Loader2, Search, ExternalLink, FileText, Tag, ShoppingCart, User as UserIcon } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
 import { useDebounce } from '@/hooks/use-debounce';
 import { safeToDate, formatCurrency } from '@/lib/utils';
-import Link from 'next/link';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 const ITEMS_PER_PAGE = 15;
 
@@ -49,7 +47,7 @@ interface CombinedClickData {
   click: Click;
   user?: UserProfile | null;
   conversion?: Conversion | null;
-  store?: Store | null; // Store related to the click
+  store?: Store | null;
 }
 
 function AdminClicksPageSkeleton() {
@@ -64,15 +62,15 @@ function AdminClicksPageSkeleton() {
           <Table>
             <TableHeader>
               <TableRow>
-                {Array.from({ length: 9 }).map((_, index) => (
-                  <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead>
+                {Array.from({ length: 10 }).map((_, index) => (
+                  <TableHead key={index}><Skeleton className="h-5 w-full min-w-[120px]" /></TableHead>
                 ))}
               </TableRow>
             </TableHeader>
             <TableBody>
               {Array.from({ length: 10 }).map((_, rowIndex) => (
                 <TableRow key={rowIndex}>
-                  {Array.from({ length: 9 }).map((_, colIndex) => (
+                  {Array.from({ length: 10 }).map((_, colIndex) => (
                     <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell>
                   ))}
                 </TableRow>
@@ -87,8 +85,8 @@ function AdminClicksPageSkeleton() {
 
 export default function AdminClicksPage() {
   const [combinedData, setCombinedData] = React.useState<CombinedClickData[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
+  const [pageLoading, setPageLoading] = React.useState(true);
+  const [pageError, setPageError] = React.useState<string | null>(null);
   const [lastVisibleClick, setLastVisibleClick] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
@@ -99,75 +97,118 @@ export default function AdminClicksPage() {
   const debouncedSearchTerm = useDebounce(searchTermInput, 500);
   const [isSearching, setIsSearching] = React.useState(false);
 
+  // Cache for fetched details to avoid re-fetching
+  const [userCache, setUserCache] = React.useState<Record<string, UserProfile>>({});
+  const [storeCache, setStoreCache] = React.useState<Record<string, Store>>({});
+  const [conversionCache, setConversionCache] = React.useState<Record<string, Conversion>>({});
+
+
+  const fetchClickDetails = React.useCallback(async (clicksToEnrich: Click[]): Promise<CombinedClickData[]> => {
+    if (firebaseInitializationError || !db) {
+      console.error("ADMIN_CLICKS: Firestore not available for fetching details.");
+      // Return clicks without enriched data if db is not available
+      return clicksToEnrich.map(click => ({ click }));
+    }
+
+    const enrichedDataPromises = clicksToEnrich.map(async (click): Promise<CombinedClickData> => {
+      let userProfile: UserProfile | null = userCache[click.userId || ''] || null;
+      let storeData: Store | null = storeCache[click.storeId || ''] || null;
+      let conversion: Conversion | null = conversionCache[click.clickId] || null; // Use click.clickId as key for conversionCache
+
+      if (click.userId && !userProfile) {
+        try {
+          const userRef = doc(db, 'users', click.userId);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            userProfile = { uid: userSnap.id, ...userSnap.data() } as UserProfile;
+            setUserCache(prev => ({ ...prev, [click.userId!]: userProfile! }));
+          }
+        } catch (e) { console.warn(`Failed to fetch user ${click.userId}`, e); }
+      }
+
+      if (click.storeId && !storeData) {
+        try {
+          const storeRef = doc(db, 'stores', click.storeId);
+          const storeSnap = await getDoc(storeRef);
+          if (storeSnap.exists()) {
+            storeData = { id: storeSnap.id, ...storeSnap.data() } as Store;
+            setStoreCache(prev => ({ ...prev, [click.storeId!]: storeData! }));
+          }
+        } catch (e) { console.warn(`Failed to fetch store ${click.storeId}`, e); }
+      }
+      
+      // Fetch conversion if not already cached and clickId exists
+      if (click.clickId && !conversion) {
+        try {
+          const convQuery = query(collection(db, 'conversions'), where('clickId', '==', click.clickId), limit(1));
+          const convSnap = await getDocs(convQuery);
+          if (!convSnap.empty) {
+            const convData = convSnap.docs[0].data();
+            conversion = {
+              id: convSnap.docs[0].id,
+              ...convData,
+              timestamp: safeToDate(convData.timestamp as Timestamp | undefined) || new Date(0),
+            } as Conversion;
+            setConversionCache(prev => ({ ...prev, [click.clickId]: conversion! }));
+          }
+        } catch (e) { console.warn(`Failed to fetch conversion for click ${click.clickId}`, e); }
+      }
+
+      return { click, user: userProfile, conversion, store: storeData };
+    });
+
+    return Promise.all(enrichedDataPromises);
+  }, [userCache, storeCache, conversionCache]); // Dependencies for useCallback
+
   const fetchTrackingData = React.useCallback(async (
     loadMoreOperation = false,
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null
   ) => {
-    let isMounted = true;
     if (firebaseInitializationError || !db) {
-      if (isMounted) {
-        setError(firebaseInitializationError || "Database connection not available.");
-        setLoading(false); setLoadingMore(false); setHasMore(false);
-      }
-      return () => { isMounted = false; };
+      setPageError(firebaseInitializationError || "Database connection not available.");
+      setPageLoading(false); setLoadingMore(false); setHasMore(false);
+      return;
     }
 
     if (!loadMoreOperation) {
-      setLoading(true); setCombinedData([]); setLastVisibleClick(null); setHasMore(true);
+      setPageLoading(true); setCombinedData([]); setLastVisibleClick(null); setHasMore(true);
     } else {
-      if (!docToStartAfter) { if (isMounted) setLoadingMore(false); return () => { isMounted = false; }; }
+      if (!docToStartAfter && loadMoreOperation) { setLoadingMore(false); return; }
       setLoadingMore(true);
     }
-    if (!loadMoreOperation) setError(null);
+    if (!loadMoreOperation) setPageError(null);
     setIsSearching(debouncedSearchTerm !== '');
 
     try {
       const clicksCollectionRef = collection(db, 'clicks');
       const constraints: QueryConstraint[] = [];
 
-      if (debouncedSearchTerm && filterType !== 'all') {
-        if (filterType === 'clickId') {
-          // Direct fetch for a single clickId
-          const clickDocRef = doc(db, 'clicks', debouncedSearchTerm);
-          const clickDocSnap = await getDoc(clickDocRef);
-          if (clickDocSnap.exists() && isMounted) {
-            const clickData = { id: clickDocSnap.id, ...clickDocSnap.data(), timestamp: safeToDate(clickDocSnap.data().timestamp as Timestamp | undefined) || new Date(0) } as Click;
-            
-            let userProfile: UserProfile | null = null;
-            if (clickData.userId) userProfile = (await getDoc(doc(db, 'users', clickData.userId))).data() as UserProfile || null;
-            
-            let conversion: Conversion | null = null;
-            const convQuery = query(collection(db, 'conversions'), where('clickId', '==', clickData.clickId), limit(1));
-            const convSnap = await getDocs(convQuery);
-            if (!convSnap.empty) conversion = { id: convSnap.docs[0].id, ...convSnap.docs[0].data(), timestamp: safeToDate(convSnap.docs[0].data().timestamp as Timestamp | undefined) || new Date(0) } as Conversion;
-
-            let storeData: Store | null = null;
-            if(clickData.storeId) storeData = (await getDoc(doc(db, 'stores', clickData.storeId))).data() as Store || null;
-
-            setCombinedData([{ click: clickData, user: userProfile, conversion, store: storeData }]);
-            setHasMore(false); setLoading(false); setLoadingMore(false); setIsSearching(false);
-            return () => { isMounted = false; };
-          } else if (isMounted) {
-            setCombinedData([]); setHasMore(false); setLoading(false); setLoadingMore(false); setIsSearching(false);
-            return () => { isMounted = false; };
+      // Apply filters based on filterType and debouncedSearchTerm
+      if (debouncedSearchTerm.trim() && filterType !== 'all') {
+          if (filterType === 'clickId') {
+              const clickDocRef = doc(db, 'clicks', debouncedSearchTerm.trim());
+              const clickDocSnap = await getDoc(clickDocRef);
+              if (clickDocSnap.exists()) {
+                  const clickData = { id: clickDocSnap.id, ...clickDocSnap.data(), timestamp: safeToDate(clickDocSnap.data().timestamp as Timestamp | undefined) || new Date(0) } as Click;
+                  const enrichedSingle = await fetchClickDetails([clickData]);
+                  setCombinedData(enrichedSingle);
+                  setHasMore(false);
+              } else {
+                  setCombinedData([]); setHasMore(false);
+              }
+              setPageLoading(false); setLoadingMore(false); setIsSearching(false);
+              return;
+          } else if (filterType === 'orderId') {
+              const convQuery = query(collection(db, 'conversions'), where('orderId', '==', debouncedSearchTerm.trim()), limit(1));
+              const convSnap = await getDocs(convQuery);
+              if (!convSnap.empty) {
+                  const convData = convSnap.docs[0].data() as Conversion;
+                  if (convData.clickId) constraints.push(where('clickId', '==', convData.clickId));
+                  else { setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); return; }
+              } else { setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); return; }
+          } else if (filterType === 'userId' || filterType === 'storeId') {
+             constraints.push(where(filterType, '==', debouncedSearchTerm.trim()));
           }
-        } else if (filterType === 'orderId') {
-          const convQuery = query(collection(db, 'conversions'), where('orderId', '==', debouncedSearchTerm), limit(1));
-          const convSnap = await getDocs(convQuery);
-          if (!convSnap.empty) {
-            const convData = convSnap.docs[0].data() as Conversion;
-            if (convData.clickId) constraints.push(where('clickId', '==', convData.clickId));
-            else { // No associated clickId from conversion, so no clicks to show for this orderId
-              setCombinedData([]); setHasMore(false); setLoading(false); setLoadingMore(false); setIsSearching(false);
-              return () => { isMounted = false; };
-            }
-          } else { // No conversion found for this orderId
-            setCombinedData([]); setHasMore(false); setLoading(false); setLoadingMore(false); setIsSearching(false);
-            return () => { isMounted = false; };
-          }
-        } else if (filterType === 'userId' || filterType === 'storeId') {
-           constraints.push(where(filterType, '==', debouncedSearchTerm));
-        }
       }
       
       constraints.push(orderBy('timestamp', 'desc'));
@@ -181,78 +222,51 @@ export default function AdminClicksPage() {
         id: docSnap.id, ...docSnap.data(), timestamp: safeToDate(docSnap.data().timestamp as Timestamp | undefined) || new Date(0),
       } as Click));
       
-      let enrichedDataPromises = fetchedClicks.map(async (click) => {
-        let userProfile: UserProfile | null = null;
-        if (click.userId) {
-          const userRef = doc(db, 'users', click.userId);
-          const userSnap = await getDoc(userRef);
-          if (userSnap.exists()) userProfile = { uid: userSnap.id, ...userSnap.data() } as UserProfile;
-        }
-
-        let conversion: Conversion | null = null;
-        const convQuery = query(collection(db, 'conversions'), where('clickId', '==', click.clickId), limit(1));
-        const convSnap = await getDocs(convQuery);
-        if (!convSnap.empty) {
-            const convData = convSnap.docs[0].data();
-            conversion = { id: convSnap.docs[0].id, ...convData, timestamp: safeToDate(convData.timestamp as Timestamp | undefined) || new Date(0) } as Conversion;
-        }
-
-        let storeData: Store | null = null;
-        if(click.storeId) {
-            const storeRef = doc(db, 'stores', click.storeId);
-            const storeSnap = await getDoc(storeRef);
-            if(storeSnap.exists()) storeData = {id: storeSnap.id, ...storeSnap.data()} as Store;
-        }
-
-        return { click, user: userProfile, conversion, store: storeData };
-      });
-
-      const combinedResults = await Promise.all(enrichedDataPromises);
+      const enrichedResults = await fetchClickDetails(fetchedClicks);
       
-      if (isMounted) {
-        // If general text search, client-side filter
-        let finalResults = combinedResults;
-        if (debouncedSearchTerm && filterType === 'all') {
-          const lowerSearch = debouncedSearchTerm.toLowerCase();
-          finalResults = combinedResults.filter(item => 
-            item.click.storeName?.toLowerCase().includes(lowerSearch) ||
-            item.click.productName?.toLowerCase().includes(lowerSearch) ||
-            item.user?.displayName?.toLowerCase().includes(lowerSearch) ||
-            item.user?.email?.toLowerCase().includes(lowerSearch) ||
-            item.conversion?.orderId?.toLowerCase().includes(lowerSearch)
-          );
-        }
-        setCombinedData(prev => loadMoreOperation ? [...prev, ...finalResults] : finalResults);
-        setLastVisibleClick(clickQuerySnapshot.docs[clickQuerySnapshot.docs.length - 1] || null);
-        setHasMore(clickQuerySnapshot.docs.length === ITEMS_PER_PAGE);
+      let finalResults = enrichedResults;
+      if (debouncedSearchTerm.trim() && filterType === 'all') {
+        const lowerSearch = debouncedSearchTerm.toLowerCase();
+        finalResults = enrichedResults.filter(item => 
+          item.click.storeName?.toLowerCase().includes(lowerSearch) ||
+          item.click.productName?.toLowerCase().includes(lowerSearch) ||
+          item.user?.displayName?.toLowerCase().includes(lowerSearch) ||
+          item.user?.email?.toLowerCase().includes(lowerSearch) ||
+          item.conversion?.orderId?.toLowerCase().includes(lowerSearch) ||
+          item.click.clickId?.toLowerCase().includes(lowerSearch)
+        );
       }
+
+      setCombinedData(prev => loadMoreOperation ? [...prev, ...finalResults] : finalResults);
+      setLastVisibleClick(clickQuerySnapshot.docs[clickQuerySnapshot.docs.length - 1] || null);
+      setHasMore(clickQuerySnapshot.docs.length === ITEMS_PER_PAGE && fetchedClicks.length > 0);
 
     } catch (err) {
       console.error("Error fetching tracking data:", err);
-      if (isMounted) {
-        setError(err instanceof Error ? err.message : "Failed to fetch data");
-        setHasMore(false);
-      }
+      const errorMsg = err instanceof Error ? err.message : "Failed to fetch data";
+      setPageError(errorMsg);
+      toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+      setHasMore(false);
     } finally {
-      if (isMounted) {
-        setLoading(false); setLoadingMore(false); setIsSearching(false);
-      }
+      setPageLoading(false); setLoadingMore(false); setIsSearching(false);
     }
-    return () => { isMounted = false; };
-  }, [debouncedSearchTerm, filterType, toast]);
+  }, [debouncedSearchTerm, filterType, toast, fetchClickDetails]);
 
   React.useEffect(() => {
     fetchTrackingData(false, null);
-  }, [debouncedSearchTerm, filterType, fetchTrackingData]);
+  }, [filterType, debouncedSearchTerm, fetchTrackingData]); // Added fetchTrackingData
 
-  const handleSearchSubmit = (e: React.FormEvent) => e.preventDefault();
+  const handleSearchSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      // Fetching is handled by useEffect listening to debouncedSearchTerm and filterType
+  };
   const handleLoadMore = () => {
     if (!loadingMore && hasMore && lastVisibleClick) {
       fetchTrackingData(true, lastVisibleClick);
     }
   };
 
-  if (loading && combinedData.length === 0 && !error) {
+  if (pageLoading && combinedData.length === 0 && !pageError) {
     return <AdminGuard><AdminClicksPageSkeleton /></AdminGuard>;
   }
 
@@ -263,21 +277,22 @@ export default function AdminClicksPage() {
             <FileText className="w-7 h-7"/> Tracking Overview (Clicks & Conversions)
         </h1>
 
-        {error && (
+        {pageError && (
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" /> <AlertTitle>Error</AlertTitle> <AlertDescription>{error}</AlertDescription>
+            <AlertCircle className="h-4 w-4" /> <AlertTitle>Error</AlertTitle> <AlertDescription>{pageError}</AlertDescription>
           </Alert>
         )}
 
         <Card>
           <CardHeader>
             <CardTitle>Filter & Search</CardTitle>
-            <CardDescription>Search by various IDs or general terms.</CardDescription>
+            <CardDescription>Search by various IDs or general terms if 'All Fields' is selected.</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col sm:flex-row gap-4">
-            <div className="w-full sm:w-auto">
+          <CardContent className="flex flex-col sm:flex-row gap-4 items-end">
+            <div className="w-full sm:w-auto flex-shrink-0">
+              <Label htmlFor="filterTypeSel" className="sr-only">Filter By</Label>
               <Select value={filterType} onValueChange={(value) => setFilterType(value as any)}>
-                <SelectTrigger><SelectValue placeholder="Filter by..." /></SelectTrigger>
+                <SelectTrigger id="filterTypeSel" className="h-10"><SelectValue placeholder="Filter by..." /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Fields (General Search)</SelectItem>
                   <SelectItem value="clickId">Click ID</SelectItem>
@@ -287,7 +302,7 @@ export default function AdminClicksPage() {
                 </SelectContent>
               </Select>
             </div>
-            <form onSubmit={handleSearchSubmit} className="flex-1 flex gap-2">
+            <form onSubmit={handleSearchSubmit} className="flex-1 flex gap-2 w-full sm:w-auto">
               <Input
                 type="search"
                 placeholder={
@@ -296,11 +311,11 @@ export default function AdminClicksPage() {
                 }
                 value={searchTermInput}
                 onChange={(e) => setSearchTermInput(e.target.value)}
-                disabled={isSearching || loading}
+                disabled={isSearching || pageLoading}
                 className="h-10 text-base"
               />
-              <Button type="submit" disabled={isSearching || loading} className="h-10">
-                {isSearching || (loading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              <Button type="submit" disabled={isSearching || pageLoading} className="h-10">
+                {isSearching || (pageLoading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 <span className="sr-only sm:not-sr-only sm:ml-2">Search</span>
               </Button>
             </form>
@@ -313,24 +328,25 @@ export default function AdminClicksPage() {
             <CardDescription>Detailed record of user clicks and associated conversions.</CardDescription>
           </CardHeader>
           <CardContent>
-            {loading && combinedData.length === 0 && !error ? (
+            {pageLoading && combinedData.length === 0 && !pageError ? (
               <AdminClicksPageSkeleton />
-            ) : !loading && combinedData.length === 0 && !error ? (
+            ) : !pageLoading && combinedData.length === 0 && !pageError ? (
               <p className="text-center text-muted-foreground py-8">
-                {debouncedSearchTerm ? `No tracking data found matching "${debouncedSearchTerm}".` : "No tracking data recorded yet."}
+                {debouncedSearchTerm ? `No tracking data found matching "${debouncedSearchTerm}" with filter "${filterType}".` : "No tracking data recorded yet."}
               </p>
             ) : (
               <div className="overflow-x-auto">
-                <Table className="min-w-[1200px]"> {/* Added min-width */}
+                <Table className="min-w-[1200px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>User</TableHead>
-                      <TableHead>Click Info</TableHead>
-                      <TableHead>Item Clicked</TableHead>
-                      <TableHead>Store</TableHead>
-                      <TableHead>Clicked At</TableHead>
-                      <TableHead>Conversion Details</TableHead>
-                      <TableHead className="text-right">Affiliate Link</TableHead>
+                      <TableHead className="w-[180px]">User</TableHead>
+                      <TableHead className="w-[150px]">Click Info</TableHead>
+                      <TableHead className="w-[180px]">Item Clicked</TableHead>
+                      <TableHead className="w-[150px]">Store</TableHead>
+                      <TableHead className="w-[180px]">Clicked At</TableHead>
+                      <TableHead className="w-[150px]">Purchase Status</TableHead>
+                      <TableHead className="w-[180px]">Conversion Details</TableHead>
+                      <TableHead className="text-right w-[200px]">Affiliate Link</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -352,21 +368,20 @@ export default function AdminClicksPage() {
                               </Tooltip>
                             </TooltipProvider>
                           ) : click.userId ? (
-                            <span className="text-xs text-muted-foreground">UID: {click.userId} (No profile)</span>
+                            <span className="text-xs text-muted-foreground">UID: {click.userId}</span>
                           ) : (
                             <span className="text-xs text-muted-foreground italic">Guest</span>
                           )}
                         </TableCell>
                         <TableCell>
                            <div className="font-mono text-xs truncate max-w-[120px]" title={click.clickId}>ID: {click.clickId}</div>
-                           {click.userAgent && <div className="text-[10px] text-muted-foreground truncate max-w-[120px]" title={click.userAgent}>UA: Shortened</div>}
                         </TableCell>
-                        <TableCell className="truncate max-w-[180px]" title={click.productId ? `Product: ${click.productName || click.productId}` : click.couponId ? `Coupon ID: ${click.couponId}` : 'Store Link'}>
-                          {click.productId ? <><ShoppingCart className="inline-block mr-1 h-3 w-3" /> {click.productName || click.productId}</> :
-                           click.couponId ? <><Tag className="inline-block mr-1 h-3 w-3" /> {click.couponId}</> : 
+                        <TableCell className="truncate max-w-[180px]" title={click.productId ? `Product: ${click.productName || click.productId}` : click.couponId ? `Coupon: ${click.couponId}` : 'Store Visit'}>
+                          {click.productId ? <><ShoppingCart className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> {click.productName || click.productId}</> :
+                           click.couponId ? <><Tag className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> Coupon Click</> : 
                            'Store Page Visit'}
                         </TableCell>
-                        <TableCell className="font-medium truncate max-w-[150px]" title={store?.name || click.storeName || click.storeId}>
+                        <TableCell className="font-medium truncate max-w-[150px]" title={store?.name || click.storeName || click.storeId || 'N/A'}>
                            {store?.name || click.storeName || click.storeId || 'N/A'}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
@@ -374,15 +389,24 @@ export default function AdminClicksPage() {
                         </TableCell>
                         <TableCell>
                           {conversion ? (
+                            <Badge variant={conversion.status === 'received' || conversion.status === 'processed' ? 'default' : conversion.status === 'unmatched_click' ? 'secondary' : 'outline'} className="text-[10px] capitalize">
+                              Converted
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px]">No Conversion</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {conversion ? (
                             <div>
                               <div className="font-mono text-xs truncate max-w-[120px]" title={`Order ID: ${conversion.orderId}`}>OID: {conversion.orderId}</div>
                               <div className="text-xs" title={`Sale: ${formatCurrency(conversion.saleAmount)}`}>Sale: {formatCurrency(conversion.saleAmount)}</div>
-                              <Badge variant={conversion.status === 'received' ? 'default' : conversion.status === 'unmatched_click' ? 'secondary' : 'outline'} className="text-[10px] capitalize mt-1">
-                                {conversion.status.replace('_', ' ')}
-                              </Badge>
+                              <div className="text-[10px] text-muted-foreground mt-0.5">
+                                 {conversion.timestamp ? format(new Date(conversion.timestamp), 'Pp') : 'N/A'}
+                              </div>
                             </div>
                           ) : (
-                            <span className="text-xs text-muted-foreground italic">No conversion</span>
+                            <span className="text-xs text-muted-foreground italic">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
@@ -390,13 +414,13 @@ export default function AdminClicksPage() {
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs">
-                                    <a href={click.affiliateLink} target="_blank" rel="noopener noreferrer" className="truncate block max-w-[200px]">
+                                    <a href={click.affiliateLink || '#'} target="_blank" rel="noopener noreferrer" className="truncate block max-w-[200px]">
                                       View Link <ExternalLink className="h-3 w-3 ml-1 inline-block align-middle"/>
                                     </a>
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                    <p className="max-w-md break-all">{click.affiliateLink}</p>
+                                    <p className="max-w-md break-all">{click.affiliateLink || 'No Link'}</p>
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
@@ -407,7 +431,7 @@ export default function AdminClicksPage() {
                 </Table>
               </div>
             )}
-            {hasMore && !loading && combinedData.length > 0 && (
+            {hasMore && !pageLoading && combinedData.length > 0 && (
               <div className="mt-6 text-center">
                 <Button onClick={handleLoadMore} disabled={loadingMore}>
                   {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -422,4 +446,3 @@ export default function AdminClicksPage() {
     </AdminGuard>
   );
 }
-
