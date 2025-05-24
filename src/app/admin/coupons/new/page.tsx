@@ -1,4 +1,3 @@
-
 // src/app/admin/coupons/new/page.tsx
 "use client";
 
@@ -25,7 +24,7 @@ import { ArrowLeft, Loader2, PlusCircle, CalendarIcon, BadgePercent } from 'luci
 import { Skeleton } from '@/components/ui/skeleton';
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
-import { cn, safeToDate } from '@/lib/utils'; // Import safeToDate
+import { cn, safeToDate } from '@/lib/utils';
 
 const couponSchema = z.object({
   storeId: z.string().min(1, 'Store is required'),
@@ -66,6 +65,7 @@ export default function AddCouponPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [storeList, setStoreList] = useState<{ id: string; name: string }[]>([]);
   const [loadingStores, setLoadingStores] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   const form = useForm<CouponFormValues>({
     resolver: zodResolver(couponSchema),
@@ -81,12 +81,15 @@ export default function AddCouponPage() {
       if (!isMounted) return;
       if (!db || firebaseInitializationError) {
         if(isMounted) {
-            toast({ variant: 'destructive', title: 'Database Error', description: firebaseInitializationError || "Failed to connect to database." });
+            const errorMsg = firebaseInitializationError || "Failed to connect to database.";
+            setPageError(errorMsg);
+            toast({ variant: 'destructive', title: 'Database Error', description: errorMsg });
             setLoadingStores(false);
         }
         return;
       }
       setLoadingStores(true);
+      setPageError(null);
       try {
         const storesCollection = collection(db, 'stores');
         const q = query(storesCollection, where('isActive', '==', true), orderBy('name'));
@@ -97,7 +100,9 @@ export default function AddCouponPage() {
       } catch (storeFetchError) {
         console.error("Error fetching stores:", storeFetchError);
         if(isMounted) {
-            toast({ variant: 'destructive', title: 'Store List Error', description: 'Could not load stores.' });
+            const errorMsg = storeFetchError instanceof Error ? storeFetchError.message : 'Could not load stores.';
+            setPageError(errorMsg);
+            toast({ variant: 'destructive', title: 'Store List Error', description: errorMsg });
         }
       } finally {
         if(isMounted) {
@@ -115,6 +120,7 @@ export default function AddCouponPage() {
       return;
     }
     setIsSaving(true);
+    setPageError(null);
     const submissionData = {
       ...data,
       code: data.code || null,
@@ -130,13 +136,15 @@ export default function AddCouponPage() {
       router.push('/admin/coupons');
     } catch (err) {
       console.error("Error adding coupon:", err);
-      toast({ variant: "destructive", title: "Save Failed", description: err instanceof Error ? err.message : "Could not add coupon." });
+      const errorMsg = err instanceof Error ? err.message : "Could not add coupon.";
+      setPageError(errorMsg);
+      toast({ variant: "destructive", title: "Save Failed", description: errorMsg });
     } finally {
       setIsSaving(false);
     }
   };
   
-  if (loadingStores && storeList.length === 0) {
+  if (loadingStores && storeList.length === 0 && !pageError) {
       return <AdminGuard><AddCouponPageSkeleton/></AdminGuard>;
   }
 
@@ -197,7 +205,10 @@ export default function AddCouponPage() {
                       <PopoverTrigger asChild>
                         <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal h-10", !field.value && "text-muted-foreground")} disabled={isSaving}>
                           <CalendarIcon className="mr-2 h-4 w-4" />
-                          {const date = safeToDate(field.value); date ? format(date, "PPP") : <span>Optional: Pick a date</span>}
+                          {(() => {
+                            const date = safeToDate(field.value);
+                            return date ? format(date, "PPP") : <span>Optional: Pick a date</span>;
+                          })()}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0">

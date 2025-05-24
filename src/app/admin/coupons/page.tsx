@@ -58,6 +58,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogClose,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -72,7 +73,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { format, isValid } from 'date-fns';
-import { cn, safeToDate } from '@/lib/utils'; // Import safeToDate
+import { cn, safeToDate } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -166,7 +167,6 @@ export default function AdminCouponsPage() {
        setLoadingStores(true);
        try {
          const storesCollection = collection(db, 'stores');
-         // Fetch all stores, not just active, as an existing coupon might be linked to an inactive store
          const q = query(storesCollection, orderBy('name'));
          const snapshot = await getDocs(q);
          if (isMounted) {
@@ -183,7 +183,7 @@ export default function AdminCouponsPage() {
          }
        }
      };
-     if (isDialogOpen) { // Only fetch stores if dialog is open or about to open
+     if (isDialogOpen) { 
         fetchStores();
      }
      return () => { isMounted = false; };
@@ -222,7 +222,7 @@ export default function AdminCouponsPage() {
     if (!isLoadMoreOperation) {
       setLoading(true); setLastVisible(null); setCoupons([]); setHasMore(true); setError(null);
     } else {
-      if (!docToStartAfter && isLoadMoreOperation) { // Prevent load more if no cursor
+      if (!docToStartAfter && isLoadMoreOperation) {
          if(isMounted) setLoadingMore(false);
          return;
       }
@@ -235,18 +235,9 @@ export default function AdminCouponsPage() {
       let constraints: QueryConstraint[] = [];
 
       if (currentSearchTerm) {
-        // This is a simple text search. For advanced search, consider Algolia/Typesense.
-        // Here, we assume search term could be storeId or part of description.
-        // Firestore doesn't support OR queries on different fields easily.
-        // So, if it's likely a storeId (e.g., 20 char alphanumeric), query by that.
-        // Otherwise, it's a generic search, and we might need to fetch more and filter client-side,
-        // or implement a more complex backend search. For now, let's keep it simple.
         if (currentSearchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(currentSearchTerm)) {
              constraints.push(where('storeId', '==', currentSearchTerm));
         }
-        // If not a storeId like pattern, this query will be broad or might not find results easily for description search
-        // without more complex indexing or search service.
-        // We'll order by creation date and filter client-side for description match for now.
         constraints.push(orderBy('createdAt', 'desc'));
       } else {
         constraints.push(orderBy('createdAt', 'desc'));
@@ -293,7 +284,6 @@ export default function AdminCouponsPage() {
 
        let couponsWithNames = await Promise.all(couponsDataPromises);
 
-      // Client-side filtering if search term was for description
       if (currentSearchTerm && !(currentSearchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(currentSearchTerm))) {
           couponsWithNames = couponsWithNames.filter(c =>
               c.description.toLowerCase().includes(currentSearchTerm.toLowerCase()) ||
@@ -308,7 +298,7 @@ export default function AdminCouponsPage() {
         }
 
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-        setHasMore(querySnapshot.docs.length === COUPONS_PER_PAGE && couponsWithNames.length > 0); // Ensure we only set hasMore if we fetched a full page AND there was data relevant to search
+        setHasMore(querySnapshot.docs.length === COUPONS_PER_PAGE && couponsWithNames.length > 0); 
       }
     } catch (err) {
       console.error("Error fetching coupons:", err);
@@ -333,7 +323,7 @@ export default function AdminCouponsPage() {
 
   const handleSearch = (e: React.FormEvent) => e.preventDefault();
   const handleLoadMore = () => {
-    if (!loadingMore && hasMore && lastVisible) { // ensure lastVisible is not null
+    if (!loadingMore && hasMore && lastVisible) { 
         fetchCoupons(true, debouncedSearchTerm, lastVisible);
     }
   };
@@ -346,7 +336,7 @@ export default function AdminCouponsPage() {
       code: coupon.code ?? null,
       description: coupon.description,
       link: coupon.link ?? null,
-      expiryDate: coupon.expiryDate ? safeToDate(coupon.expiryDate) : null, // Use safeToDate
+      expiryDate: coupon.expiryDate ? safeToDate(coupon.expiryDate) : null,
       isFeatured: coupon.isFeatured,
       isActive: coupon.isActive,
     });
@@ -360,7 +350,7 @@ export default function AdminCouponsPage() {
         ...data,
         code: data.code || null,
         link: data.link || null,
-        expiryDate: data.expiryDate ? Timestamp.fromDate(data.expiryDate) : null, // Convert JS Date to Firestore Timestamp
+        expiryDate: data.expiryDate ? Timestamp.fromDate(data.expiryDate) : null,
     };
 
     try {
@@ -368,7 +358,7 @@ export default function AdminCouponsPage() {
         await updateDoc(couponDocRef, { ...submissionData, updatedAt: serverTimestamp() });
          const updatedCoupon: CouponWithStoreName = {
              ...editingCoupon, ...submissionData, updatedAt: new Date(),
-             expiryDate: data.expiryDate, // Keep as JS Date for local state
+             expiryDate: data.expiryDate, 
              storeName: storeList.find(s => s.id === submissionData.storeId)?.name || 'Unknown Store'
          };
          setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? updatedCoupon : c));
@@ -533,7 +523,7 @@ export default function AdminCouponsPage() {
         </Card>
 
         <Dialog open={isDialogOpen} onOpenChange={(isOpen) => {
-            if(!isOpen) setEditingCoupon(null); // Clear editing state when dialog closes
+            if(!isOpen) setEditingCoupon(null); 
             setIsDialogOpen(isOpen);
         }}>
             <DialogContent className="sm:max-w-lg">
@@ -571,7 +561,21 @@ export default function AdminCouponsPage() {
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="expiryDateEdit" className="text-right">Expiry Date</Label>
-                    <Controller name="expiryDate" control={form.control} render={({ field }) => ( <Popover> <PopoverTrigger asChild> <Button variant={"outline"} className={cn( "col-span-3 justify-start text-left font-normal h-10", !field.value && "text-muted-foreground" )} disabled={isSaving} > <CalendarIcon className="mr-2 h-4 w-4" /> {const date = safeToDate(field.value); date ? format(date, "PPP") : <span>Optional: Pick a date</span>} </Button> </PopoverTrigger> <PopoverContent className="w-auto p-0"> <Calendar mode="single" selected={field.value ? safeToDate(field.value) : undefined} onSelect={(date) => field.onChange(date || null)} initialFocus disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}/> </PopoverContent> </Popover> )}/>
+                    <Controller name="expiryDate" control={form.control} render={({ field }) => ( 
+                    <Popover> 
+                        <PopoverTrigger asChild> 
+                            <Button variant={"outline"} className={cn( "col-span-3 justify-start text-left font-normal h-10", !field.value && "text-muted-foreground" )} disabled={isSaving} > 
+                                <CalendarIcon className="mr-2 h-4 w-4" /> 
+                                {(() => {
+                                    const date = safeToDate(field.value);
+                                    return date ? format(date, "PPP") : <span>Optional: Pick a date</span>;
+                                })()}
+                            </Button> 
+                        </PopoverTrigger> 
+                        <PopoverContent className="w-auto p-0"> 
+                            <Calendar mode="single" selected={field.value ? safeToDate(field.value) : undefined} onSelect={(date) => field.onChange(date || null)} initialFocus disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}/> 
+                        </PopoverContent> 
+                    </Popover> )}/>
                 </div>
                 <div className="grid grid-cols-4 items-start gap-4">
                     <Label className="text-right pt-2">Flags</Label>
@@ -595,3 +599,4 @@ export default function AdminCouponsPage() {
     </AdminGuard>
   );
 }
+
