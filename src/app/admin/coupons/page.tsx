@@ -96,17 +96,17 @@ const couponSchema = z.object({
   code: z.string().max(50, "Code too long").optional().nullable(),
   description: z.string().min(5, 'Description is too short').max(250, 'Description too long'),
   link: z.string().url('Invalid URL format').optional().or(z.literal('')).nullable(),
-  expiryDate: z.date().optional().nullable(), // Expect JS Date from form
+  expiryDate: z.date().optional().nullable(),
   isFeatured: z.boolean().default(false),
   isActive: z.boolean().default(true),
 }).refine(data => data.code || data.link, {
   message: "Either a Coupon Code or a Link is required",
-  path: ["code"], // You can also use ["link"] or a more general path if needed
+  path: ["code"],
 });
 
 
 const getStatusVariant = (isActive: boolean, expiryDate?: Date | null): "default" | "secondary" | "destructive" | "outline" => {
-   const isExpired = expiryDate ? expiryDate < new Date() : false;
+   const isExpired = expiryDate ? expiryDate < new Date(new Date().setHours(0,0,0,0)) : false;
    if (isExpired) return 'destructive';
   return isActive ? 'default' : 'secondary';
 };
@@ -129,7 +129,7 @@ function CouponsTableSkeleton() {
   );
 }
 
-export default function AdminCouponsPage() {
+function AdminCouponsPageContent() {
   const [coupons, setCoupons] = useState<CouponWithStoreName[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -154,7 +154,7 @@ export default function AdminCouponsPage() {
    useEffect(() => {
      let isMounted = true;
      const fetchStores = async () => {
-       if (!isMounted || !isDialogOpen) return; // Only fetch if dialog is open
+       if (!isMounted || !isDialogOpen) return; 
        if (!db || firebaseInitializationError) {
          if (isMounted) {
            setError(firebaseInitializationError || "Database not available for fetching stores.");
@@ -185,16 +185,16 @@ export default function AdminCouponsPage() {
      fetchStores();
      
      return () => { isMounted = false; };
-   }, [toast, isDialogOpen]); // Re-fetch stores when dialog opens
+   }, [toast, isDialogOpen]); 
 
-  const form = useForm<AppCouponFormValues>({ // Use AppCouponFormValues from types
+  const form = useForm<AppCouponFormValues>({ 
     resolver: zodResolver(couponSchema),
     defaultValues: {
       storeId: '',
       code: null,
       description: '',
       link: null,
-      expiryDate: null, // Form uses JS Date or null
+      expiryDate: null, 
       isFeatured: false,
       isActive: true,
     },
@@ -206,13 +206,15 @@ export default function AdminCouponsPage() {
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
   ) => {
     let isMounted = true;
+    if (!isMounted) return;
+
     if (!db || firebaseInitializationError) {
       if(isMounted) {
         setError(firebaseInitializationError || "Database connection not available.");
         if(!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
         setHasMore(false);
       }
-      return () => { isMounted = false; };
+      return;
     }
 
     if (!isLoadMoreOperation) {
@@ -220,7 +222,7 @@ export default function AdminCouponsPage() {
     } else {
       if (!docToStartAfter && isLoadMoreOperation) {
          if(isMounted) setLoadingMore(false);
-         return () => { isMounted = false; };
+         return;
       }
       setLoadingMore(true);
     }
@@ -230,16 +232,11 @@ export default function AdminCouponsPage() {
       const couponsCollection = collection(db, 'coupons');
       let constraints: QueryConstraint[] = [];
 
-      // Handle search term
       if (currentSearchTerm) {
-        // Check if the search term looks like a store ID (20 char alphanumeric is a common Firestore ID pattern)
         if (currentSearchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(currentSearchTerm)) {
              constraints.push(where('storeId', '==', currentSearchTerm));
         }
-        // For general text search, Firestore is limited. We might need client-side filtering after a broader fetch,
-        // or structure data for search (e.g., using keywords array and array-contains-any).
-        // For now, we'll primarily order and then filter client-side for description.
-        constraints.push(orderBy('createdAt', 'desc')); // Fetch recent first
+        constraints.push(orderBy('createdAt', 'desc')); 
       } else {
         constraints.push(orderBy('createdAt', 'desc'));
       }
@@ -254,21 +251,23 @@ export default function AdminCouponsPage() {
 
       const couponsDataPromises = querySnapshot.docs.map(async (docSnap) => {
         const data = docSnap.data();
+        const createdAtDate = safeToDate(data.createdAt as Timestamp | undefined);
+        const updatedAtDate = safeToDate(data.updatedAt as Timestamp | undefined);
+
         const coupon: CouponWithStoreName = {
           id: docSnap.id,
           storeId: data.storeId || '',
           code: data.code || null,
           description: data.description || '',
           link: data.link || null,
-          expiryDate: safeToDate(data.expiryDate as Timestamp | undefined), // Converts Timestamp to Date or null
+          expiryDate: safeToDate(data.expiryDate as Timestamp | undefined),
           isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
           isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
-          createdAt: safeToDate(data.createdAt as Timestamp | undefined),
-          updatedAt: safeToDate(data.updatedAt as Timestamp | undefined),
-          storeName: 'Loading...' // Default store name
+          createdAt: createdAtDate || new Date(0), // Ensure a Date object
+          updatedAt: updatedAtDate || new Date(0), // Ensure a Date object
+          storeName: 'Loading...' 
         };
 
-        // Fetch store name if storeId exists and db connection is available
         try {
           if (coupon.storeId && db) {
             const storeDocRef = doc(db, 'stores', coupon.storeId);
@@ -286,7 +285,6 @@ export default function AdminCouponsPage() {
 
        let couponsWithNames = await Promise.all(couponsDataPromises);
 
-      // Client-side filtering for description if search term exists and isn't a store ID
       if (currentSearchTerm && !(currentSearchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(currentSearchTerm))) {
           couponsWithNames = couponsWithNames.filter(c =>
               c.description.toLowerCase().includes(currentSearchTerm.toLowerCase()) ||
@@ -297,7 +295,6 @@ export default function AdminCouponsPage() {
         if (!isLoadMoreOperation) {
           setCoupons(couponsWithNames);
         } else {
-          // Filter out already existing coupons before adding new ones to prevent duplicates on load more
           setCoupons(prev => {
             const existingIds = new Set(prev.map(c => c.id));
             const newUniqueCoupons = couponsWithNames.filter(c => !existingIds.has(c.id));
@@ -306,7 +303,7 @@ export default function AdminCouponsPage() {
         }
 
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-        setHasMore(querySnapshot.docs.length === COUPONS_PER_PAGE && couponsWithNames.length > 0); // hasMore should be true if we fetched a full page and the filtered result is also > 0
+        setHasMore(querySnapshot.docs.length === COUPONS_PER_PAGE && couponsWithNames.length > 0); 
       }
     } catch (err) {
       console.error("Error fetching coupons:", err);
@@ -326,14 +323,16 @@ export default function AdminCouponsPage() {
   }, [toast]);
 
   useEffect(() => {
-    // Initial fetch and when debouncedSearchTerm changes
-    fetchCoupons(false, debouncedSearchTerm, null);
+    let isMounted = true;
+    if (isMounted) {
+        fetchCoupons(false, debouncedSearchTerm, null);
+    }
+    return () => { isMounted = false; };
   }, [debouncedSearchTerm, fetchCoupons]);
 
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    // Fetching is handled by useEffect listening to debouncedSearchTerm
   };
 
   const handleLoadMore = () => {
@@ -348,44 +347,43 @@ export default function AdminCouponsPage() {
 
   const openEditDialog = (coupon: Coupon) => {
     setEditingCoupon(coupon);
+    const expiryDateForForm = coupon.expiryDate ? safeToDate(coupon.expiryDate) : null;
     form.reset({
       storeId: coupon.storeId,
       code: coupon.code ?? null,
       description: coupon.description,
       link: coupon.link ?? null,
-      expiryDate: coupon.expiryDate ? safeToDate(coupon.expiryDate) : null, // Ensure JS Date for form
+      expiryDate: expiryDateForForm,
       isFeatured: coupon.isFeatured,
       isActive: coupon.isActive,
     });
     setIsDialogOpen(true);
   };
 
-  const onSubmit = async (data: AppCouponFormValues) => { // Use AppCouponFormValues from types
+  const onSubmit = async (data: AppCouponFormValues) => { 
     if (!db || !editingCoupon || firebaseInitializationError) { 
         setError(firebaseInitializationError || "Database not available or no coupon selected for edit."); 
         setIsSaving(false); return; 
     }
     setIsSaving(true); setError(null);
 
-    // Convert JS Date from form back to Firestore Timestamp for saving
     const jsExpiryDate = data.expiryDate ? safeToDate(data.expiryDate) : null;
 
     const submissionData = {
         ...data,
-        code: data.code || null, // Ensure empty string becomes null
-        link: data.link || null, // Ensure empty string becomes null
-        expiryDate: jsExpiryDate ? Timestamp.fromDate(jsExpiryDate) : null, // Convert to Timestamp or null
+        code: data.code || null,
+        link: data.link || null,
+        expiryDate: jsExpiryDate ? Timestamp.fromDate(jsExpiryDate) : null,
     };
 
     try {
         const couponDocRef = doc(db, 'coupons', editingCoupon.id);
         await updateDoc(couponDocRef, { ...submissionData, updatedAt: serverTimestamp() });
-         // Optimistically update local state
          const updatedCoupon: CouponWithStoreName = {
              ...editingCoupon, 
              ...submissionData, 
              updatedAt: new Date(),
-             expiryDate: jsExpiryDate, // Keep JS Date for UI
+             expiryDate: jsExpiryDate, 
              storeName: storeList.find(s => s.id === submissionData.storeId)?.name || 'Unknown Store'
          };
          setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? updatedCoupon : c));
@@ -436,11 +434,10 @@ export default function AdminCouponsPage() {
   };
 
   if (loading && coupons.length === 0 && !error) {
-    return <AdminGuard><CouponsTableSkeleton /></AdminGuard>;
+    return <CouponsTableSkeleton />;
   }
 
   return (
-    <AdminGuard>
         <div className="space-y-6">
         <div className="flex justify-between items-center">
             <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2"><BadgePercent className="w-6 h-6 sm:w-7 sm:h-7" /> Manage Coupons & Offers</h1>
@@ -489,8 +486,8 @@ export default function AdminCouponsPage() {
                     </TableHeader>
                     <TableBody>
                     {coupons.map((coupon) => {
-                        const expiryDateForDisplay = coupon.expiryDate ? safeToDate(coupon.expiryDate) : null; // Ensure it's a JS Date for formatting
-                        const isExpired = expiryDateForDisplay ? expiryDateForDisplay < new Date() : false;
+                        const expiryDateForDisplay = coupon.expiryDate ? safeToDate(coupon.expiryDate) : null; 
+                        const isExpired = expiryDateForDisplay ? expiryDateForDisplay < new Date(new Date().setHours(0,0,0,0)) : false;
                         return (
                             <TableRow key={coupon.id} className={!coupon.isActive || isExpired ? 'opacity-50 bg-muted/30' : ''}>
                             <TableCell className="font-medium text-xs">
@@ -575,23 +572,23 @@ export default function AdminCouponsPage() {
                 <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="descriptionEdit" className="text-right">Description*</Label>
                 <Textarea id="descriptionEdit" {...form.register('description')} className="col-span-3" rows={2} disabled={isSaving} />
-                {form.formState.errors.description && <p className="col-span-4 text-sm text-destructive text-right">{form.formState.errors.description.message}</p>}
+                {form.formState.errors.description && <p className="col-span-4 text-sm text-destructive text-right mt-1">{form.formState.errors.description.message}</p>}
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="codeEdit" className="text-right">Coupon Code</Label>
                 <Input id="codeEdit" {...form.register('code')} className="col-span-3" placeholder="Optional code (e.g., SAVE10)" disabled={isSaving} />
-                 {form.formState.errors.code && form.formState.errors.code.type !== 'refine' && <p className="col-span-4 text-sm text-destructive text-right">{form.formState.errors.code.message}</p>}
+                 {form.formState.errors.code && form.formState.errors.code.type !== 'refine' && <p className="col-span-4 text-sm text-destructive text-right mt-1">{form.formState.errors.code.message}</p>}
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="linkEdit" className="text-right">Link</Label>
                 <Input id="linkEdit" {...form.register('link')} className="col-span-3" placeholder="Optional direct offer link (https://...)" disabled={isSaving} />
-                    {form.formState.errors.link && <p className="col-span-4 text-sm text-destructive text-right">{form.formState.errors.link.message}</p>}
+                    {form.formState.errors.link && <p className="col-span-4 text-sm text-destructive text-right mt-1">{form.formState.errors.link.message}</p>}
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="expiryDateEdit" className="text-right">Expiry Date</Label>
                     <Controller name="expiryDate" control={form.control} render={({ field }) => {
                         const dateForDisplay = field.value ? safeToDate(field.value) : null;
-                        const dateForCalendar = dateForDisplay ?? undefined; // Pass Date or undefined
+                        const dateForCalendar = safeToDate(field.value) ?? undefined;
                         return ( 
                         <Popover> 
                             <PopoverTrigger asChild> 
@@ -606,6 +603,7 @@ export default function AdminCouponsPage() {
                         </Popover> 
                         );
                     }}/>
+                     {form.formState.errors.expiryDate && <p className="col-span-4 text-sm text-destructive text-right mt-1">{form.formState.errors.expiryDate.message}</p>}
                 </div>
                 <div className="grid grid-cols-4 items-start gap-4">
                     <Label className="text-right pt-2">Flags</Label>
@@ -626,6 +624,14 @@ export default function AdminCouponsPage() {
             </DialogContent>
         </Dialog>
         </div>
-    </AdminGuard>
   );
+}
+
+
+export default function AdminCouponsPage() {
+    return (
+      <AdminGuard>
+        <AdminCouponsPageContent />
+      </AdminGuard>
+    );
 }
