@@ -26,9 +26,9 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Coupon, Store, CouponFormValues as AppCouponFormValues } from '@/lib/types';
+import type { Coupon, Store, CouponFormValues as AppCouponFormValues } from '@/lib/types'; // Renamed for clarity
 import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button'; // Import buttonVariants
 import {
   Table,
   TableBody,
@@ -46,7 +46,7 @@ import { Label } from '@/components/ui/label';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, ExternalLink, CalendarIcon, Star, BadgePercent } from 'lucide-react';
+import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, ExternalLink, CalendarIcon, Star, BadgePercent, MoreHorizontal } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -67,7 +67,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  // AlertDialogTrigger, // Not used directly for the state-controlled dialog
+  // AlertDialogTrigger, // We are controlling AlertDialog manually now
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
@@ -80,7 +80,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal } from "lucide-react";
 import { useDebounce } from '@/hooks/use-debounce';
 import { Switch } from '@/components/ui/switch';
 
@@ -359,7 +358,7 @@ function AdminCouponsPageContent() {
         await updateDoc(couponDocRef, submissionData);
          const updatedCoupon: CouponWithStoreName = {
              ...editingCoupon, 
-             ...data, // Use form data directly for optimistic update of display values
+             ...data, 
              updatedAt: new Date(),
              expiryDate: jsExpiryDate, 
              storeName: storeListForDialog.find(s => s.id === data.storeId)?.name || editingCoupon.storeName || 'Unknown Store'
@@ -494,19 +493,24 @@ function AdminCouponsPageContent() {
                             <TableCell className="text-right">
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" className="h-8 w-8 p-0" aria-label="Open menu">
+                                    <button
+                                      aria-label="Open menu for coupon"
+                                      className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 p-0")}
+                                    >
                                       <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
+                                    </button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
                                     <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                     <DropdownMenuItem onClick={() => openEditDialog(coupon)}>
-                                      <Edit className="mr-2 h-4 w-4" /> Edit Coupon
+                                      <span className="flex items-center gap-2">
+                                        <Edit className="h-4 w-4" /> Edit Coupon
+                                      </span>
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
                                       onSelect={(event) => {
-                                        event.preventDefault();
+                                        event.preventDefault(); // Allow AlertDialog to open
                                         setCouponToDelete(coupon);
                                         setIsDeleteDialogOpen(true);
                                       }}
@@ -515,9 +519,8 @@ function AdminCouponsPageContent() {
                                         "text-destructive focus:bg-destructive/10 focus:text-destructive hover:bg-destructive/10"
                                       )}
                                     >
-                                      <span className="flex items-center gap-2"> {/* Wrapper span */}
-                                        <Trash2 className="h-4 w-4" />
-                                        <span>Delete Coupon</span>
+                                      <span className="flex items-center gap-2">
+                                        <Trash2 className="h-4 w-4" /> Delete Coupon
                                       </span>
                                     </DropdownMenuItem>
                                   </DropdownMenuContent>
@@ -578,7 +581,7 @@ function AdminCouponsPageContent() {
                 <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="expiryDateEdit" className="text-right">Expiry Date</Label>
                     <Controller name="expiryDate" control={form.control} render={({ field }) => {
-                        const dateForPicker = safeToDate(field.value) ?? undefined; 
+                        const dateForPicker = field.value ? safeToDate(field.value) : undefined; 
                         return ( 
                         <Popover> 
                             <PopoverTrigger asChild> 
@@ -614,28 +617,29 @@ function AdminCouponsPageContent() {
             </DialogContent>
         </Dialog>
 
-        {/* Delete Confirmation Dialog */}
         <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                <AlertDialogDescription>
-                    This action cannot be undone. This will permanently delete the coupon
-                    "{couponToDelete?.description || 'this coupon'}".
-                </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                <AlertDialogCancel onClick={() => { setIsDeleteDialogOpen(false); setCouponToDelete(null); }}>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                    onClick={handleDeleteCoupon}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    disabled={deletingCouponIdInternal === couponToDelete?.id}
-                >
-                    {deletingCouponIdInternal === couponToDelete?.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
-                    Delete
-                </AlertDialogAction>
-                </AlertDialogFooter>
-            </AlertDialogContent>
+            {couponToDelete && ( /* Only render content if couponToDelete is set */
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete the coupon
+                        "{couponToDelete?.description || 'this coupon'}".
+                    </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => { setIsDeleteDialogOpen(false); setCouponToDelete(null); }}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                        onClick={handleDeleteCoupon}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        disabled={deletingCouponIdInternal === couponToDelete?.id}
+                    >
+                        {deletingCouponIdInternal === couponToDelete?.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                        Delete
+                    </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            )}
         </AlertDialog>
 
         </div>
