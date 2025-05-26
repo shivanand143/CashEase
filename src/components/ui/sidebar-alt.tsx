@@ -2,21 +2,22 @@
 "use client"
 
 import * as React from "react"
+import NextLink from "next/link" // Import NextLink
 import { Slot } from "@radix-ui/react-slot"
 import { VariantProps, cva } from "class-variance-authority"
 import { PanelLeft, X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button" // Ensure buttonVariants is exported if used
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { Sheet, SheetContent, SheetTrigger, SheetClose } from "@/components/ui/sheet" // Import SheetClose
+import { Sheet, SheetContent, SheetTrigger, SheetClose } from "@/components/ui/sheet"
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state_alt"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
-const SIDEBAR_WIDTH_ICON = "3.5rem" // Adjusted width for icon-only state
+const SIDEBAR_WIDTH_ICON = "3.5rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
 type SidebarContextType = {
@@ -88,8 +89,8 @@ export const SidebarProvider = React.forwardRef<
 
     const toggleSidebar = React.useCallback(() => {
       return isMobile
-        ? setOpenMobile((open) => !open)
-        : setOpen((open) => !open)
+        ? setOpenMobile((openState) => !openState)
+        : setOpen((openState) => !openState)
     }, [isMobile, setOpen, setOpenMobile])
 
     React.useEffect(() => {
@@ -136,7 +137,7 @@ SidebarProvider.displayName = "SidebarProvider"
 
 
 export const Sidebar = React.forwardRef<
-  HTMLElement, // Changed to HTMLElement (aside)
+  HTMLElement,
   React.ComponentProps<"aside"> & {
     side?: "left" | "right"
     variant?: "sidebar" | "floating"
@@ -172,11 +173,9 @@ export const Sidebar = React.forwardRef<
        )
     }
 
-    // Mobile Sheet Sidebar
     if (isMobile) {
        return (
          <Sheet open={openMobile} onOpenChange={setOpenMobile}>
-           {/* Trigger is typically in the Header, not rendered here directly */}
            <SheetContent
              side={side}
              className={cn(
@@ -184,24 +183,14 @@ export const Sidebar = React.forwardRef<
                 className
              )}
              style={{ '--sidebar-width-mobile': SIDEBAR_WIDTH_MOBILE } as React.CSSProperties}
-             // Remove the default close button provided by SheetContent if you have one in Header
-             // showCloseButton={false} // Assuming SheetContent might have such a prop, otherwise manage via styling/structure
-             {...props} // Pass other props like `ref` if needed
+             {...props}
            >
-             {/* Add a header section inside the SheetContent if needed */}
-             {/* <div className="flex items-center justify-between p-4 border-b">
-               <SheetTitle>Menu</SheetTitle>
-               <SheetClose asChild>
-                 <Button variant="ghost" size="icon"> <X className="h-4 w-4"/> </Button>
-               </SheetClose>
-             </div> */}
              {children}
            </SheetContent>
          </Sheet>
        )
     }
 
-    // Desktop Sidebar
     return (
        <aside
           ref={ref}
@@ -230,11 +219,9 @@ export const Sidebar = React.forwardRef<
 )
 Sidebar.displayName = "Sidebar"
 
-
-// Structural components
 export const SidebarHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
     ({ className, ...props }, ref) => (
-        <div ref={ref} className={cn("flex h-16 items-center border-b px-4 shrink-0", className)} {...props} /> // Increased height
+        <div ref={ref} className={cn("flex h-16 items-center border-b px-4 shrink-0", className)} {...props} />
     )
 );
 SidebarHeader.displayName = "SidebarHeader";
@@ -253,8 +240,6 @@ export const SidebarFooter = React.forwardRef<HTMLDivElement, React.HTMLAttribut
 );
 SidebarFooter.displayName = "SidebarFooter";
 
-
-// Navigation Menu Components
 export const SidebarMenu = React.forwardRef<HTMLUListElement, React.HTMLAttributes<HTMLUListElement>>(
     ({ className, ...props }, ref) => (
         <ul ref={ref} className={cn("space-y-1", className)} {...props} />
@@ -269,43 +254,32 @@ export const SidebarMenuItem = React.forwardRef<HTMLLIElement, React.HTMLAttribu
 );
 SidebarMenuItem.displayName = "SidebarMenuItem";
 
-// Sidebar Menu Button
 const sidebarMenuButtonVariants = cva(
   "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors justify-start",
   {
     variants: {
-      variant: { // Add variant definitions here if they are different from standard Button
-        default: "text-sidebar-foreground hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
-        ghost: "text-sidebar-foreground hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
-        // Add other variants if needed, or ensure they match the standard Button variants
+      variant: {
+        default: "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        ghost: "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        destructive: "text-destructive-foreground bg-destructive hover:bg-destructive/90",
+        outline: "border border-input hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        secondary: "bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/80", // Example for an "active" like secondary
       },
-      size: { // Add size definitions if they are different from standard Button
-        default: "h-10", // Example size
+      size: {
+        default: "h-10",
         sm: "h-9",
         lg: "h-11",
         icon: "h-10 w-10 !p-0 justify-center [&>svg]:!mr-0",
       },
       isActive: {
-        true: "bg-sidebar-accent text-sidebar-accent-foreground",
-        false: "", // Base styling for non-active comes from variant
+        true: "bg-sidebar-accent text-sidebar-accent-foreground", // Active state
+        false: "",
       },
       isCollapsed: {
-        true: "!p-2 justify-center [&>span]:hidden [&>svg]:mr-0", // Adjust padding for icons
-         false: ""
+        true: "!p-2 justify-center [&>span]:hidden [&>svg]:!mr-0",
+        false: "",
       }
     },
-    compoundVariants: [
-      {
-        isActive: false,
-        variant: "default",
-        className: "text-sidebar-foreground hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
-      },
-      {
-        isActive: false,
-        variant: "ghost",
-        className: "text-sidebar-foreground hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
-      }
-    ],
     defaultVariants: {
       variant: "default",
       size: "default",
@@ -313,28 +287,37 @@ const sidebarMenuButtonVariants = cva(
       isCollapsed: false
     },
   }
-)
+);
+
+export interface SidebarMenuButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    React.AnchorHTMLAttributes<HTMLAnchorElement>, // Add anchor attributes
+    VariantProps<typeof sidebarMenuButtonVariants> {
+  asChild?: boolean;
+  isActive?: boolean;
+  tooltip?: string;
+  href?: string; // Add href prop
+}
 
 export const SidebarMenuButton = React.forwardRef<
     HTMLButtonElement | HTMLAnchorElement,
-    (React.ButtonHTMLAttributes<HTMLButtonElement> | React.AnchorHTMLAttributes<HTMLAnchorElement>) & {
-        asChild?: boolean
-        isActive?: boolean
-        tooltip?: string
-    } & VariantProps<typeof sidebarMenuButtonVariants> // Use VariantProps from the local CVA
+    SidebarMenuButtonProps
 >(
-    ({ asChild = false, isActive, tooltip, className, children, variant, size, ...props }, ref) => { // Destructure variant and size
-        const Comp = asChild ? Slot : ((props as React.AnchorHTMLAttributes<HTMLAnchorElement>).href ? "a" : "button") as any;
+    ({ asChild = false, isActive, tooltip, className, children, variant, size, href, ...props }, ref) => {
         const { state: sidebarState, isMobile } = useSidebar();
         const isCollapsed = sidebarState === 'collapsed' && !isMobile;
 
+        const Comp = href ? NextLink : (asChild ? Slot : "button");
+        
+        const buttonProps = {
+            ref: ref as any, // Type assertion might be needed depending on Comp
+            className: cn(sidebarMenuButtonVariants({ variant, size, isActive, isCollapsed }), className),
+            "data-active": isActive,
+            ...props,
+        };
+
         const buttonContent = (
-           <Comp
-              ref={ref}
-              className={cn(sidebarMenuButtonVariants({ variant, size, isActive, isCollapsed }), className)} // Pass variant and size here
-              data-active={isActive}
-              {...props}
-            >
+            <Comp {...buttonProps} {...(Comp === NextLink && href ? { href } : {})}>
               {children}
             </Comp>
         );
@@ -349,23 +332,19 @@ export const SidebarMenuButton = React.forwardRef<
                 </Tooltip>
             );
         }
-
         return buttonContent;
     }
 );
 SidebarMenuButton.displayName = "SidebarMenuButton";
 
-
-// Sidebar Toggle Button (optional explicit control)
 export const SidebarToggleButton = React.forwardRef<
   React.ElementRef<typeof Button>,
   React.ComponentProps<typeof Button>
 >(({ className, ...props }, ref) => {
   const { toggleSidebar, isMobile } = useSidebar();
 
-  // On mobile, this button might live in the Header and use SheetTrigger
   if (isMobile) {
-    return null; // Or render SheetTrigger if used here
+    return null;
   }
 
   return (
@@ -383,3 +362,5 @@ export const SidebarToggleButton = React.forwardRef<
   )
 })
 SidebarToggleButton.displayName = "SidebarToggleButton"
+
+    

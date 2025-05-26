@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from 'react';
-import Link from 'next/link';
+import NextLink from 'next/link'; // Use NextLink for clarity
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -17,15 +17,18 @@ import {
   Sheet,
   SheetContent,
   SheetHeader,
-  SheetTitle,
+  // SheetTitle, // Using SheetTitle directly for the hidden title
   SheetTrigger,
   SheetClose,
 } from "@/components/ui/sheet";
+import { SheetTitle, SheetDescription } from "@/components/ui/sheet"; // Ensure SheetTitle and SheetDescription are from ui/sheet
+
 import { VisuallyHidden } from '@/components/ui/visually-hidden';
 import {
     LogIn, LogOut, User, IndianRupee, ShoppingBag, LayoutDashboard, Settings, Menu,
     Tag, ShieldCheck, Gift, History, Send, X, List, HelpCircle, BookOpen, Search as SearchIcon, MousePointerClick, ReceiptText
 } from 'lucide-react';
+import { SidebarMenuButton } from '@/components/ui/sidebar-alt'; // For mobile menu items
 import { useAuth } from '@/hooks/use-auth';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePathname, useRouter } from 'next/navigation';
@@ -93,7 +96,7 @@ export default function Header() {
   const handleSearchSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!searchTerm.trim()) return;
-    setIsSheetOpen(false);
+    setIsSheetOpen(false); // Close sheet on search submit
     router.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`);
     setSearchTerm('');
   };
@@ -121,10 +124,10 @@ export default function Header() {
             <Button variant="ghost" size="icon" className="mr-2 md:hidden" aria-label="Open menu">
               <Menu className="h-5 w-5" />
             </Button>
-            <Link href="/" className="flex items-center space-x-2 mr-4">
+            <NextLink href="/" className="flex items-center space-x-2 mr-4">
               <IndianRupee className="h-6 w-6 text-primary" />
               <span className="font-bold text-xl hidden sm:inline-block text-foreground">MagicSaver</span>
-            </Link>
+            </NextLink>
           </div>
           <div className="flex items-center space-x-2">
             <div className="hidden md:flex items-center space-x-1">
@@ -150,12 +153,12 @@ export default function Header() {
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-full max-w-xs p-0 flex flex-col bg-background">
-                 <VisuallyHidden><SheetTitle id={sheetTitleId}>Main Navigation Menu</SheetTitle></VisuallyHidden>
+                <VisuallyHidden><SheetTitle id={sheetTitleId}>Main Navigation Menu</SheetTitle></VisuallyHidden>
                 <SheetHeader className="p-4 border-b flex flex-row items-center justify-between">
-                    <Link href="/" className="flex items-center space-x-2" onClick={handleSheetLinkClick}>
+                    <NextLink href="/" className="flex items-center space-x-2" onClick={handleSheetLinkClick}>
                         <IndianRupee className="h-6 w-6 text-primary" />
                         <span className="font-bold text-lg text-foreground">MagicSaver</span>
-                    </Link>
+                    </NextLink>
                     <SheetClose asChild>
                         <Button variant="ghost" size="icon" aria-label="Close menu"> <X className="h-5 w-5"/> </Button>
                     </SheetClose>
@@ -163,19 +166,17 @@ export default function Header() {
                 <div className="flex-grow overflow-y-auto">
                   <nav className="flex flex-col space-y-1 p-4">
                     {sheetNavLinks.map((link) => (
-                      <SheetClose key={link.href} asChild>
-                        <Link
-                          href={link.href}
-                          className={cn(
-                            "flex items-center gap-3 rounded-md px-3 py-2.5 text-base font-medium transition-colors hover:bg-muted",
-                            isActive(link.href) ? "bg-muted text-primary" : "text-foreground"
-                          )}
-                          onClick={handleSheetLinkClick}
-                        >
+                      <SidebarMenuButton
+                        key={link.href}
+                        href={link.href}
+                        variant="ghost"
+                        isActive={isActive(link.href)}
+                        onClick={handleSheetLinkClick}
+                        className="justify-start text-base"
+                      >
                           {link.icon && <link.icon className="h-5 w-5" />}
                           {link.label}
-                        </Link>
-                      </SheetClose>
+                      </SidebarMenuButton>
                     ))}
                   </nav>
                   <Separator className="my-2" />
@@ -185,52 +186,43 @@ export default function Header() {
                     ) : user ? (
                       <>
                         {userMenuItems.map((item) => (
-                          <SheetClose key={item.href} asChild>
-                            <Link
-                              href={item.href}
-                              className={cn(
-                                "flex items-center gap-3 rounded-md px-3 py-2.5 text-base font-medium transition-colors hover:bg-muted",
-                                isActive(item.href) ? "bg-muted text-primary" : "text-foreground"
-                              )}
-                              onClick={handleSheetLinkClick}
-                            >
-                              <item.icon className="h-5 w-5" />
-                              {item.label}
-                            </Link>
-                          </SheetClose>
+                           <SidebarMenuButton
+                            key={item.href}
+                            href={item.href}
+                            variant="ghost"
+                            isActive={isActive(item.href)}
+                            onClick={handleSheetLinkClick}
+                            className="justify-start text-base"
+                          >
+                            <item.icon className="h-5 w-5" />
+                            {item.label}
+                          </SidebarMenuButton>
                         ))}
                         {userProfile?.role === 'admin' && (
-                          <SheetClose asChild>
-                            <Link
-                              href={adminMenuItem.href}
-                              className={cn(
-                                "flex items-center gap-3 rounded-md px-3 py-2.5 text-base font-medium transition-colors hover:bg-muted",
-                                isActive(adminMenuItem.href) ? "bg-muted text-primary" : "text-foreground"
-                              )}
-                               onClick={handleSheetLinkClick}
-                            >
-                              <adminMenuItem.icon className="h-5 w-5" />
-                              {adminMenuItem.label}
-                            </Link>
-                          </SheetClose>
+                           <SidebarMenuButton
+                            href={adminMenuItem.href}
+                            variant="ghost"
+                            isActive={isActive(adminMenuItem.href)}
+                            onClick={handleSheetLinkClick}
+                            className="justify-start text-base"
+                          >
+                            <adminMenuItem.icon className="h-5 w-5" />
+                            {adminMenuItem.label}
+                          </SidebarMenuButton>
                         )}
                         <Separator className="my-2" />
-                        <Button variant="ghost" onClick={handleSignOut} className="w-full justify-start px-3 py-2.5 text-base font-medium">
+                        <SidebarMenuButton variant="ghost" onClick={handleSignOut} className="w-full justify-start text-base">
                           <LogOut className="mr-3 h-5 w-5" /> Logout
-                        </Button>
+                        </SidebarMenuButton>
                       </>
                     ) : (
                       <>
-                        <SheetClose asChild>
-                          <Button variant="ghost" onClick={() => {router.push('/login'); handleSheetLinkClick();}} className="w-full justify-start px-3 py-2.5 text-base font-medium">
-                              <LogIn className="mr-3 h-5 w-5" /> Login
-                          </Button>
-                        </SheetClose>
-                        <SheetClose asChild>
-                          <Button onClick={() => {router.push('/signup'); handleSheetLinkClick();}} className="w-full justify-center px-3 py-2.5 text-base font-medium">
-                            Sign Up
-                          </Button>
-                        </SheetClose>
+                        <SidebarMenuButton variant="ghost" onClick={() => {router.push('/login'); handleSheetLinkClick();}} className="w-full justify-start text-base">
+                            <LogIn className="mr-3 h-5 w-5" /> Login
+                        </SidebarMenuButton>
+                        <SidebarMenuButton onClick={() => {router.push('/signup'); handleSheetLinkClick();}} className="w-full justify-center text-base">
+                          Sign Up
+                        </SidebarMenuButton>
                       </>
                     )}
                   </div>
@@ -238,25 +230,26 @@ export default function Header() {
               </SheetContent>
             </Sheet>
           )}
-          <Link href="/" className="flex items-center space-x-2 mr-4">
+          <NextLink href="/" className="flex items-center space-x-2 mr-4">
             <IndianRupee className="h-6 w-6 text-primary" />
             <span className="font-bold text-xl hidden sm:inline-block text-foreground">MagicSaver</span>
-          </Link>
+          </NextLink>
         </div>
 
         {!isMobile && (
-          <nav className="flex-1 flex justify-center items-center gap-4 lg:gap-6 text-sm font-medium">
+          <nav className="flex-1 flex justify-center items-center gap-1 lg:gap-2 text-sm font-medium">
               {desktopNavLinks.map((link) => (
-                <Link
+                <Button
                   key={link.href}
-                  href={link.href}
+                  variant="ghost"
+                  asChild
                   className={cn(
-                    "transition-colors hover:text-primary py-1",
-                    isActive(link.href) ? "text-primary font-semibold border-b-2 border-primary" : "text-muted-foreground"
+                    "transition-colors hover:text-primary px-3 py-1.5 lg:px-4", // Adjusted padding
+                    isActive(link.href) ? "text-primary font-semibold border-b-2 border-primary rounded-none" : "text-muted-foreground"
                   )}
                 >
-                  {link.label}
-                </Link>
+                  <NextLink href={link.href}>{link.label}</NextLink>
+                </Button>
               ))}
             </nav>
         )}
@@ -302,18 +295,18 @@ export default function Header() {
                       <DropdownMenuSeparator />
                       {userMenuItems.map((item) => (
                       <DropdownMenuItem key={item.href} asChild>
-                          <Link href={item.href}>
+                          <NextLink href={item.href}>
                           <item.icon className="mr-2 h-4 w-4" />
                           <span>{item.label}</span>
-                          </Link>
+                          </NextLink>
                       </DropdownMenuItem>
                       ))}
                       {userProfile?.role === 'admin' && (
                       <DropdownMenuItem asChild>
-                          <Link href={adminMenuItem.href}>
+                          <NextLink href={adminMenuItem.href}>
                           <adminMenuItem.icon className="mr-2 h-4 w-4" />
                           <span>{adminMenuItem.label}</span>
-                          </Link>
+                          </NextLink>
                       </DropdownMenuItem>
                       )}
                       <DropdownMenuSeparator />
@@ -340,3 +333,5 @@ export default function Header() {
     </header>
   );
 }
+
+    

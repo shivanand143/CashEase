@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from 'react';
-import Link from 'next/link';
+import Link from 'next/link'; // Keep Link for SidebarHeader
 import { usePathname } from 'next/navigation';
 import {
   SidebarProvider,
@@ -26,18 +26,18 @@ import {
   ClipboardList,
   Building2,
   BadgePercent,
-  TicketPercent, // Keep for banners
+  TicketPercent,
   BarChart3,
   Package,
-  MousePointerClick // For Clicks
+  MousePointerClick,
+  FileText // For Tracking Overview
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+// Button is used by SidebarToggleButton internally, and SidebarMenuButton is a specific component
 import { Separator } from '@/components/ui/separator';
 import AdminGuard from '@/components/guards/admin-guard';
 import { useAuth } from '@/hooks/use-auth';
 import { cn } from '@/lib/utils';
 
-// Define admin navigation items
 const adminNavItems = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard },
   { href: '/admin/users', label: 'Manage Users', icon: Users },
@@ -47,10 +47,9 @@ const adminNavItems = [
   { href: '/admin/categories', label: 'Manage Categories', icon: Building2 },
   { href: '/admin/banners', label: 'Manage Banners', icon: TicketPercent },
   { href: '/admin/transactions', label: 'Transactions', icon: ClipboardList },
-  { href: '/admin/clicks', label: 'Click Logs', icon: MousePointerClick }, // New Click Logs
+  { href: '/admin/clicks', label: 'Tracking Overview', icon: FileText },
   { href: '/admin/payouts', label: 'Payout Requests', icon: CreditCard },
   { href: '/admin/reports', label: 'Reports', icon: BarChart3 },
-  // { href: '/admin/settings', label: 'Admin Settings', icon: Settings }, // If you add global admin settings
 ];
 
 export default function AdminLayout({
@@ -91,17 +90,15 @@ export default function AdminLayout({
                    {adminNavItems.map((item) => (
                      <SidebarMenuItem key={item.href}>
                        <SidebarMenuButton
-                         asChild
+                         href={item.href} // Pass href directly
                          isActive={isActive(item.href)}
                          tooltip={item.label}
                          className="justify-start"
                        >
-                         <Link href={item.href} className="flex items-center w-full">
-                           <item.icon className="w-5 h-5 mr-3 shrink-0" />
-                           <span className="sidebar-expanded:inline-block hidden truncate">
-                             {item.label}
-                           </span>
-                         </Link>
+                         <item.icon className="w-5 h-5 mr-3 shrink-0" />
+                         <span className="sidebar-expanded:inline-block hidden truncate">
+                           {item.label}
+                         </span>
                        </SidebarMenuButton>
                      </SidebarMenuItem>
                    ))}
@@ -121,7 +118,7 @@ export default function AdminLayout({
              <div className="flex flex-1 flex-col overflow-hidden">
                 <header className="flex h-16 items-center border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-6 sticky top-0 z-30">
                     <div className="flex items-center gap-4 w-full">
-                        <SidebarToggleButton className="md:hidden" />
+                        <SidebarToggleButton className="md:hidden" /> {/* This will trigger the Sheet */}
                         <h1 className="flex-1 text-lg font-semibold md:text-xl truncate">
                             {activeLabel}
                         </h1>
@@ -143,3 +140,5 @@ export default function AdminLayout({
      </AdminGuard>
   );
 }
+
+    
