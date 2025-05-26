@@ -274,16 +274,41 @@ const sidebarMenuButtonVariants = cva(
   "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors justify-start",
   {
     variants: {
+      variant: { // Add variant definitions here if they are different from standard Button
+        default: "text-sidebar-foreground hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
+        ghost: "text-sidebar-foreground hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
+        // Add other variants if needed, or ensure they match the standard Button variants
+      },
+      size: { // Add size definitions if they are different from standard Button
+        default: "h-10", // Example size
+        sm: "h-9",
+        lg: "h-11",
+        icon: "h-10 w-10 !p-0 justify-center [&>svg]:!mr-0",
+      },
       isActive: {
         true: "bg-sidebar-accent text-sidebar-accent-foreground",
-        false: "text-sidebar-foreground hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
+        false: "", // Base styling for non-active comes from variant
       },
       isCollapsed: {
-        true: "!p-2 justify-center [&>span]:hidden", // Adjust padding for icons
+        true: "!p-2 justify-center [&>span]:hidden [&>svg]:mr-0", // Adjust padding for icons
          false: ""
       }
     },
+    compoundVariants: [
+      {
+        isActive: false,
+        variant: "default",
+        className: "text-sidebar-foreground hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
+      },
+      {
+        isActive: false,
+        variant: "ghost",
+        className: "text-sidebar-foreground hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
+      }
+    ],
     defaultVariants: {
+      variant: "default",
+      size: "default",
       isActive: false,
       isCollapsed: false
     },
@@ -296,17 +321,17 @@ export const SidebarMenuButton = React.forwardRef<
         asChild?: boolean
         isActive?: boolean
         tooltip?: string
-    } & VariantProps<typeof sidebarMenuButtonVariants>
+    } & VariantProps<typeof sidebarMenuButtonVariants> // Use VariantProps from the local CVA
 >(
-    ({ asChild = false, isActive, tooltip, className, children, ...props }, ref) => {
-        const Comp = asChild ? Slot : ((props as React.AnchorHTMLAttributes<HTMLAnchorElement>).href ? "a" : "button") as any; // Type assertion
+    ({ asChild = false, isActive, tooltip, className, children, variant, size, ...props }, ref) => { // Destructure variant and size
+        const Comp = asChild ? Slot : ((props as React.AnchorHTMLAttributes<HTMLAnchorElement>).href ? "a" : "button") as any;
         const { state: sidebarState, isMobile } = useSidebar();
         const isCollapsed = sidebarState === 'collapsed' && !isMobile;
 
         const buttonContent = (
            <Comp
               ref={ref}
-              className={cn(sidebarMenuButtonVariants({ isActive, isCollapsed }), className)}
+              className={cn(sidebarMenuButtonVariants({ variant, size, isActive, isCollapsed }), className)} // Pass variant and size here
               data-active={isActive}
               {...props}
             >
