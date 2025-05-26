@@ -4,6 +4,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+// useForm and Controller are already imported from react-hook-form
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -26,9 +27,9 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Coupon, Store, CouponFormValues as AppCouponFormValues } from '@/lib/types';
+import type { Coupon, Store, CouponFormValues as AppCouponFormValues, CashbackType } from '@/lib/types'; // CashbackType might be needed for the form
 import { useToast } from '@/hooks/use-toast';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button'; // Import buttonVariants
 import {
   Table,
   TableBody,
@@ -67,7 +68,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
+  // AlertDialogTrigger, // Not used in the state-controlled dialog pattern for delete
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
@@ -227,7 +228,6 @@ function AdminCouponsPageContent() {
         constraints.push(orderBy('description')); 
         constraints.push(where('description', '>=', currentSearchTerm));
         constraints.push(where('description', '<=', currentSearchTerm + '\uf8ff'));
-        // constraints.push(where('isActive', '==', true)); // Commented out to show all matching descriptions regardless of status
       } else {
         constraints.push(orderBy('createdAt', 'desc'));
       }
@@ -499,7 +499,7 @@ function AdminCouponsPageContent() {
                             <TableCell className="text-right">
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
-                                     <button
+                                    <button
                                         aria-label="Open menu for coupon"
                                         className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 p-0")}
                                     >
@@ -509,23 +509,19 @@ function AdminCouponsPageContent() {
                                   <DropdownMenuContent align="end">
                                     <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                     <DropdownMenuItem onSelect={() => openEditDialog(coupon)}>
-                                      <>
                                         <Edit className="mr-2 h-4 w-4" />
                                         <span>Edit Coupon</span>
-                                      </>
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
-                                      onClick={() => handleOpenDeleteDialog(coupon)}
+                                      onSelect={() => handleOpenDeleteDialog(coupon)}
                                       className={cn(
                                         "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
                                         "text-destructive focus:bg-destructive/10 focus:text-destructive hover:bg-destructive/10"
                                       )}
                                     >
-                                      <>
                                         <Trash2 className="mr-2 h-4 w-4" />
                                         <span>Delete Coupon</span>
-                                      </>
                                     </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
@@ -658,3 +654,5 @@ export default function AdminCouponsPage() {
       </AdminGuard>
     );
 }
+
+    
