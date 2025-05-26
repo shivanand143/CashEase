@@ -17,18 +17,18 @@ import {
   Sheet,
   SheetContent,
   SheetHeader,
-  // SheetTitle, // Using SheetTitle directly for the hidden title
   SheetTrigger,
   SheetClose,
+  SheetTitle as ShadSheetTitle, // Alias to avoid conflict if DialogTitle is used locally
+  SheetDescription as ShadSheetDescription, // Alias
 } from "@/components/ui/sheet";
-import { SheetTitle, SheetDescription } from "@/components/ui/sheet"; // Ensure SheetTitle and SheetDescription are from ui/sheet
 
 import { VisuallyHidden } from '@/components/ui/visually-hidden';
 import {
     LogIn, LogOut, User, IndianRupee, ShoppingBag, LayoutDashboard, Settings, Menu,
     Tag, ShieldCheck, Gift, History, Send, X, List, HelpCircle, BookOpen, Search as SearchIcon, MousePointerClick, ReceiptText
 } from 'lucide-react';
-import { SidebarMenuButton } from '@/components/ui/sidebar-alt'; // For mobile menu items
+// Removed: import { SidebarMenuButton } from '@/components/ui/sidebar-alt';
 import { useAuth } from '@/hooks/use-auth';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePathname, useRouter } from 'next/navigation';
@@ -40,7 +40,7 @@ import { useHasMounted } from '@/hooks/use-has-mounted';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Header() {
-  const { user, userProfile, loading: authLoadingHook, signOut } = useAuth();
+  const { user, userProfile, loading: authLoading, signOut } = useAuth();
   const pathname = usePathname();
   const [searchTerm, setSearchTerm] = React.useState('');
   const [isSheetOpen, setIsSheetOpen] = React.useState(false);
@@ -96,7 +96,7 @@ export default function Header() {
   const handleSearchSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!searchTerm.trim()) return;
-    setIsSheetOpen(false); // Close sheet on search submit
+    setIsSheetOpen(false);
     router.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`);
     setSearchTerm('');
   };
@@ -104,7 +104,7 @@ export default function Header() {
   const handleSheetLinkClick = () => {
       setIsSheetOpen(false);
   }
-  const sheetTitleId = "mobile-main-menu-title";
+  const sheetTitleId = "global-mobile-menu-title"; // Unique ID for the hidden title
 
   const handleSignOut = () => {
     if (typeof signOut === 'function') {
@@ -129,11 +129,12 @@ export default function Header() {
               <span className="font-bold text-xl hidden sm:inline-block text-foreground">MagicSaver</span>
             </NextLink>
           </div>
+          <nav className="flex-1 hidden md:flex justify-center items-center gap-1 lg:gap-2 text-sm font-medium">
+            {desktopNavLinks.map((link) => (
+              <Skeleton key={link.href} className="h-8 w-20 rounded-md" />
+            ))}
+          </nav>
           <div className="flex items-center space-x-2">
-            <div className="hidden md:flex items-center space-x-1">
-              <Skeleton className="h-8 w-20 rounded-md" />
-              <Skeleton className="h-8 w-20 rounded-md" />
-            </div>
             <Skeleton className="h-9 w-9 rounded-full" />
           </div>
         </div>
@@ -152,8 +153,8 @@ export default function Header() {
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-full max-w-xs p-0 flex flex-col bg-background">
-                <VisuallyHidden><SheetTitle id={sheetTitleId}>Main Navigation Menu</SheetTitle></VisuallyHidden>
+              <SheetContent side="left" className="w-full max-w-xs p-0 flex flex-col bg-background" aria-labelledby={sheetTitleId}>
+                <VisuallyHidden><ShadSheetTitle id={sheetTitleId}>Main Navigation Menu</ShadSheetTitle></VisuallyHidden>
                 <SheetHeader className="p-4 border-b flex flex-row items-center justify-between">
                     <NextLink href="/" className="flex items-center space-x-2" onClick={handleSheetLinkClick}>
                         <IndianRupee className="h-6 w-6 text-primary" />
@@ -166,63 +167,66 @@ export default function Header() {
                 <div className="flex-grow overflow-y-auto">
                   <nav className="flex flex-col space-y-1 p-4">
                     {sheetNavLinks.map((link) => (
-                      <SidebarMenuButton
+                      <Button
                         key={link.href}
-                        href={link.href}
-                        variant="ghost"
-                        isActive={isActive(link.href)}
+                        variant={isActive(link.href) ? 'secondary' : 'ghost'}
+                        asChild
                         onClick={handleSheetLinkClick}
-                        className="justify-start text-base"
+                        className="justify-start text-base gap-3"
                       >
+                        <NextLink href={link.href}>
                           {link.icon && <link.icon className="h-5 w-5" />}
                           {link.label}
-                      </SidebarMenuButton>
+                        </NextLink>
+                      </Button>
                     ))}
                   </nav>
                   <Separator className="my-2" />
                   <div className="p-4 flex flex-col space-y-1">
-                    {authLoadingHook ? (
+                    {authLoading ? (
                       <Skeleton className="h-10 w-full rounded-md" />
                     ) : user ? (
                       <>
                         {userMenuItems.map((item) => (
-                           <SidebarMenuButton
+                           <Button
                             key={item.href}
-                            href={item.href}
-                            variant="ghost"
-                            isActive={isActive(item.href)}
+                            variant={isActive(item.href) ? 'secondary' : 'ghost'}
+                            asChild
                             onClick={handleSheetLinkClick}
-                            className="justify-start text-base"
+                            className="justify-start text-base gap-3"
                           >
-                            <item.icon className="h-5 w-5" />
-                            {item.label}
-                          </SidebarMenuButton>
+                            <NextLink href={item.href}>
+                                <item.icon className="h-5 w-5" />
+                                {item.label}
+                            </NextLink>
+                          </Button>
                         ))}
                         {userProfile?.role === 'admin' && (
-                           <SidebarMenuButton
-                            href={adminMenuItem.href}
-                            variant="ghost"
-                            isActive={isActive(adminMenuItem.href)}
+                           <Button
+                            variant={isActive(adminMenuItem.href) ? 'secondary' : 'ghost'}
+                            asChild
                             onClick={handleSheetLinkClick}
-                            className="justify-start text-base"
+                            className="justify-start text-base gap-3"
                           >
-                            <adminMenuItem.icon className="h-5 w-5" />
-                            {adminMenuItem.label}
-                          </SidebarMenuButton>
+                            <NextLink href={adminMenuItem.href}>
+                                <adminMenuItem.icon className="h-5 w-5" />
+                                {adminMenuItem.label}
+                            </NextLink>
+                          </Button>
                         )}
                         <Separator className="my-2" />
-                        <SidebarMenuButton variant="ghost" onClick={handleSignOut} className="w-full justify-start text-base">
-                          <LogOut className="mr-3 h-5 w-5" /> Logout
-                        </SidebarMenuButton>
+                        <Button variant="ghost" onClick={handleSignOut} className="w-full justify-start text-base gap-3">
+                          <LogOut className="h-5 w-5" /> Logout
+                        </Button>
                       </>
                     ) : (
                       <>
-                        <SidebarMenuButton variant="ghost" onClick={() => {router.push('/login'); handleSheetLinkClick();}} className="w-full justify-start text-base">
-                            <LogIn className="mr-3 h-5 w-5" /> Login
-                        </SidebarMenuButton>
-                        <SidebarMenuButton onClick={() => {router.push('/signup'); handleSheetLinkClick();}} className="w-full justify-center text-base">
+                        <Button variant="ghost" onClick={() => {router.push('/login'); handleSheetLinkClick();}} className="w-full justify-start text-base gap-3">
+                            <LogIn className="h-5 w-5" /> Login
+                        </Button>
+                        <Button onClick={() => {router.push('/signup'); handleSheetLinkClick();}} className="w-full justify-center text-base">
                           Sign Up
-                        </SidebarMenuButton>
+                        </Button>
                       </>
                     )}
                   </div>
@@ -244,7 +248,7 @@ export default function Header() {
                   variant="ghost"
                   asChild
                   className={cn(
-                    "transition-colors hover:text-primary px-3 py-1.5 lg:px-4", // Adjusted padding
+                    "transition-colors hover:text-primary px-3 py-1.5 lg:px-4",
                     isActive(link.href) ? "text-primary font-semibold border-b-2 border-primary rounded-none" : "text-muted-foreground"
                   )}
                 >
@@ -271,7 +275,7 @@ export default function Header() {
 
           {!isMobile && (
             <div className="flex items-center space-x-1">
-              {authLoadingHook ? (
+              {authLoading ? (
                   <Skeleton className="h-9 w-9 rounded-full" />
               ) : user ? (
                   <DropdownMenu>
@@ -310,7 +314,14 @@ export default function Header() {
                       </DropdownMenuItem>
                       )}
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={handleSignOut}>
+                      <DropdownMenuItem onClick={() => {
+                          if (typeof signOut === 'function') {
+                            signOut();
+                          } else {
+                            console.error("Header: signOut function is not available from useAuth.");
+                            toast({ variant: "destructive", title: "Logout Error", description: "Unable to logout at this moment." });
+                          }
+                        }}>
                         <LogOut className="mr-2 h-4 w-4" />
                         <span>Log out</span>
                       </DropdownMenuItem>
@@ -333,5 +344,6 @@ export default function Header() {
     </header>
   );
 }
+
 
     
