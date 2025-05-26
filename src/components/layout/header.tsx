@@ -21,7 +21,7 @@ import {
   SheetTrigger,
   SheetClose,
 } from "@/components/ui/sheet";
-import { VisuallyHidden } from '@/components/ui/visually-hidden'; // Added for Sheet a11y
+import { VisuallyHidden } from '@/components/ui/visually-hidden';
 import {
     LogIn, LogOut, User, IndianRupee, ShoppingBag, LayoutDashboard, Settings, Menu,
     Tag, ShieldCheck, Gift, History, Send, X, List, HelpCircle, BookOpen, Search as SearchIcon, MousePointerClick, ReceiptText
@@ -34,7 +34,7 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from '@/components/ui/input';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useHasMounted } from '@/hooks/use-has-mounted';
-import { useToast } from '@/hooks/use-toast'; // Import useToast
+import { useToast } from '@/hooks/use-toast';
 
 export default function Header() {
   const { user, userProfile, loading: authLoadingHook, signOut } = useAuth();
@@ -44,10 +44,10 @@ export default function Header() {
   const router = useRouter();
   const isMobile = useIsMobile();
   const hasMounted = useHasMounted();
-  const { toast } = useToast(); // Initialize toast
+  const { toast } = useToast();
 
   const getInitials = (name?: string | null) => {
-    if (!name) return 'MS'; // MagicSaver initials
+    if (!name) return 'MS';
     const parts = name.split(' ');
     if (parts.length > 1 && parts[0] && parts[parts.length - 1]) {
       return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
@@ -63,7 +63,7 @@ export default function Header() {
   ];
 
   const sheetNavLinks = [
-    { href: "/", label: "Home", icon: ShoppingBag }, // Changed icon to Home
+    { href: "/", label: "Home", icon: ShoppingBag },
     { href: "/stores", label: "All Stores", icon: ShoppingBag },
     { href: "/coupons", label: "All Coupons", icon: Tag },
     { href: "/categories", label: "Categories", icon: List },
@@ -101,7 +101,7 @@ export default function Header() {
   const handleSheetLinkClick = () => {
       setIsSheetOpen(false);
   }
-  const sheetTitleId = "mobile-main-menu-title"; // For ARIA
+  const sheetTitleId = "mobile-main-menu-title";
 
   const handleSignOut = () => {
     if (typeof signOut === 'function') {
@@ -110,13 +110,10 @@ export default function Header() {
       console.error("Header: signOut function is not available from useAuth.");
       toast({ variant: "destructive", title: "Logout Error", description: "Unable to logout at this moment. Please try again." });
     }
-    setIsSheetOpen(false); // Also ensure sheet closes if this was in mobile menu
+    setIsSheetOpen(false);
   };
 
-
   if (!hasMounted) {
-    // Render a minimal, consistent header for SSR and initial client render
-    // This helps prevent hydration mismatches with more complex conditional rendering.
     return (
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto flex h-14 items-center justify-between gap-2 px-4 md:px-6">
@@ -130,7 +127,6 @@ export default function Header() {
             </Link>
           </div>
           <div className="flex items-center space-x-2">
-            {/* Static placeholders for desktop */}
             <div className="hidden md:flex items-center space-x-1">
               <Skeleton className="h-8 w-20 rounded-md" />
               <Skeleton className="h-8 w-20 rounded-md" />
@@ -145,7 +141,6 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex h-14 items-center justify-between gap-2 px-4 md:px-6">
-        {/* Left section: Mobile Menu Toggle and Logo */}
         <div className="flex items-center">
           {isMobile && (
             <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
@@ -154,7 +149,7 @@ export default function Header() {
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-full max-w-xs p-0 flex flex-col bg-background" aria-labelledby={sheetTitleId}>
+              <SheetContent side="left" className="w-full max-w-xs p-0 flex flex-col bg-background">
                  <VisuallyHidden><SheetTitle id={sheetTitleId}>Main Navigation Menu</SheetTitle></VisuallyHidden>
                 <SheetHeader className="p-4 border-b flex flex-row items-center justify-between">
                     <Link href="/" className="flex items-center space-x-2" onClick={handleSheetLinkClick}>
@@ -227,15 +222,13 @@ export default function Header() {
                     ) : (
                       <>
                         <SheetClose asChild>
-                          <Button variant="ghost" asChild className="w-full justify-start px-3 py-2.5 text-base font-medium">
-                            <Link href="/login" onClick={handleSheetLinkClick}>
+                          <Button variant="ghost" onClick={() => {router.push('/login'); handleSheetLinkClick();}} className="w-full justify-start px-3 py-2.5 text-base font-medium">
                               <LogIn className="mr-3 h-5 w-5" /> Login
-                            </Link>
                           </Button>
                         </SheetClose>
                         <SheetClose asChild>
-                          <Button asChild className="w-full justify-center px-3 py-2.5 text-base font-medium">
-                            <Link href="/signup" onClick={handleSheetLinkClick}>Sign Up</Link>
+                          <Button onClick={() => {router.push('/signup'); handleSheetLinkClick();}} className="w-full justify-center px-3 py-2.5 text-base font-medium">
+                            Sign Up
                           </Button>
                         </SheetClose>
                       </>
@@ -251,7 +244,6 @@ export default function Header() {
           </Link>
         </div>
 
-        {/* Desktop Navigation - Centered */}
         {!isMobile && (
           <nav className="flex-1 flex justify-center items-center gap-4 lg:gap-6 text-sm font-medium">
               {desktopNavLinks.map((link) => (
@@ -269,7 +261,6 @@ export default function Header() {
             </nav>
         )}
         
-        {/* Right section: Desktop Search and Auth */}
         <div className="flex items-center space-x-1 md:space-x-2">
           {!isMobile && (
             <form onSubmit={handleSearchSubmit} className="w-full max-w-[150px] sm:max-w-xs relative hidden lg:block">
@@ -334,11 +325,11 @@ export default function Header() {
                   </DropdownMenu>
               ) : (
                   <>
-                  <Button variant="ghost" asChild size="sm">
-                      <Link href="/login">Login</Link>
+                  <Button variant="ghost" size="sm" onClick={() => router.push('/login')}>
+                      Login
                   </Button>
-                  <Button asChild size="sm">
-                      <Link href="/signup">Sign Up</Link>
+                  <Button size="sm" onClick={() => router.push('/signup')}>
+                      Sign Up
                   </Button>
                   </>
               )}
@@ -349,4 +340,3 @@ export default function Header() {
     </header>
   );
 }
-
