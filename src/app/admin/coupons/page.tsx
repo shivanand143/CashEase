@@ -67,7 +67,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  // Removed AlertDialogTrigger as we'll control it with state
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
@@ -142,6 +142,7 @@ function AdminCouponsPageContent() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [couponToDelete, setCouponToDelete] = React.useState<CouponWithStoreName | null>(null);
   const [deletingCouponIdInternal, setDeletingCouponIdInternal] = React.useState<string | null>(null);
+
 
   const [updatingFieldId, setUpdatingFieldId] = React.useState<string | null>(null);
   const [loadingStoresForDialog, setLoadingStoresForDialog] = React.useState(false);
@@ -226,7 +227,7 @@ function AdminCouponsPageContent() {
         constraints.push(orderBy('description')); 
         constraints.push(where('description', '>=', currentSearchTerm));
         constraints.push(where('description', '<=', currentSearchTerm + '\uf8ff'));
-        constraints.push(where('isActive', '==', true));
+        // constraints.push(where('isActive', '==', true)); // Commented out to show all matching descriptions regardless of status
       } else {
         constraints.push(orderBy('createdAt', 'desc'));
       }
@@ -508,17 +509,23 @@ function AdminCouponsPageContent() {
                                   <DropdownMenuContent align="end">
                                     <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                     <DropdownMenuItem onSelect={() => openEditDialog(coupon)}>
-                                      <Edit className="mr-2 h-4 w-4" /> Edit Coupon
+                                      <>
+                                        <Edit className="mr-2 h-4 w-4" />
+                                        <span>Edit Coupon</span>
+                                      </>
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
-                                      onSelect={() => handleOpenDeleteDialog(coupon)}
+                                      onClick={() => handleOpenDeleteDialog(coupon)}
                                       className={cn(
                                         "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
                                         "text-destructive focus:bg-destructive/10 focus:text-destructive hover:bg-destructive/10"
                                       )}
                                     >
-                                      <Trash2 className="mr-2 h-4 w-4" /> Delete Coupon
+                                      <>
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        <span>Delete Coupon</span>
+                                      </>
                                     </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
@@ -578,7 +585,7 @@ function AdminCouponsPageContent() {
                 <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="expiryDateEdit" className="text-right">Expiry Date</Label>
                      <Controller name="expiryDate" control={form.control} render={({ field }) => {
-                        const dateForPicker = field.value ? safeToDate(field.value) : null; // Use null for safeToDate
+                        const dateForPicker = field.value ? safeToDate(field.value) : null;
                         return ( 
                         <Popover> 
                             <PopoverTrigger asChild> 
@@ -651,5 +658,3 @@ export default function AdminCouponsPage() {
       </AdminGuard>
     );
 }
-
-    
