@@ -105,12 +105,6 @@ const couponSchema = z.object({
 });
 
 
-const getStatusVariant = (isActive: boolean, expiryDate?: Date | null): "default" | "secondary" | "destructive" | "outline" => {
-   const isExpired = expiryDate ? expiryDate < new Date(new Date().setHours(0,0,0,0)) : false;
-   if (isExpired) return 'destructive';
-  return isActive ? 'default' : 'secondary';
-};
-
 function CouponsTableSkeleton() {
    return (
     <Card>
@@ -151,10 +145,11 @@ function AdminCouponsPageContent() {
   const [loadingStores, setLoadingStores] = useState(true);
 
   const [storeList, setStoreList] = useState<{ id: string; name: string }[]>([]);
+
    useEffect(() => {
      let isMounted = true;
      const fetchStores = async () => {
-       if (!isMounted || !isDialogOpen) return; 
+       if (!isMounted || !isDialogOpen) return;
        if (!db || firebaseInitializationError) {
          if (isMounted) {
            setError(firebaseInitializationError || "Database not available for fetching stores.");
@@ -182,10 +177,12 @@ function AdminCouponsPageContent() {
        }
      };
      
-     fetchStores();
+     if(isDialogOpen) { // Fetch stores only when dialog is open
+        fetchStores();
+     }
      
      return () => { isMounted = false; };
-   }, [toast, isDialogOpen]); 
+   }, [toast, isDialogOpen]);
 
   const form = useForm<AppCouponFormValues>({ 
     resolver: zodResolver(couponSchema),
@@ -206,7 +203,10 @@ function AdminCouponsPageContent() {
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
   ) => {
     let isMounted = true;
-    if (!isMounted) return;
+    
+    if (!isLoadMoreOperation) setLoading(true); else setLoadingMore(true);
+    if (!isLoadMoreOperation) setError(null);
+    setIsSearching(currentSearchTerm !== '');
 
     if (!db || firebaseInitializationError) {
       if(isMounted) {
@@ -214,29 +214,22 @@ function AdminCouponsPageContent() {
         if(!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
         setHasMore(false);
       }
-      return;
+      return () => { isMounted = false; };
     }
-
-    if (!isLoadMoreOperation) {
-      setLoading(true); setLastVisible(null); setCoupons([]); setHasMore(true); setError(null);
-    } else {
-      if (!docToStartAfter && isLoadMoreOperation) {
-         if(isMounted) setLoadingMore(false);
-         return;
-      }
-      setLoadingMore(true);
-    }
-    setIsSearching(currentSearchTerm !== '');
 
     try {
       const couponsCollection = collection(db, 'coupons');
       let constraints: QueryConstraint[] = [];
 
       if (currentSearchTerm) {
-        if (currentSearchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(currentSearchTerm)) {
-             constraints.push(where('storeId', '==', currentSearchTerm));
-        }
-        constraints.push(orderBy('createdAt', 'desc')); 
+        // Firestore text search limitations: This searches for descriptions STARTING with the term.
+        // For a "contains" search, you'd typically use a third-party service like Algolia
+        // or structure your data for it (e.g., an array of keywords).
+        // For now, we'll try a range query which might bring more results than exact match.
+        constraints.push(orderBy('description')); // Order by name first for text search
+        constraints.push(where('description', '>=', currentSearchTerm));
+        constraints.push(where('description', '<=', currentSearchTerm + '\uf8ff'));
+        constraints.push(where('isActive', '==', true)); // Also filter by active if searching
       } else {
         constraints.push(orderBy('createdAt', 'desc'));
       }
@@ -251,20 +244,17 @@ function AdminCouponsPageContent() {
 
       const couponsDataPromises = querySnapshot.docs.map(async (docSnap) => {
         const data = docSnap.data();
-        const createdAtDate = safeToDate(data.createdAt as Timestamp | undefined);
-        const updatedAtDate = safeToDate(data.updatedAt as Timestamp | undefined);
-
         const coupon: CouponWithStoreName = {
           id: docSnap.id,
           storeId: data.storeId || '',
           code: data.code || null,
           description: data.description || '',
           link: data.link || null,
-          expiryDate: safeToDate(data.expiryDate as Timestamp | undefined),
+          expiryDate: safeToDate(data.expiryDate as Timestamp | undefined) || null,
           isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
           isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
-          createdAt: createdAtDate || new Date(0), // Ensure a Date object
-          updatedAt: updatedAtDate || new Date(0), // Ensure a Date object
+          createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0), 
+          updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0),
           storeName: 'Loading...' 
         };
 
@@ -284,13 +274,7 @@ function AdminCouponsPageContent() {
       });
 
        let couponsWithNames = await Promise.all(couponsDataPromises);
-
-      if (currentSearchTerm && !(currentSearchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(currentSearchTerm))) {
-          couponsWithNames = couponsWithNames.filter(c =>
-              c.description.toLowerCase().includes(currentSearchTerm.toLowerCase()) ||
-              (c.storeName && c.storeName !== 'Loading...' && c.storeName.toLowerCase().includes(currentSearchTerm.toLowerCase()))
-          );
-      }
+      
       if(isMounted){
         if (!isLoadMoreOperation) {
           setCoupons(couponsWithNames);
@@ -303,12 +287,12 @@ function AdminCouponsPageContent() {
         }
 
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-        setHasMore(querySnapshot.docs.length === COUPONS_PER_PAGE && couponsWithNames.length > 0); 
+        setHasMore(querySnapshot.docs.length === COUPONS_PER_PAGE); 
       }
     } catch (err) {
       console.error("Error fetching coupons:", err);
-      const errorMsg = err instanceof Error ? err.message : "Failed to fetch coupons";
-      if(isMounted) {
+      if(isMounted){
+        const errorMsg = err instanceof Error ? err.message : "Failed to fetch coupons";
         setError(errorMsg);
         toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
         setHasMore(false);
@@ -331,9 +315,7 @@ function AdminCouponsPageContent() {
   }, [debouncedSearchTerm, fetchCoupons]);
 
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-  };
+  const handleSearch = (e: React.FormEvent) => e.preventDefault();
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore && lastVisible) { 
@@ -341,9 +323,7 @@ function AdminCouponsPageContent() {
     }
   };
 
-  const openAddDialog = () => {
-    router.push('/admin/coupons/new');
-  };
+  const openAddDialog = () => router.push('/admin/coupons/new');
 
   const openEditDialog = (coupon: Coupon) => {
     setEditingCoupon(coupon);
@@ -451,10 +431,10 @@ function AdminCouponsPageContent() {
         )}
 
         <Card>
-            <CardHeader> <CardTitle>Filter & Search</CardTitle> <CardDescription>Search by Store ID (exact match) or coupon description (contains match).</CardDescription> </CardHeader>
+            <CardHeader> <CardTitle>Filter & Search</CardTitle> <CardDescription>Search by coupon description.</CardDescription> </CardHeader>
             <CardContent className="flex flex-col sm:flex-row gap-4">
             <form onSubmit={handleSearch} className="flex-1 flex gap-2">
-                <Input type="search" placeholder="Search by Store ID or Description..." value={searchTermInput} onChange={(e) => setSearchTermInput(e.target.value)} disabled={isSearching || loading} className="h-10 text-base"/>
+                <Input type="search" placeholder="Search by Coupon Description..." value={searchTermInput} onChange={(e) => setSearchTermInput(e.target.value)} disabled={isSearching || loading} className="h-10 text-base"/>
                 <Button type="submit" disabled={isSearching || loading} className="h-10">
                 {isSearching || (loading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 <span className="sr-only sm:not-sr-only sm:ml-2">Search</span>
@@ -512,25 +492,46 @@ function AdminCouponsPageContent() {
                                     {updatingFieldId === coupon.id && <Loader2 className="h-4 w-4 animate-spin ml-2 inline-block" />}
                                 </TableCell>
                             <TableCell className="text-right">
-                                <AlertDialog>
                                 <DropdownMenu>
                                 <DropdownMenuTrigger asChild> <Button variant="ghost" className="h-8 w-8 p-0"> <span className="sr-only">Open menu</span> <MoreHorizontal className="h-4 w-4" /> </Button> </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
                                     <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                     <DropdownMenuItem onClick={() => openEditDialog(coupon)}> <Edit className="mr-2 h-4 w-4" /> Edit Coupon </DropdownMenuItem>
                                     <DropdownMenuSeparator />
-                                    <AlertDialogTrigger asChild>
-                                            <Button variant="ghost" className="w-full justify-start px-2 py-1.5 text-sm font-normal text-destructive hover:bg-destructive/10 focus:text-destructive focus:bg-destructive/10 h-auto relative flex cursor-default select-none items-center rounded-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50">
-                                            <Trash2 className="mr-2 h-4 w-4"/> Delete Coupon
-                                            </Button>
-                                    </AlertDialogTrigger>
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <DropdownMenuItem
+                                          onSelect={(event) => event.preventDefault()} // Prevent DropdownMenu from closing
+                                          className={cn(
+                                            "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+                                            "text-destructive focus:bg-destructive/10 focus:text-destructive hover:bg-destructive/10" // Destructive styling
+                                          )}
+                                        >
+                                          <Trash2 className="mr-2 h-4 w-4" />
+                                          <span>Delete Coupon</span>
+                                        </DropdownMenuItem>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            This action cannot be undone. This will permanently delete the coupon/offer: "{coupon.description}".
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel onClick={() => { setDeletingCouponId(null); }}>Cancel</AlertDialogCancel>
+                                          <AlertDialogAction
+                                            onClick={() => handleDeleteCoupon(coupon.id)}
+                                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                          >
+                                           {deletingCouponId === coupon.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                                            Delete
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
                                 </DropdownMenuContent>
                                 </DropdownMenu>
-                                <AlertDialogContent>
-                                    <AlertDialogHeader> <AlertDialogTitle>Are you sure?</AlertDialogTitle> <AlertDialogDescription> This action cannot be undone. This will permanently delete the coupon/offer: "{coupon.description}". </AlertDialogDescription> </AlertDialogHeader>
-                                    <AlertDialogFooter> <AlertDialogCancel onClick={() => { setDeletingCouponId(null); }}>Cancel</AlertDialogCancel> <AlertDialogAction onClick={() => handleDeleteCoupon(coupon.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90"> Delete </AlertDialogAction> </AlertDialogFooter>
-                                </AlertDialogContent>
-                                </AlertDialog>
                             </TableCell>
                             </TableRow>
                         );
@@ -598,7 +599,7 @@ function AdminCouponsPageContent() {
                                 </Button> 
                             </PopoverTrigger> 
                             <PopoverContent className="w-auto p-0"> 
-                                <Calendar mode="single" selected={dateForCalendar} onSelect={(date) => field.onChange(date || null)} initialFocus disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}/> 
+                                <Calendar mode="single" selected={dateForCalendar ?? undefined} onSelect={(date) => field.onChange(date || null)} initialFocus disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))}/> 
                             </PopoverContent> 
                         </Popover> 
                         );
@@ -613,7 +614,7 @@ function AdminCouponsPageContent() {
                             <Label htmlFor="isActiveEdit" className="font-normal">Active</Label>
                         </div>
                         <div className="flex items-center space-x-2">
-                            <Controller name="isFeatured" control={form.control} render={({ field }) => ( <Checkbox id="isFeaturedEdit" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
+                            <Controller name="isFeatured" control={form.control} render={({ field }) => ( <Checkbox id="isFeaturedEdit" checked={!!field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
                             <Label htmlFor="isFeaturedEdit" className="font-normal">Featured</Label>
                         </div>
                     </div>
@@ -635,3 +636,6 @@ export default function AdminCouponsPage() {
       </AdminGuard>
     );
 }
+
+
+    
