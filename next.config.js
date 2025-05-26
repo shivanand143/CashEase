@@ -18,6 +18,7 @@ const nextConfig = {
       // and to catch errors that can lead to missing chunks.
       ignoreBuildErrors: false,
     },
+  productionBrowserSourceMaps: true, // Explicitly enable source maps for easier debugging of client-side code
   // Add any other stable configurations you need here.
   // Avoid highly experimental features if you're facing build issues.
 };
