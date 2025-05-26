@@ -37,7 +37,7 @@ const couponSchema = z.object({
   isActive: z.boolean().default(true),
 }).refine(data => data.code || data.link, {
   message: "Either a Coupon Code or a Link is required",
-  path: ["code"],
+  path: ["code"], // You can also use ["link"] or a more general path if needed
 });
 
 function AddCouponPageSkeleton() {
@@ -71,8 +71,13 @@ export default function AddCouponPage() {
   const form = useForm<CouponFormValues>({
     resolver: zodResolver(couponSchema),
     defaultValues: {
-      storeId: '', code: null, description: '', link: null, expiryDate: null,
-      isFeatured: false, isActive: true,
+      storeId: '',
+      code: null,
+      description: '',
+      link: null,
+      expiryDate: null, // JS Date or null
+      isFeatured: false,
+      isActive: true,
     },
   });
 
@@ -93,6 +98,7 @@ export default function AddCouponPage() {
       setPageError(null);
       try {
         const storesCollection = collection(db, 'stores');
+        // Fetch only active stores for selection
         const q = query(storesCollection, where('isActive', '==', true), orderBy('name'));
         const snapshot = await getDocs(q);
         if(isMounted) {
@@ -123,13 +129,14 @@ export default function AddCouponPage() {
     setIsSaving(true);
     setPageError(null);
 
+    // Convert JS Date from form (data.expiryDate) to Firestore Timestamp
     const jsExpiryDate = data.expiryDate ? safeToDate(data.expiryDate) : null;
 
     const submissionData = {
       ...data,
-      code: data.code || null,
-      link: data.link || null,
-      expiryDate: jsExpiryDate ? Timestamp.fromDate(jsExpiryDate) : null,
+      code: data.code || null, // Ensure empty string becomes null
+      link: data.link || null, // Ensure empty string becomes null
+      expiryDate: jsExpiryDate ? Timestamp.fromDate(jsExpiryDate) : null, // Convert to Timestamp or null
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -141,7 +148,7 @@ export default function AddCouponPage() {
     } catch (err) {
       console.error("Error adding coupon:", err);
       const errorMsg = err instanceof Error ? err.message : "Could not add coupon.";
-      setPageError(errorMsg);
+      setPageError(errorMsg); // Display error on page if needed
       toast({ variant: "destructive", title: "Save Failed", description: errorMsg });
     } finally {
       setIsSaving(false);
@@ -161,6 +168,13 @@ export default function AddCouponPage() {
           </Button>
           <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2"><BadgePercent className="w-6 h-6 sm:w-7 sm:h-7" /> Add New Coupon/Offer</h1>
         </div>
+
+        {pageError && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                <strong className="font-bold">Error: </strong>
+                <span className="block sm:inline">{pageError}</span>
+            </div>
+        )}
 
         <Card className="shadow-lg border">
           <CardHeader>
@@ -205,28 +219,29 @@ export default function AddCouponPage() {
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="expiryDate">Expiry Date</Label>
-                  <Controller name="expiryDate" control={form.control} render={({ field }) => (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal h-10", !field.value && "text-muted-foreground")} disabled={isSaving}>
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {(() => {
-                            const date = field.value ? safeToDate(field.value) : null;
-                            return date ? format(date, "PPP") : <span>Optional: Pick a date</span>;
-                          })()}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar 
-                            mode="single" 
-                            selected={field.value ? safeToDate(field.value) : undefined} 
-                            onSelect={(date) => field.onChange(date || null)} 
-                            initialFocus 
-                            disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  )}/>
+                  <Controller name="expiryDate" control={form.control} render={({ field }) => {
+                      const dateForDisplay = field.value ? safeToDate(field.value) : null;
+                      const dateForCalendar = dateForDisplay ?? undefined; // Pass Date or undefined
+                      return (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal h-10", !dateForDisplay && "text-muted-foreground")} disabled={isSaving}>
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {dateForDisplay ? format(dateForDisplay, "PPP") : <span>Optional: Pick a date</span>}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                            <Calendar 
+                                mode="single" 
+                                selected={dateForCalendar} 
+                                onSelect={(date) => field.onChange(date || null)} 
+                                initialFocus 
+                                disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      );
+                  }}/>
                 </div>
               </div>
               

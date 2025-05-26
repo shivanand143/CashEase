@@ -96,12 +96,12 @@ const couponSchema = z.object({
   code: z.string().max(50, "Code too long").optional().nullable(),
   description: z.string().min(5, 'Description is too short').max(250, 'Description too long'),
   link: z.string().url('Invalid URL format').optional().or(z.literal('')).nullable(),
-  expiryDate: z.date().optional().nullable(),
+  expiryDate: z.date().optional().nullable(), // Expect JS Date from form
   isFeatured: z.boolean().default(false),
   isActive: z.boolean().default(true),
 }).refine(data => data.code || data.link, {
   message: "Either a Coupon Code or a Link is required",
-  path: ["code"],
+  path: ["code"], // You can also use ["link"] or a more general path if needed
 });
 
 
@@ -230,11 +230,16 @@ export default function AdminCouponsPage() {
       const couponsCollection = collection(db, 'coupons');
       let constraints: QueryConstraint[] = [];
 
+      // Handle search term
       if (currentSearchTerm) {
+        // Check if the search term looks like a store ID (20 char alphanumeric is a common Firestore ID pattern)
         if (currentSearchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(currentSearchTerm)) {
              constraints.push(where('storeId', '==', currentSearchTerm));
         }
-        constraints.push(orderBy('createdAt', 'desc'));
+        // For general text search, Firestore is limited. We might need client-side filtering after a broader fetch,
+        // or structure data for search (e.g., using keywords array and array-contains-any).
+        // For now, we'll primarily order and then filter client-side for description.
+        constraints.push(orderBy('createdAt', 'desc')); // Fetch recent first
       } else {
         constraints.push(orderBy('createdAt', 'desc'));
       }
@@ -255,14 +260,15 @@ export default function AdminCouponsPage() {
           code: data.code || null,
           description: data.description || '',
           link: data.link || null,
-          expiryDate: safeToDate(data.expiryDate), // Converts Timestamp to Date or null
+          expiryDate: safeToDate(data.expiryDate as Timestamp | undefined), // Converts Timestamp to Date or null
           isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
           isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
-          createdAt: safeToDate(data.createdAt),
-          updatedAt: safeToDate(data.updatedAt),
-          storeName: 'Loading...'
+          createdAt: safeToDate(data.createdAt as Timestamp | undefined),
+          updatedAt: safeToDate(data.updatedAt as Timestamp | undefined),
+          storeName: 'Loading...' // Default store name
         };
 
+        // Fetch store name if storeId exists and db connection is available
         try {
           if (coupon.storeId && db) {
             const storeDocRef = doc(db, 'stores', coupon.storeId);
@@ -272,7 +278,7 @@ export default function AdminCouponsPage() {
              coupon.storeName = 'No Store ID';
           }
         } catch (storeFetchError) {
-          console.error(`Error fetching store name for ${coupon.storeId}:`, storeFetchError);
+          console.error(`Error fetching store name for coupon ${coupon.id}, store ID ${coupon.storeId}:`, storeFetchError);
           coupon.storeName = 'Error Loading Store';
         }
         return coupon;
@@ -280,6 +286,7 @@ export default function AdminCouponsPage() {
 
        let couponsWithNames = await Promise.all(couponsDataPromises);
 
+      // Client-side filtering for description if search term exists and isn't a store ID
       if (currentSearchTerm && !(currentSearchTerm.length === 20 && /^[a-zA-Z0-9]+$/.test(currentSearchTerm))) {
           couponsWithNames = couponsWithNames.filter(c =>
               c.description.toLowerCase().includes(currentSearchTerm.toLowerCase()) ||
@@ -290,11 +297,16 @@ export default function AdminCouponsPage() {
         if (!isLoadMoreOperation) {
           setCoupons(couponsWithNames);
         } else {
-          setCoupons(prev => [...prev, ...couponsWithNames]);
+          // Filter out already existing coupons before adding new ones to prevent duplicates on load more
+          setCoupons(prev => {
+            const existingIds = new Set(prev.map(c => c.id));
+            const newUniqueCoupons = couponsWithNames.filter(c => !existingIds.has(c.id));
+            return [...prev, ...newUniqueCoupons];
+          });
         }
 
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-        setHasMore(querySnapshot.docs.length === COUPONS_PER_PAGE && couponsWithNames.length > 0); 
+        setHasMore(querySnapshot.docs.length === COUPONS_PER_PAGE && couponsWithNames.length > 0); // hasMore should be true if we fetched a full page and the filtered result is also > 0
       }
     } catch (err) {
       console.error("Error fetching coupons:", err);
@@ -314,17 +326,25 @@ export default function AdminCouponsPage() {
   }, [toast]);
 
   useEffect(() => {
+    // Initial fetch and when debouncedSearchTerm changes
     fetchCoupons(false, debouncedSearchTerm, null);
   }, [debouncedSearchTerm, fetchCoupons]);
 
 
-  const handleSearch = (e: React.FormEvent) => e.preventDefault();
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Fetching is handled by useEffect listening to debouncedSearchTerm
+  };
+
   const handleLoadMore = () => {
     if (!loadingMore && hasMore && lastVisible) { 
         fetchCoupons(true, debouncedSearchTerm, lastVisible);
     }
   };
-  const openAddDialog = () => router.push('/admin/coupons/new');
+
+  const openAddDialog = () => {
+    router.push('/admin/coupons/new');
+  };
 
   const openEditDialog = (coupon: Coupon) => {
     setEditingCoupon(coupon);
@@ -347,18 +367,20 @@ export default function AdminCouponsPage() {
     }
     setIsSaving(true); setError(null);
 
+    // Convert JS Date from form back to Firestore Timestamp for saving
     const jsExpiryDate = data.expiryDate ? safeToDate(data.expiryDate) : null;
 
     const submissionData = {
         ...data,
-        code: data.code || null,
-        link: data.link || null,
-        expiryDate: jsExpiryDate ? Timestamp.fromDate(jsExpiryDate) : null, // Convert JS Date to Firestore Timestamp
+        code: data.code || null, // Ensure empty string becomes null
+        link: data.link || null, // Ensure empty string becomes null
+        expiryDate: jsExpiryDate ? Timestamp.fromDate(jsExpiryDate) : null, // Convert to Timestamp or null
     };
 
     try {
         const couponDocRef = doc(db, 'coupons', editingCoupon.id);
         await updateDoc(couponDocRef, { ...submissionData, updatedAt: serverTimestamp() });
+         // Optimistically update local state
          const updatedCoupon: CouponWithStoreName = {
              ...editingCoupon, 
              ...submissionData, 
@@ -367,7 +389,7 @@ export default function AdminCouponsPage() {
              storeName: storeList.find(s => s.id === submissionData.storeId)?.name || 'Unknown Store'
          };
          setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? updatedCoupon : c));
-        toast({ title: "Coupon Updated" });
+        toast({ title: "Coupon Updated", description: `Coupon "${data.description.substring(0,30)}..." has been updated.` });
       setIsDialogOpen(false); form.reset();
     } catch (err) {
       console.error("Error saving coupon:", err);
@@ -404,7 +426,7 @@ export default function AdminCouponsPage() {
     try {
       await updateDoc(doc(db, 'coupons', couponId), { [field]: newValue, updatedAt: serverTimestamp() });
       setCoupons(prev => prev.map(c => c.id === couponId ? { ...c, [field]: newValue, updatedAt: new Date() } : c));
-      toast({ title: `Coupon ${field} status updated` });
+      toast({ title: `Coupon ${field === 'isActive' ? 'Activation' : 'Feature'} Status Updated` });
     } catch (err) {
       console.error(`Error toggling ${field}:`, err);
       toast({ variant: "destructive", title: "Update Failed", description: String(err) });
@@ -467,7 +489,7 @@ export default function AdminCouponsPage() {
                     </TableHeader>
                     <TableBody>
                     {coupons.map((coupon) => {
-                        const expiryDateForDisplay = safeToDate(coupon.expiryDate); // Ensure it's a JS Date for formatting
+                        const expiryDateForDisplay = coupon.expiryDate ? safeToDate(coupon.expiryDate) : null; // Ensure it's a JS Date for formatting
                         const isExpired = expiryDateForDisplay ? expiryDateForDisplay < new Date() : false;
                         return (
                             <TableRow key={coupon.id} className={!coupon.isActive || isExpired ? 'opacity-50 bg-muted/30' : ''}>
@@ -567,21 +589,23 @@ export default function AdminCouponsPage() {
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="expiryDateEdit" className="text-right">Expiry Date</Label>
-                    <Controller name="expiryDate" control={form.control} render={({ field }) => ( 
-                    <Popover> 
-                        <PopoverTrigger asChild> 
-                            <Button variant={"outline"} className={cn( "col-span-3 justify-start text-left font-normal h-10", !field.value && "text-muted-foreground" )} disabled={isSaving} > 
-                                <CalendarIcon className="mr-2 h-4 w-4" /> 
-                                {(() => {
-                                    const date = field.value ? safeToDate(field.value) : null;
-                                    return date ? format(date, "PPP") : <span>Optional: Pick a date</span>;
-                                })()}
-                            </Button> 
-                        </PopoverTrigger> 
-                        <PopoverContent className="w-auto p-0"> 
-                            <Calendar mode="single" selected={field.value ? safeToDate(field.value) : undefined} onSelect={(date) => field.onChange(date || null)} initialFocus disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}/> 
-                        </PopoverContent> 
-                    </Popover> )}/>
+                    <Controller name="expiryDate" control={form.control} render={({ field }) => {
+                        const dateForDisplay = field.value ? safeToDate(field.value) : null;
+                        const dateForCalendar = dateForDisplay ?? undefined; // Pass Date or undefined
+                        return ( 
+                        <Popover> 
+                            <PopoverTrigger asChild> 
+                                <Button variant={"outline"} className={cn( "col-span-3 justify-start text-left font-normal h-10", !dateForDisplay && "text-muted-foreground" )} disabled={isSaving} > 
+                                    <CalendarIcon className="mr-2 h-4 w-4" /> 
+                                    {dateForDisplay ? format(dateForDisplay, "PPP") : <span>Optional: Pick a date</span>}
+                                </Button> 
+                            </PopoverTrigger> 
+                            <PopoverContent className="w-auto p-0"> 
+                                <Calendar mode="single" selected={dateForCalendar} onSelect={(date) => field.onChange(date || null)} initialFocus disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}/> 
+                            </PopoverContent> 
+                        </Popover> 
+                        );
+                    }}/>
                 </div>
                 <div className="grid grid-cols-4 items-start gap-4">
                     <Label className="text-right pt-2">Flags</Label>
