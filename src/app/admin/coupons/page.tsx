@@ -67,7 +67,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger, // Keep this import if used elsewhere, but not for the delete button in dropdown
+  // AlertDialogTrigger, // Not used directly for the state-controlled dialog
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
@@ -142,7 +142,7 @@ function AdminCouponsPageContent() {
   
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [couponToDelete, setCouponToDelete] = React.useState<CouponWithStoreName | null>(null);
-  const [deletingCouponIdInternal, setDeletingCouponIdInternal] = React.useState<string | null>(null); // For loader on button
+  const [deletingCouponIdInternal, setDeletingCouponIdInternal] = React.useState<string | null>(null);
 
   const [updatingFieldId, setUpdatingFieldId] = React.useState<string | null>(null);
   const [loadingStoresForDialog, setLoadingStoresForDialog] = React.useState(false);
@@ -151,7 +151,7 @@ function AdminCouponsPageContent() {
    React.useEffect(() => {
      let isMounted = true;
      const fetchStoresForDialog = async () => {
-       if (!isMounted || !isEditDialogOpen) return; // Only fetch if dialog is open
+       if (!isMounted || !isEditDialogOpen) return; 
        if (!db || firebaseInitializationError) {
          if (isMounted) {
            setError(firebaseInitializationError || "Database not available for fetching stores.");
@@ -162,7 +162,7 @@ function AdminCouponsPageContent() {
        setLoadingStoresForDialog(true);
        try {
          const storesCollection = collection(db, 'stores');
-         const q = query(storesCollection, where('isActive', '==', true) ,orderBy('name')); // Fetch active stores
+         const q = query(storesCollection, where('isActive', '==', true) ,orderBy('name'));
          const snapshot = await getDocs(q);
          if (isMounted) {
            setStoreListForDialog(snapshot.docs.map(docSingle => ({ id: docSingle.id, name: docSingle.data().name || 'Unnamed Store' })));
@@ -346,22 +346,23 @@ function AdminCouponsPageContent() {
 
     const jsExpiryDate = data.expiryDate ? safeToDate(data.expiryDate) : null;
 
-    const submissionData = {
+    const submissionData: Partial<AppCouponFormValues & {updatedAt: any}> = {
         ...data,
         code: data.code || null,
         link: data.link || null,
         expiryDate: jsExpiryDate ? Timestamp.fromDate(jsExpiryDate) : null,
+        updatedAt: serverTimestamp()
     };
 
     try {
         const couponDocRef = doc(db, 'coupons', editingCoupon.id);
-        await updateDoc(couponDocRef, { ...submissionData, updatedAt: serverTimestamp() });
+        await updateDoc(couponDocRef, submissionData);
          const updatedCoupon: CouponWithStoreName = {
              ...editingCoupon, 
-             ...submissionData, 
+             ...data, // Use form data directly for optimistic update of display values
              updatedAt: new Date(),
              expiryDate: jsExpiryDate, 
-             storeName: storeListForDialog.find(s => s.id === submissionData.storeId)?.name || editingCoupon.storeName || 'Unknown Store'
+             storeName: storeListForDialog.find(s => s.id === data.storeId)?.name || editingCoupon.storeName || 'Unknown Store'
          };
          setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? updatedCoupon : c));
         toast({ title: "Coupon Updated", description: `Coupon "${data.description.substring(0,30)}..." has been updated.` });
@@ -492,26 +493,34 @@ function AdminCouponsPageContent() {
                                 </TableCell>
                             <TableCell className="text-right">
                                 <DropdownMenu>
-                                <DropdownMenuTrigger asChild> <Button variant="ghost" className="h-8 w-8 p-0"> <span className="sr-only">Open menu</span> <MoreHorizontal className="h-4 w-4" /> </Button> </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" className="h-8 w-8 p-0" aria-label="Open menu">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
                                     <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                    <DropdownMenuItem onClick={() => openEditDialog(coupon)}> <Edit className="mr-2 h-4 w-4" /> Edit Coupon </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => openEditDialog(coupon)}>
+                                      <Edit className="mr-2 h-4 w-4" /> Edit Coupon
+                                    </DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
-                                        onSelect={(event) => {
-                                            event.preventDefault(); // Important to prevent dropdown from closing
-                                            setCouponToDelete(coupon);
-                                            setIsDeleteDialogOpen(true);
-                                        }}
-                                        className={cn(
-                                            "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-                                            "text-destructive focus:bg-destructive/10 focus:text-destructive hover:bg-destructive/10"
-                                        )}
-                                        >
-                                        <Trash2 className="mr-2 h-4 w-4" />
+                                      onSelect={(event) => {
+                                        event.preventDefault();
+                                        setCouponToDelete(coupon);
+                                        setIsDeleteDialogOpen(true);
+                                      }}
+                                      className={cn(
+                                        "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+                                        "text-destructive focus:bg-destructive/10 focus:text-destructive hover:bg-destructive/10"
+                                      )}
+                                    >
+                                      <span className="flex items-center gap-2"> {/* Wrapper span */}
+                                        <Trash2 className="h-4 w-4" />
                                         <span>Delete Coupon</span>
+                                      </span>
                                     </DropdownMenuItem>
-                                </DropdownMenuContent>
+                                  </DropdownMenuContent>
                                 </DropdownMenu>
                             </TableCell>
                             </TableRow>
@@ -569,7 +578,7 @@ function AdminCouponsPageContent() {
                 <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="expiryDateEdit" className="text-right">Expiry Date</Label>
                     <Controller name="expiryDate" control={form.control} render={({ field }) => {
-                        const dateForPicker = safeToDate(field.value) ?? undefined; // Ensures undefined for null/undefined
+                        const dateForPicker = safeToDate(field.value) ?? undefined; 
                         return ( 
                         <Popover> 
                             <PopoverTrigger asChild> 
@@ -579,7 +588,7 @@ function AdminCouponsPageContent() {
                                 </Button> 
                             </PopoverTrigger> 
                             <PopoverContent className="w-auto p-0"> 
-                                <Calendar mode="single" selected={dateForPicker} onSelect={(date) => field.onChange(date || null)} initialFocus disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))}/> 
+                                <Calendar mode="single" selected={dateForPicker ?? undefined} onSelect={(date) => field.onChange(date || null)} initialFocus disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))}/> 
                             </PopoverContent> 
                         </Popover> 
                         );
@@ -641,5 +650,3 @@ export default function AdminCouponsPage() {
       </AdminGuard>
     );
 }
-
-    
