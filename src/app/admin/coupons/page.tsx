@@ -4,7 +4,6 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-// useForm and Controller are already imported from react-hook-form
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -27,9 +26,9 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Coupon, Store, CouponFormValues as AppCouponFormValues, CashbackType } from '@/lib/types'; // CashbackType might be needed for the form
+import type { Coupon, Store, CouponFormValues as AppCouponFormValues, CashbackType } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { Button, buttonVariants } from '@/components/ui/button'; // Import buttonVariants
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -46,8 +45,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, ExternalLink, CalendarIcon, Star, BadgePercent, MoreHorizontal } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; // Ensure Select is imported
+import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, ExternalLink, CalendarIcon, Star, BadgePercent } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -68,19 +67,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  // AlertDialogTrigger, // Not used in the state-controlled dialog pattern for delete
+  // AlertDialogTrigger, // Removed from here, dialog controlled by state
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
 import { cn, safeToDate } from '@/lib/utils';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { useDebounce } from '@/hooks/use-debounce';
 import { Switch } from '@/components/ui/switch';
 
@@ -122,7 +113,7 @@ function CouponsTableSkeleton() {
   );
 }
 
-function AdminCouponsPageContent() {
+export default function AdminCouponsPage() {
   const [coupons, setCoupons] = React.useState<CouponWithStoreName[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -143,7 +134,6 @@ function AdminCouponsPageContent() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [couponToDelete, setCouponToDelete] = React.useState<CouponWithStoreName | null>(null);
   const [deletingCouponIdInternal, setDeletingCouponIdInternal] = React.useState<string | null>(null);
-
 
   const [updatingFieldId, setUpdatingFieldId] = React.useState<string | null>(null);
   const [loadingStoresForDialog, setLoadingStoresForDialog] = React.useState(false);
@@ -185,7 +175,7 @@ function AdminCouponsPageContent() {
      }
      
      return () => { isMounted = false; };
-   }, [toast, isEditDialogOpen]);
+   }, [isEditDialogOpen, toast]); // Added toast to dependency array
 
   const form = useForm<AppCouponFormValues>({ 
     resolver: zodResolver(couponSchema),
@@ -229,6 +219,7 @@ function AdminCouponsPageContent() {
         constraints.push(where('description', '>=', currentSearchTerm));
         constraints.push(where('description', '<=', currentSearchTerm + '\uf8ff'));
       } else {
+        constraints.push(orderBy('isFeatured', 'desc'));
         constraints.push(orderBy('createdAt', 'desc'));
       }
 
@@ -419,11 +410,16 @@ function AdminCouponsPageContent() {
   };
 
   if (loading && coupons.length === 0 && !error) {
-    return <CouponsTableSkeleton />;
+    return (
+      <AdminGuard>
+        <CouponsTableSkeleton />
+      </AdminGuard>
+    );
   }
 
   return (
-        <div className="space-y-6">
+    <AdminGuard>
+      <div className="space-y-6">
         <div className="flex justify-between items-center">
             <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2"><BadgePercent className="w-6 h-6 sm:w-7 sm:h-7" /> Manage Coupons & Offers</h1>
             <Button onClick={openAddDialog}>
@@ -497,34 +493,16 @@ function AdminCouponsPageContent() {
                                     {updatingFieldId === coupon.id && <Loader2 className="h-4 w-4 animate-spin ml-2 inline-block" />}
                                 </TableCell>
                             <TableCell className="text-right">
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <button
-                                        aria-label="Open menu for coupon"
-                                        className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 p-0")}
-                                    >
-                                        <MoreHorizontal className="h-4 w-4" />
-                                    </button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                    <DropdownMenuItem onSelect={() => openEditDialog(coupon)}>
-                                        <Edit className="mr-2 h-4 w-4" />
-                                        <span>Edit Coupon</span>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      onSelect={() => handleOpenDeleteDialog(coupon)}
-                                      className={cn(
-                                        "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-                                        "text-destructive focus:bg-destructive/10 focus:text-destructive hover:bg-destructive/10"
-                                      )}
-                                    >
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        <span>Delete Coupon</span>
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                                <div className="flex gap-1 justify-end">
+                                    <Button variant="outline" size="icon" onClick={() => openEditDialog(coupon)} className="h-8 w-8">
+                                        <Edit className="h-4 w-4" />
+                                        <span className="sr-only">Edit Coupon</span>
+                                    </Button>
+                                    <Button variant="destructive" size="icon" onClick={() => handleOpenDeleteDialog(coupon)} className="h-8 w-8">
+                                        <Trash2 className="h-4 w-4" />
+                                        <span className="sr-only">Delete Coupon</span>
+                                    </Button>
+                                </div>
                             </TableCell>
                             </TableRow>
                         );
@@ -641,18 +619,9 @@ function AdminCouponsPageContent() {
                 </AlertDialogContent>
             )}
         </AlertDialog>
-
-        </div>
+      </div>
+    </AdminGuard>
   );
-}
-
-
-export default function AdminCouponsPage() {
-    return (
-      <AdminGuard>
-        <AdminCouponsPageContent />
-      </AdminGuard>
-    );
 }
 
     
