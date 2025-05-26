@@ -26,9 +26,9 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Coupon, Store, CouponFormValues as AppCouponFormValues } from '@/lib/types'; // Renamed for clarity
+import type { Coupon, Store, CouponFormValues as AppCouponFormValues } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { Button, buttonVariants } from '@/components/ui/button'; // Import buttonVariants
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -67,7 +67,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  // AlertDialogTrigger, // We are controlling AlertDialog manually now
+  // Removed AlertDialogTrigger as we'll control it with state
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
@@ -108,10 +108,10 @@ function CouponsTableSkeleton() {
     <Card>
       <CardHeader> <Skeleton className="h-6 w-1/4 mb-2"/> <Skeleton className="h-4 w-1/2"/> </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto w-full">
           <Table>
             <TableHeader>
-              <TableRow> {Array.from({ length: 7 }).map((_, index) => ( <TableHead key={index}><Skeleton className="h-5 w-full" /></TableHead> ))} </TableRow>
+              <TableRow> {Array.from({ length: 7 }).map((_, index) => ( <TableHead key={index} className="min-w-[120px]"><Skeleton className="h-5 w-full" /></TableHead> ))} </TableRow>
             </TableHeader>
             <TableBody> {Array.from({ length: 10 }).map((_, rowIndex) => ( <TableRow key={rowIndex}> {Array.from({ length: 7 }).map((_, colIndex) => ( <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell> ))} </TableRow> ))} </TableBody>
           </Table>
@@ -335,6 +335,11 @@ function AdminCouponsPageContent() {
     });
     setIsEditDialogOpen(true);
   };
+  
+  const handleOpenDeleteDialog = (coupon: CouponWithStoreName) => {
+    setCouponToDelete(coupon);
+    setIsDeleteDialogOpen(true);
+  };
 
   const onSubmitEdit = async (data: AppCouponFormValues) => { 
     if (!db || !editingCoupon || firebaseInitializationError) { 
@@ -343,13 +348,13 @@ function AdminCouponsPageContent() {
     }
     setIsSaving(true); setError(null);
 
-    const jsExpiryDate = data.expiryDate ? safeToDate(data.expiryDate) : null;
+    const jsExpiryDateForSubmit = data.expiryDate ? safeToDate(data.expiryDate) : null;
 
     const submissionData: Partial<AppCouponFormValues & {updatedAt: any}> = {
         ...data,
         code: data.code || null,
         link: data.link || null,
-        expiryDate: jsExpiryDate ? Timestamp.fromDate(jsExpiryDate) : null,
+        expiryDate: jsExpiryDateForSubmit ? Timestamp.fromDate(jsExpiryDateForSubmit) : null,
         updatedAt: serverTimestamp()
     };
 
@@ -360,7 +365,7 @@ function AdminCouponsPageContent() {
              ...editingCoupon, 
              ...data, 
              updatedAt: new Date(),
-             expiryDate: jsExpiryDate, 
+             expiryDate: jsExpiryDateForSubmit, 
              storeName: storeListForDialog.find(s => s.id === data.storeId)?.name || editingCoupon.storeName || 'Unknown Store'
          };
          setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? updatedCoupon : c));
@@ -450,8 +455,8 @@ function AdminCouponsPageContent() {
             ) : !loading && coupons.length === 0 && !error ? (
                 <p className="text-center text-muted-foreground py-8"> {debouncedSearchTerm ? `No coupons found matching "${debouncedSearchTerm}".` : "No coupons found."} </p>
             ) : (
-                <div className="overflow-x-auto">
-                <Table>
+                <div className="overflow-x-auto w-full">
+                <Table className="min-w-[1000px]">
                     <TableHeader>
                     <TableRow>
                         <TableHead className="min-w-[150px]">Store</TableHead>
@@ -469,7 +474,7 @@ function AdminCouponsPageContent() {
                         const isExpired = expiryDateForDisplay ? expiryDateForDisplay < new Date(new Date().setHours(0,0,0,0)) : false;
                         return (
                             <TableRow key={coupon.id} className={!coupon.isActive || isExpired ? 'opacity-50 bg-muted/30' : ''}>
-                            <TableCell className="font-medium text-xs">
+                            <TableCell className="font-medium text-xs truncate max-w-[150px]" title={coupon.storeName || coupon.storeId}>
                                 {coupon.storeName || coupon.storeId}
                                 {coupon.storeName !== 'Loading...' && coupon.storeName !== 'Store Not Found' && coupon.storeName !== 'No Store ID' && ( <span className="block text-[10px] text-muted-foreground font-mono">ID: {coupon.storeId}</span> )}
                             </TableCell>
@@ -493,35 +498,27 @@ function AdminCouponsPageContent() {
                             <TableCell className="text-right">
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
-                                    <button
-                                      aria-label="Open menu for coupon"
-                                      className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 p-0")}
+                                     <button
+                                        aria-label="Open menu for coupon"
+                                        className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 p-0")}
                                     >
-                                      <MoreHorizontal className="h-4 w-4" />
+                                        <MoreHorizontal className="h-4 w-4" />
                                     </button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
                                     <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                    <DropdownMenuItem onClick={() => openEditDialog(coupon)}>
-                                      <span className="flex items-center gap-2">
-                                        <Edit className="h-4 w-4" /> Edit Coupon
-                                      </span>
+                                    <DropdownMenuItem onSelect={() => openEditDialog(coupon)}>
+                                      <Edit className="mr-2 h-4 w-4" /> Edit Coupon
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
-                                      onSelect={(event) => {
-                                        event.preventDefault(); // Allow AlertDialog to open
-                                        setCouponToDelete(coupon);
-                                        setIsDeleteDialogOpen(true);
-                                      }}
+                                      onSelect={() => handleOpenDeleteDialog(coupon)}
                                       className={cn(
                                         "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
                                         "text-destructive focus:bg-destructive/10 focus:text-destructive hover:bg-destructive/10"
                                       )}
                                     >
-                                      <span className="flex items-center gap-2">
-                                        <Trash2 className="h-4 w-4" /> Delete Coupon
-                                      </span>
+                                      <Trash2 className="mr-2 h-4 w-4" /> Delete Coupon
                                     </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
@@ -544,7 +541,7 @@ function AdminCouponsPageContent() {
             if(!isOpen) setEditingCoupon(null); 
             setIsEditDialogOpen(isOpen);
         }}>
-            <DialogContent className="sm:max-w-lg">
+            <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader> <DialogTitle>{editingCoupon ? 'Edit Coupon/Offer' : 'Add New Coupon/Offer'}</DialogTitle> <DialogDescription> {editingCoupon ? `Update details for coupon/offer "${editingCoupon.description.substring(0,30)}...".` : 'Enter the details for the new coupon or offer.'} </DialogDescription> </DialogHeader>
             <form onSubmit={form.handleSubmit(onSubmitEdit)} className="grid gap-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
@@ -580,12 +577,12 @@ function AdminCouponsPageContent() {
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="expiryDateEdit" className="text-right">Expiry Date</Label>
-                    <Controller name="expiryDate" control={form.control} render={({ field }) => {
-                        const dateForPicker = field.value ? safeToDate(field.value) : undefined; 
+                     <Controller name="expiryDate" control={form.control} render={({ field }) => {
+                        const dateForPicker = field.value ? safeToDate(field.value) : null; // Use null for safeToDate
                         return ( 
                         <Popover> 
                             <PopoverTrigger asChild> 
-                                <Button variant={"outline"} className={cn( "col-span-3 justify-start text-left font-normal h-10", !field.value && "text-muted-foreground" )} disabled={isSaving} > 
+                                <Button variant={"outline"} className={cn( "col-span-3 justify-start text-left font-normal h-10", !dateForPicker && "text-muted-foreground" )} disabled={isSaving} > 
                                     <CalendarIcon className="mr-2 h-4 w-4" /> 
                                     {dateForPicker ? format(dateForPicker, "PPP") : <span>Optional: Pick a date</span>}
                                 </Button> 
@@ -611,14 +608,14 @@ function AdminCouponsPageContent() {
                         </div>
                     </div>
                 </div>
-                {form.formState.errors.code && form.formState.errors.code.type === 'refine' && ( <Alert variant="destructive" className="col-span-4"> <AlertCircle className="h-4 w-4" /> <AlertTitle>Input Required</AlertTitle> <AlertDescription>{form.formState.errors.code.message}</AlertDescription> </Alert> )}
-                <DialogFooter> <DialogClose asChild> <Button type="button" variant="outline" disabled={isSaving}> Cancel </Button> </DialogClose> <Button type="submit" disabled={isSaving || loadingStoresForDialog}> {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} {editingCoupon ? 'Save Changes' : 'Add Coupon'} </Button> </DialogFooter>
+                {form.formState.errors.code && form.formState.errors.code.type === 'refine' && ( <Alert variant="destructive" className="col-span-full"> <AlertCircle className="h-4 w-4" /> <AlertTitle>Input Required</AlertTitle> <AlertDescription>{form.formState.errors.code.message}</AlertDescription> </Alert> )}
+                <DialogFooter className="flex-col sm:flex-row sm:justify-end gap-2 mt-2"> <DialogClose asChild> <Button type="button" variant="outline" disabled={isSaving} className="w-full sm:w-auto"> Cancel </Button> </DialogClose> <Button type="submit" disabled={isSaving || loadingStoresForDialog} className="w-full sm:w-auto"> {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} {editingCoupon ? 'Save Changes' : 'Add Coupon'} </Button> </DialogFooter>
             </form>
             </DialogContent>
         </Dialog>
 
         <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-            {couponToDelete && ( /* Only render content if couponToDelete is set */
+            {couponToDelete && (
                 <AlertDialogContent>
                     <AlertDialogHeader>
                     <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
@@ -654,3 +651,5 @@ export default function AdminCouponsPage() {
       </AdminGuard>
     );
 }
+
+    
