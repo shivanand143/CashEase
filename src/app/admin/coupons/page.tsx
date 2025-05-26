@@ -2,7 +2,6 @@
 "use client";
 
 import * as React from 'react';
-import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
@@ -68,7 +67,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialogTrigger, // Keep this import if used elsewhere, but not for the delete button in dropdown
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
@@ -124,65 +123,68 @@ function CouponsTableSkeleton() {
 }
 
 function AdminCouponsPageContent() {
-  const [coupons, setCoupons] = useState<CouponWithStoreName[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [coupons, setCoupons] = React.useState<CouponWithStoreName[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMore, setHasMore] = React.useState(true);
+  const [loadingMore, setLoadingMore] = React.useState(false);
   const { toast } = useToast();
   const router = useRouter();
 
-  const [searchTermInput, setSearchTermInput] = useState('');
+  const [searchTermInput, setSearchTermInput] = React.useState('');
   const debouncedSearchTerm = useDebounce(searchTermInput, 500);
-  const [isSearching, setIsSearching] = useState(false);
+  const [isSearching, setIsSearching] = React.useState(false);
 
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [deletingCouponId, setDeletingCouponId] = useState<string | null>(null);
-  const [updatingFieldId, setUpdatingFieldId] = useState<string | null>(null);
-  const [loadingStores, setLoadingStores] = useState(true);
+  const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
+  const [editingCoupon, setEditingCoupon] = React.useState<CouponWithStoreName | null>(null);
+  const [isSaving, setIsSaving] = React.useState(false);
+  
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  const [couponToDelete, setCouponToDelete] = React.useState<CouponWithStoreName | null>(null);
+  const [deletingCouponIdInternal, setDeletingCouponIdInternal] = React.useState<string | null>(null); // For loader on button
 
-  const [storeList, setStoreList] = useState<{ id: string; name: string }[]>([]);
+  const [updatingFieldId, setUpdatingFieldId] = React.useState<string | null>(null);
+  const [loadingStoresForDialog, setLoadingStoresForDialog] = React.useState(false);
+  const [storeListForDialog, setStoreListForDialog] = React.useState<{ id: string; name: string }[]>([]);
 
-   useEffect(() => {
+   React.useEffect(() => {
      let isMounted = true;
-     const fetchStores = async () => {
-       if (!isMounted || !isDialogOpen) return;
+     const fetchStoresForDialog = async () => {
+       if (!isMounted || !isEditDialogOpen) return; // Only fetch if dialog is open
        if (!db || firebaseInitializationError) {
          if (isMounted) {
            setError(firebaseInitializationError || "Database not available for fetching stores.");
-           setLoadingStores(false);
+           setLoadingStoresForDialog(false);
          }
          return;
        }
-       setLoadingStores(true);
+       setLoadingStoresForDialog(true);
        try {
          const storesCollection = collection(db, 'stores');
-         const q = query(storesCollection, orderBy('name'));
+         const q = query(storesCollection, where('isActive', '==', true) ,orderBy('name')); // Fetch active stores
          const snapshot = await getDocs(q);
          if (isMounted) {
-           setStoreList(snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name || 'Unnamed Store' })));
+           setStoreListForDialog(snapshot.docs.map(docSingle => ({ id: docSingle.id, name: docSingle.data().name || 'Unnamed Store' })));
          }
        } catch (storeFetchError) {
-         console.error("Error fetching store list:", storeFetchError);
+         console.error("Error fetching store list for dialog:", storeFetchError);
          if (isMounted) {
-           toast({ variant: 'destructive', title: 'Store List Error', description: 'Could not load stores.' });
+           toast({ variant: 'destructive', title: 'Store List Error', description: 'Could not load stores for selection.' });
          }
        } finally {
          if (isMounted) {
-           setLoadingStores(false);
+           setLoadingStoresForDialog(false);
          }
        }
      };
      
-     if(isDialogOpen) { // Fetch stores only when dialog is open
-        fetchStores();
+     if(isEditDialogOpen) {
+        fetchStoresForDialog();
      }
      
      return () => { isMounted = false; };
-   }, [toast, isDialogOpen]);
+   }, [toast, isEditDialogOpen]);
 
   const form = useForm<AppCouponFormValues>({ 
     resolver: zodResolver(couponSchema),
@@ -197,7 +199,7 @@ function AdminCouponsPageContent() {
     },
   });
 
-  const fetchCoupons = useCallback(async (
+  const fetchCoupons = React.useCallback(async (
     isLoadMoreOperation: boolean,
     currentSearchTerm: string,
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
@@ -222,14 +224,10 @@ function AdminCouponsPageContent() {
       let constraints: QueryConstraint[] = [];
 
       if (currentSearchTerm) {
-        // Firestore text search limitations: This searches for descriptions STARTING with the term.
-        // For a "contains" search, you'd typically use a third-party service like Algolia
-        // or structure your data for it (e.g., an array of keywords).
-        // For now, we'll try a range query which might bring more results than exact match.
-        constraints.push(orderBy('description')); // Order by name first for text search
+        constraints.push(orderBy('description')); 
         constraints.push(where('description', '>=', currentSearchTerm));
         constraints.push(where('description', '<=', currentSearchTerm + '\uf8ff'));
-        constraints.push(where('isActive', '==', true)); // Also filter by active if searching
+        constraints.push(where('isActive', '==', true));
       } else {
         constraints.push(orderBy('createdAt', 'desc'));
       }
@@ -250,10 +248,10 @@ function AdminCouponsPageContent() {
           code: data.code || null,
           description: data.description || '',
           link: data.link || null,
-          expiryDate: safeToDate(data.expiryDate as Timestamp | undefined) || null,
+          expiryDate: safeToDate(data.expiryDate as Timestamp | undefined),
           isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
           isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
-          createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0), 
+          createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0),
           updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0),
           storeName: 'Loading...' 
         };
@@ -306,14 +304,13 @@ function AdminCouponsPageContent() {
     return () => { isMounted = false; };
   }, [toast]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     let isMounted = true;
     if (isMounted) {
         fetchCoupons(false, debouncedSearchTerm, null);
     }
     return () => { isMounted = false; };
   }, [debouncedSearchTerm, fetchCoupons]);
-
 
   const handleSearch = (e: React.FormEvent) => e.preventDefault();
 
@@ -325,7 +322,7 @@ function AdminCouponsPageContent() {
 
   const openAddDialog = () => router.push('/admin/coupons/new');
 
-  const openEditDialog = (coupon: Coupon) => {
+  const openEditDialog = (coupon: CouponWithStoreName) => {
     setEditingCoupon(coupon);
     const expiryDateForForm = coupon.expiryDate ? safeToDate(coupon.expiryDate) : null;
     form.reset({
@@ -337,10 +334,10 @@ function AdminCouponsPageContent() {
       isFeatured: coupon.isFeatured,
       isActive: coupon.isActive,
     });
-    setIsDialogOpen(true);
+    setIsEditDialogOpen(true);
   };
 
-  const onSubmit = async (data: AppCouponFormValues) => { 
+  const onSubmitEdit = async (data: AppCouponFormValues) => { 
     if (!db || !editingCoupon || firebaseInitializationError) { 
         setError(firebaseInitializationError || "Database not available or no coupon selected for edit."); 
         setIsSaving(false); return; 
@@ -364,11 +361,11 @@ function AdminCouponsPageContent() {
              ...submissionData, 
              updatedAt: new Date(),
              expiryDate: jsExpiryDate, 
-             storeName: storeList.find(s => s.id === submissionData.storeId)?.name || 'Unknown Store'
+             storeName: storeListForDialog.find(s => s.id === submissionData.storeId)?.name || editingCoupon.storeName || 'Unknown Store'
          };
          setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? updatedCoupon : c));
         toast({ title: "Coupon Updated", description: `Coupon "${data.description.substring(0,30)}..." has been updated.` });
-      setIsDialogOpen(false); form.reset();
+      setIsEditDialogOpen(false); form.reset(); setEditingCoupon(null);
     } catch (err) {
       console.error("Error saving coupon:", err);
       const errorMsg = err instanceof Error ? err.message : "Could not save coupon details.";
@@ -378,19 +375,21 @@ function AdminCouponsPageContent() {
     }
   };
 
-   const handleDeleteCoupon = async (couponId: string) => {
-     if (!couponId || !db) return;
-     setDeletingCouponId(couponId);
+   const handleDeleteCoupon = async () => {
+     if (!couponToDelete || !couponToDelete.id || !db) return;
+     setDeletingCouponIdInternal(couponToDelete.id);
      try {
-       await deleteDoc(doc(db, 'coupons', couponId));
-       setCoupons(prev => prev.filter(c => c.id !== couponId));
+       await deleteDoc(doc(db, 'coupons', couponToDelete.id));
+       setCoupons(prev => prev.filter(c => c.id !== couponToDelete.id));
        toast({ title: "Coupon Deleted" });
      } catch (err) {
        console.error("Error deleting coupon:", err);
        const errorMsg = err instanceof Error ? err.message : "Could not delete the coupon.";
        toast({ variant: "destructive", title: "Deletion Failed", description: errorMsg });
      } finally {
-       setDeletingCouponId(null);
+       setDeletingCouponIdInternal(null);
+       setIsDeleteDialogOpen(false);
+       setCouponToDelete(null);
      }
    };
 
@@ -498,38 +497,20 @@ function AdminCouponsPageContent() {
                                     <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                     <DropdownMenuItem onClick={() => openEditDialog(coupon)}> <Edit className="mr-2 h-4 w-4" /> Edit Coupon </DropdownMenuItem>
                                     <DropdownMenuSeparator />
-                                    <AlertDialog>
-                                      <AlertDialogTrigger asChild>
-                                        <DropdownMenuItem
-                                          onSelect={(event) => event.preventDefault()} // Prevent DropdownMenu from closing
-                                          className={cn(
+                                    <DropdownMenuItem
+                                        onSelect={(event) => {
+                                            event.preventDefault(); // Important to prevent dropdown from closing
+                                            setCouponToDelete(coupon);
+                                            setIsDeleteDialogOpen(true);
+                                        }}
+                                        className={cn(
                                             "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-                                            "text-destructive focus:bg-destructive/10 focus:text-destructive hover:bg-destructive/10" // Destructive styling
-                                          )}
+                                            "text-destructive focus:bg-destructive/10 focus:text-destructive hover:bg-destructive/10"
+                                        )}
                                         >
-                                          <Trash2 className="mr-2 h-4 w-4" />
-                                          <span>Delete Coupon</span>
-                                        </DropdownMenuItem>
-                                      </AlertDialogTrigger>
-                                      <AlertDialogContent>
-                                        <AlertDialogHeader>
-                                          <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                          <AlertDialogDescription>
-                                            This action cannot be undone. This will permanently delete the coupon/offer: "{coupon.description}".
-                                          </AlertDialogDescription>
-                                        </AlertDialogHeader>
-                                        <AlertDialogFooter>
-                                          <AlertDialogCancel onClick={() => { setDeletingCouponId(null); }}>Cancel</AlertDialogCancel>
-                                          <AlertDialogAction
-                                            onClick={() => handleDeleteCoupon(coupon.id)}
-                                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                          >
-                                           {deletingCouponId === coupon.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
-                                            Delete
-                                          </AlertDialogAction>
-                                        </AlertDialogFooter>
-                                      </AlertDialogContent>
-                                    </AlertDialog>
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        <span>Delete Coupon</span>
+                                    </DropdownMenuItem>
                                 </DropdownMenuContent>
                                 </DropdownMenu>
                             </TableCell>
@@ -547,23 +528,23 @@ function AdminCouponsPageContent() {
             </CardContent>
         </Card>
 
-        <Dialog open={isDialogOpen} onOpenChange={(isOpen) => {
+        <Dialog open={isEditDialogOpen} onOpenChange={(isOpen) => {
             if(!isOpen) setEditingCoupon(null); 
-            setIsDialogOpen(isOpen);
+            setIsEditDialogOpen(isOpen);
         }}>
             <DialogContent className="sm:max-w-lg">
             <DialogHeader> <DialogTitle>{editingCoupon ? 'Edit Coupon/Offer' : 'Add New Coupon/Offer'}</DialogTitle> <DialogDescription> {editingCoupon ? `Update details for coupon/offer "${editingCoupon.description.substring(0,30)}...".` : 'Enter the details for the new coupon or offer.'} </DialogDescription> </DialogHeader>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4 py-4">
+            <form onSubmit={form.handleSubmit(onSubmitEdit)} className="grid gap-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="storeIdEdit" className="text-right">Store*</Label>
                 <div className="col-span-3">
                     <Controller name="storeId" control={form.control} render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange} disabled={isSaving || loadingStores}>
+                        <Select value={field.value} onValueChange={field.onChange} disabled={isSaving || loadingStoresForDialog}>
                             <SelectTrigger id="storeIdEdit"> <SelectValue placeholder="Select a store..." /> </SelectTrigger>
                             <SelectContent>
-                                {loadingStores && <SelectItem value="loading" disabled>Loading stores...</SelectItem>}
-                                {!loadingStores && storeList.length === 0 && <SelectItem value="no-stores" disabled>No stores available</SelectItem>}
-                                {storeList.map(store => ( <SelectItem key={store.id} value={store.id}> {store.name} </SelectItem> ))}
+                                {loadingStoresForDialog && <SelectItem value="loading" disabled>Loading stores...</SelectItem>}
+                                {!loadingStoresForDialog && storeListForDialog.length === 0 && <SelectItem value="no-stores" disabled>No active stores available</SelectItem>}
+                                {storeListForDialog.map(store => ( <SelectItem key={store.id} value={store.id}> {store.name} </SelectItem> ))}
                             </SelectContent>
                         </Select>
                     )}/>
@@ -588,18 +569,17 @@ function AdminCouponsPageContent() {
                 <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="expiryDateEdit" className="text-right">Expiry Date</Label>
                     <Controller name="expiryDate" control={form.control} render={({ field }) => {
-                        const dateForDisplay = field.value ? safeToDate(field.value) : null;
-                        const dateForCalendar = safeToDate(field.value) ?? undefined;
+                        const dateForPicker = safeToDate(field.value) ?? undefined; // Ensures undefined for null/undefined
                         return ( 
                         <Popover> 
                             <PopoverTrigger asChild> 
-                                <Button variant={"outline"} className={cn( "col-span-3 justify-start text-left font-normal h-10", !dateForDisplay && "text-muted-foreground" )} disabled={isSaving} > 
+                                <Button variant={"outline"} className={cn( "col-span-3 justify-start text-left font-normal h-10", !field.value && "text-muted-foreground" )} disabled={isSaving} > 
                                     <CalendarIcon className="mr-2 h-4 w-4" /> 
-                                    {dateForDisplay ? format(dateForDisplay, "PPP") : <span>Optional: Pick a date</span>}
+                                    {dateForPicker ? format(dateForPicker, "PPP") : <span>Optional: Pick a date</span>}
                                 </Button> 
                             </PopoverTrigger> 
                             <PopoverContent className="w-auto p-0"> 
-                                <Calendar mode="single" selected={dateForCalendar ?? undefined} onSelect={(date) => field.onChange(date || null)} initialFocus disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))}/> 
+                                <Calendar mode="single" selected={dateForPicker} onSelect={(date) => field.onChange(date || null)} initialFocus disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))}/> 
                             </PopoverContent> 
                         </Popover> 
                         );
@@ -620,10 +600,35 @@ function AdminCouponsPageContent() {
                     </div>
                 </div>
                 {form.formState.errors.code && form.formState.errors.code.type === 'refine' && ( <Alert variant="destructive" className="col-span-4"> <AlertCircle className="h-4 w-4" /> <AlertTitle>Input Required</AlertTitle> <AlertDescription>{form.formState.errors.code.message}</AlertDescription> </Alert> )}
-                <DialogFooter> <DialogClose asChild> <Button type="button" variant="outline" disabled={isSaving}> Cancel </Button> </DialogClose> <Button type="submit" disabled={isSaving || loadingStores}> {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} {editingCoupon ? 'Save Changes' : 'Add Coupon'} </Button> </DialogFooter>
+                <DialogFooter> <DialogClose asChild> <Button type="button" variant="outline" disabled={isSaving}> Cancel </Button> </DialogClose> <Button type="submit" disabled={isSaving || loadingStoresForDialog}> {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} {editingCoupon ? 'Save Changes' : 'Add Coupon'} </Button> </DialogFooter>
             </form>
             </DialogContent>
         </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete the coupon
+                    "{couponToDelete?.description || 'this coupon'}".
+                </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => { setIsDeleteDialogOpen(false); setCouponToDelete(null); }}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                    onClick={handleDeleteCoupon}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    disabled={deletingCouponIdInternal === couponToDelete?.id}
+                >
+                    {deletingCouponIdInternal === couponToDelete?.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                    Delete
+                </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
         </div>
   );
 }
@@ -636,6 +641,5 @@ export default function AdminCouponsPage() {
       </AdminGuard>
     );
 }
-
 
     
