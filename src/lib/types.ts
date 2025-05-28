@@ -43,7 +43,7 @@ export interface Transaction {
   orderId?: string | null;
   productDetails?: string | null;
   transactionDate: Date | Timestamp;
-  reportedDate?: Date | Timestamp;
+  reportedDate?: Date | Timestamp | null; // <-- Allow null here
   saleAmount: number;
   cashbackRateApplied?: string | null;
   initialCashbackAmount: number;
@@ -77,27 +77,27 @@ export interface Click {
   clickedCashbackDisplay?: string | null;
   clickedCashbackRateValue?: number | null;
   clickedCashbackType?: CashbackType | null;
-  // New field to link to conversion
-  conversionId?: string | null;
-  hasConversion?: boolean; // Derived field for UI indication
+  conversionId?: string | null; // Link to a conversion if one occurs
+  hasConversion?: boolean; // Derived or set when conversion happens
 }
 
 export interface Conversion {
   id?: string; // Firestore document ID
-  clickId: string;
-  originalClickFirebaseId?: string | null;
-  userId: string | null;
-  storeId: string | null;
-  storeName?: string | null;
+  clickId: string; // The click_id from the postback, should match a Click.clickId
+  originalClickFirebaseId?: string | null; // The Firestore document ID of the matched click from /clicks collection
+  userId: string | null; // Denormalized from the click for easier querying/rules
+  storeId: string | null; // Denormalized from the click
+  storeName?: string | null; // Denormalized from the click or postback
   orderId: string;
   saleAmount: number;
   currency?: string;
-  commissionAmount?: number | null;
-  status: 'received' | 'processed' | 'error' | 'unmatched_click';
-  timestamp: Date | Timestamp;
-  postbackData?: Record<string, any>;
-  processingError?: string | null;
+  commissionAmount?: number | null; // If your network provides this
+  status: 'received' | 'processed' | 'error' | 'unmatched_click'; // Status of this conversion record processing
+  timestamp: Date | Timestamp; // When the conversion was recorded in your system
+  postbackData?: Record<string, any>; // Store the raw postback
+  processingError?: string | null; // If there was an error processing this conversion
 }
+
 
 export type CashbackType = 'percentage' | 'fixed';
 export type PayoutMethod = 'paypal' | 'bank_transfer' | 'gift_card';
@@ -110,20 +110,20 @@ export interface Store {
   logoUrl: string | null;
   heroImageUrl?: string | null;
   affiliateLink: string;
-  cashbackRate: string;
-  cashbackRateValue: number;
-  cashbackType: CashbackType;
+  cashbackRate: string; // Display string, e.g., "Up to 5%" or "Flat ₹50"
+  cashbackRateValue: number; // Numerical value for calculation
+  cashbackType: CashbackType; // 'percentage' or 'fixed'
   description: string;
   detailedDescription?: string | null;
-  categories: string[];
+  categories: string[]; // Array of category slugs or IDs
   rating?: number | null;
   ratingCount?: number | null;
-  cashbackTrackingTime?: string | null;
-  cashbackConfirmationTime?: string | null;
+  cashbackTrackingTime?: string | null; // e.g., "24-48 Hours"
+  cashbackConfirmationTime?: string | null; // e.g., "60-90 Days"
   cashbackOnAppOrders?: boolean | null;
   detailedCashbackRatesLink?: string | null;
-  topOffersText?: string | null;
-  offerDetailsLink?: string | null;
+  topOffersText?: string | null; // Bullet points or short desc of top offers
+  offerDetailsLink?: string | null; // Link to a page with more offer details
   terms?: string | null;
   isFeatured: boolean;
   isActive: boolean;
@@ -136,14 +136,14 @@ export interface Store {
 export interface Coupon {
   id: string;
   storeId: string;
-  store?: Store;
+  store?: Store; // Optional: denormalized or joined store data
   code: string | null;
   description: string;
   link: string | null;
   expiryDate: Date | Timestamp | null;
   isFeatured: boolean;
   isActive: boolean;
-  // isTodaysDeal?: boolean; // Removed as per later correction
+  // isTodaysDeal?: boolean; // Moved to Store
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
@@ -178,23 +178,24 @@ export interface Banner {
 export interface Product {
   id: string;
   storeId: string;
-  storeName?: string;
+  storeName?: string; // Denormalized for convenience
   name: string;
   description?: string | null;
   imageUrl: string | null;
   affiliateLink: string;
   price?: number | null;
-  priceDisplay?: string | null;
-  category?: string | null;
+  priceDisplay?: string | null; // e.g., "₹1,999" or "On Sale"
+  category?: string | null; // Category slug or ID
   brand?: string | null;
   sku?: string | null;
   isActive: boolean;
   isFeatured?: boolean;
-  isTodaysPick?: boolean;
+  isTodaysPick?: boolean; // For homepage "Today's Picks" section
   dataAiHint?: string | null;
-  productSpecificCashbackDisplay?: string | null;
-  productSpecificCashbackRateValue?: number | null;
-  productSpecificCashbackType?: CashbackType | null;
+  // Product-specific cashback details (override store-level if present)
+  productSpecificCashbackDisplay?: string | null; // E.g., "Flat ₹100 Cashback" or "15% Cashback"
+  productSpecificCashbackRateValue?: number | null; // Numerical value
+  productSpecificCashbackType?: CashbackType | null; // 'percentage' or 'fixed'
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
@@ -208,17 +209,21 @@ export interface PayoutRequest {
   processedAt?: Date | Timestamp | null;
   paymentMethod: PayoutMethod;
   paymentDetails: PayoutDetails;
-  transactionIds: string[];
+  transactionIds: string[]; // IDs of Transaction documents covered by this payout
   adminNotes?: string | null;
   failureReason?: string | null;
 }
 
-// Form values
+// Form values (ensure they align with what react-hook-form will provide)
 export interface StoreFormValues extends Omit<Store, 'id' | 'createdAt' | 'updatedAt'> {}
-export interface CouponFormValues extends Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'store'> {}
+
+export interface CouponFormValues extends Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'store' | 'expiryDate'> {
+  expiryDate?: Date | null; // Form deals with JS Date or null/undefined
+}
 export interface BannerFormValues extends Omit<Banner, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface CategoryFormValues extends Omit<Category, 'id' | 'createdAt' | 'updatedAt'> {}
 export interface ProductFormValues extends Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'storeName'> {}
-export interface TransactionFormValues extends Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'confirmationDate' | 'paidDate' | 'payoutId' | 'reportedDate' | 'currency' | 'finalSaleAmount' | 'finalCashbackAmount'> {
+
+export interface TransactionFormValues extends Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'confirmationDate' | 'paidDate' | 'payoutId' | 'reportedDate' | 'currency' | 'finalSaleAmount' | 'finalCashbackAmount' | 'transactionDate'> {
   transactionDate: Date; // Expect Date object from form
 }
