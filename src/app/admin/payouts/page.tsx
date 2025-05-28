@@ -17,15 +17,15 @@ import {
   type QueryConstraint,
   type DocumentData,
   type QueryDocumentSnapshot,
-  Timestamp, // Changed from 'type Timestamp'
+  Timestamp, // Keep as value import
   runTransaction,
   writeBatch,
-  type CollectionReference,
-  type Query,
-  type FirestoreDataConverter,
-  type WithFieldValue,
-  type SnapshotOptions,
-  increment // Added increment for user balance updates
+  type CollectionReference, // Keep type import
+  type Query, // Keep type import
+  type FirestoreDataConverter, // Keep type import
+  type WithFieldValue, // Keep type import
+  type SnapshotOptions, // Keep type import
+  increment
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { PayoutRequest, PayoutStatus, UserProfile, Transaction, CashbackStatus, PayoutMethod } from '@/lib/types';
@@ -43,7 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label'; // Import Label
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertCircle, Loader2, Search, CheckCircle, XCircle, Hourglass, Send, Info, IndianRupee, ListFilter, User as UserIconLucide } from 'lucide-react';
@@ -67,19 +67,24 @@ interface PayoutRequestWithUser extends PayoutRequest {
 // Firestore data converter for the Transaction type
 const transactionConverter: FirestoreDataConverter<Transaction> = {
   toFirestore(transaction: WithFieldValue<Transaction>): DocumentData {
-    // Convert Dates back to Timestamps if necessary for writing
     const data: any = { ...transaction };
     if (transaction.transactionDate instanceof Date) {
       data.transactionDate = Timestamp.fromDate(transaction.transactionDate);
     }
     if (transaction.confirmationDate instanceof Date) {
       data.confirmationDate = Timestamp.fromDate(transaction.confirmationDate);
+    } else if (transaction.confirmationDate === null) {
+      data.confirmationDate = null;
     }
     if (transaction.paidDate instanceof Date) {
       data.paidDate = Timestamp.fromDate(transaction.paidDate);
+    } else if (transaction.paidDate === null) {
+      data.paidDate = null;
     }
     if (transaction.reportedDate instanceof Date) {
       data.reportedDate = Timestamp.fromDate(transaction.reportedDate);
+    } else if (transaction.reportedDate === null) {
+        data.reportedDate = null;
     }
     if (transaction.createdAt instanceof Date) {
       data.createdAt = Timestamp.fromDate(transaction.createdAt);
@@ -90,7 +95,7 @@ const transactionConverter: FirestoreDataConverter<Transaction> = {
     return data;
   },
   fromFirestore(snapshot: QueryDocumentSnapshot, options: SnapshotOptions): Transaction {
-    const data = snapshot.data(options);
+    const data = snapshot.data(options)!; // Added '!' for non-null assertion
     return {
       id: snapshot.id,
       userId: data.userId,
@@ -101,7 +106,7 @@ const transactionConverter: FirestoreDataConverter<Transaction> = {
       conversionId: data.conversionId,
       productDetails: data.productDetails,
       transactionDate: safeToDate(data.transactionDate) || new Date(0),
-      reportedDate: safeToDate(data.reportedDate),
+      reportedDate: safeToDate(data.reportedDate) || null,
       saleAmount: data.saleAmount,
       cashbackRateApplied: data.cashbackRateApplied,
       initialCashbackAmount: data.initialCashbackAmount,
@@ -120,7 +125,6 @@ const transactionConverter: FirestoreDataConverter<Transaction> = {
     };
   }
 };
-
 
 const getStatusVariant = (status: PayoutStatus): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
@@ -229,7 +233,7 @@ function AdminPayoutsPageContent() {
 
     const newUsers: Record<string, Pick<UserProfile, 'displayName' | 'email'>> = {};
     try {
-        for (let i = 0; i < userIdsToFetch.length; i += 30) { // Firestore 'in' query limit for document IDs is 30
+        for (let i = 0; i < userIdsToFetch.length; i += 30) { 
             const chunk = userIdsToFetch.slice(i, i + 30);
             if (chunk.length === 0) continue;
             const usersQuery = query(collection(firestoreDb, 'users'), where('__name__', 'in', chunk));
@@ -250,7 +254,7 @@ function AdminPayoutsPageContent() {
         userDisplayName: newUsers[payout.userId]?.displayName || userCache[payout.userId]?.displayName || payout.userId,
         userEmail: newUsers[payout.userId]?.email || userCache[payout.userId]?.email || 'N/A',
     }));
-  }, [userCache]); // Removed setPageError from dependencies as it can cause loops
+  }, [userCache]); 
 
 
   const fetchPayouts = React.useCallback(async (
@@ -335,7 +339,7 @@ function AdminPayoutsPageContent() {
         return;
     }
     if (!adminUser && !adminAuthLoading) {
-        setPageLoading(false); // AdminGuard will handle redirect
+        setPageLoading(false); 
         return;
     }
     if(adminUser) fetchPayouts(false, null);
@@ -396,8 +400,7 @@ function AdminPayoutsPageContent() {
         if (!userDocSnap.exists()) throw new Error(`User profile ${selectedPayout.userId} not found.`);
 
         const currentPayoutData = payoutDocSnap.data() as PayoutRequest;
-        // const currentUserData = userDocSnap.data() as UserProfile;
-
+        
         const payoutUpdateData: any = {
             status: newPayoutStatus,
             adminNotes: adminNotes.trim() || null,
@@ -407,16 +410,19 @@ function AdminPayoutsPageContent() {
         };
 
         const userProfileUpdates: { [key: string]: any } = { updatedAt: serverTimestamp() };
-        const linkedTransactionIds: string[] = currentPayoutData.transactionIds || [];
+        let transactionsToUpdateBatch = writeBatch(firestoreDb);
+        let linkedTransactionIds: string[] = currentPayoutData.transactionIds || [];
 
         if (newPayoutStatus === 'paid' && originalStatus !== 'paid') {
             console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Processing 'paid' status for payout ${selectedPayout.id}.`);
             
-            if (linkedTransactionIds.length === 0) {
+            if (!linkedTransactionIds || linkedTransactionIds.length === 0) {
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} No pre-linked Tx IDs. Fetching 'confirmed' transactions for user ${selectedPayout.userId} to cover amount ${payoutAmount}.`);
-                const transactionsCollectionRef = collection(firestoreDb, 'transactions').withConverter(transactionConverter);
-                const transactionsQuery: Query<Transaction> = query(
-                    transactionsCollectionRef,
+                
+                // Use untyped collection reference for query inside transaction
+                const untypedTransactionsCollectionRef = collection(firestoreDb, 'transactions');
+                const transactionsQuery = query(
+                    untypedTransactionsCollectionRef,
                     where('userId', '==', selectedPayout.userId),
                     where('status', '==', 'confirmed' as CashbackStatus),
                     where('payoutId', '==', null),
@@ -429,7 +435,7 @@ function AdminPayoutsPageContent() {
                 const txIdsToUpdate: string[] = [];
 
                 for (const txDocSnap of confirmedUnpaidSnap.docs) {
-                    const txData = txDocSnap.data(); 
+                    const txData = txDocSnap.data() as Transaction; // Cast data to Transaction
                     const txCashbackAmount = txData.finalCashbackAmount ?? txData.initialCashbackAmount ?? 0;
                     if (txCashbackAmount > 0 && (sumOfSelectedTxs + txCashbackAmount) <= payoutAmount) {
                         sumOfSelectedTxs += txCashbackAmount;
@@ -438,43 +444,37 @@ function AdminPayoutsPageContent() {
                     if (sumOfSelectedTxs >= payoutAmount) break; 
                 }
                 
-                if (Math.abs(sumOfSelectedTxs - payoutAmount) > 0.01) { // Allow small discrepancy
+                if (Math.abs(sumOfSelectedTxs - payoutAmount) > 0.01) { 
                     console.error(`${ADMIN_PAYOUTS_LOG_PREFIX} Could not exactly match payout amount (₹${payoutAmount.toFixed(2)}) with available transactions (sum ₹${sumOfSelectedTxs.toFixed(2)}).`);
                     throw new Error("Could not precisely match payout amount with available transactions. Verify user's confirmed transactions.");
                 }
                 payoutUpdateData.transactionIds = txIdsToUpdate; 
+                linkedTransactionIds = txIdsToUpdate; // Update for batch write
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Will mark these Tx IDs as paid:`, txIdsToUpdate);
-                
-                for (const txId of txIdsToUpdate) {
-                    firestoreTransaction.update(doc(firestoreDb, 'transactions', txId).withConverter(transactionConverter), {
-                        status: 'paid' as CashbackStatus,
-                        paidDate: serverTimestamp(),
-                        updatedAt: serverTimestamp()
-                    });
-                }
-            } else { // If transactionIds were pre-linked (e.g., by user request flow)
-                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Using pre-linked Tx IDs for 'paid' status:`, linkedTransactionIds);
-                 for (const txId of linkedTransactionIds) {
-                    firestoreTransaction.update(doc(firestoreDb, 'transactions', txId).withConverter(transactionConverter), {
-                        status: 'paid' as CashbackStatus,
-                        paidDate: serverTimestamp(),
-                        updatedAt: serverTimestamp()
-                    });
-                }
             }
+             // Now, update the linked transactions (whether pre-linked or newly selected)
+             for (const txId of linkedTransactionIds) {
+                const txRef = doc(firestoreDb, 'transactions', txId);
+                transactionsToUpdateBatch.update(txRef, {
+                    status: 'paid' as CashbackStatus,
+                    payoutId: selectedPayout.id, // Link to this payout request
+                    paidDate: serverTimestamp(),
+                    updatedAt: serverTimestamp()
+                });
+            }
+
         } else if ((newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') && (originalStatus !== 'rejected' && originalStatus !== 'failed')) {
-          // This part handles refunding to user's balance if a payout request (that previously debited the balance) is rejected/failed.
           console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Payout ${selectedPayout.id} is ${newPayoutStatus}. Refunding amount ${payoutAmount} to user ${userDocSnap.id}.`);
           userProfileUpdates.cashbackBalance = increment(payoutAmount); 
           
-          // Revert status of linked transactions from 'awaiting_payout' back to 'confirmed'
-          if (linkedTransactionIds.length > 0 && (originalStatus === 'pending' || originalStatus === 'approved' || originalStatus === 'processing')) { 
+          if (linkedTransactionIds.length > 0 && (originalStatus === 'pending' || originalStatus === 'approved' || originalStatus === 'processing' || originalStatus === 'awaiting_payout')) { 
               console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Reverting status for transactions previously linked to this REJECTED/FAILED payout:`, linkedTransactionIds);
               for (const txId of linkedTransactionIds) {
-                firestoreTransaction.update(doc(firestoreDb, 'transactions', txId).withConverter(transactionConverter), {
+                const txRef = doc(firestoreDb, 'transactions', txId);
+                transactionsToUpdateBatch.update(txRef, {
                     status: 'confirmed' as CashbackStatus, 
-                    payoutId: null, // Clear payoutId
-                    paidDate: null, // Clear paidDate
+                    payoutId: null, 
+                    paidDate: null, 
                     updatedAt: serverTimestamp()
                 });
               }
@@ -485,7 +485,13 @@ function AdminPayoutsPageContent() {
         if (Object.keys(userProfileUpdates).length > 1 || (userProfileUpdates.cashbackBalance !== undefined)) { 
           firestoreTransaction.update(userRef, userProfileUpdates);
         }
-      }); // End of runTransaction
+        // Defer batch commit until after transaction succeeds
+      }); 
+      
+      // Commit batch write for transaction updates outside the main transaction
+      await transactionsToUpdateBatch.commit();
+      console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Batch update for transactions committed.`);
+
 
       if(isMountedRef.current){
         setPayouts(prev =>
