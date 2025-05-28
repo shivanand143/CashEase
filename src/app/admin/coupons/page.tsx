@@ -24,12 +24,13 @@ import {
   type QueryDocumentSnapshot,
   getDoc,
   Timestamp, // Ensure Timestamp is imported as a value
-  type FieldValue // Import FieldValue for serverTimestamp
+  type FieldValue, // Import FieldValue for serverTimestamp
+  type WithFieldValue // Import WithFieldValue
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Coupon, Store, CouponFormValues as AppCouponFormValues, CashbackType } from '@/lib/types'; // Renamed CouponFormValues
+import type { Coupon, Store, CouponFormValues as AppCouponFormValues, CashbackType } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -68,11 +69,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  // AlertDialogTrigger, // No longer directly used in JSX in this pattern
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
-import { cn, safeToDate } from '@/lib/utils'; // Make sure cn and safeToDate are imported
+import { cn, safeToDate } from '@/lib/utils';
 import { useDebounce } from '@/hooks/use-debounce';
 import { Switch } from '@/components/ui/switch';
 
@@ -87,7 +88,7 @@ const couponSchema = z.object({
   code: z.string().max(50, "Code too long").optional().nullable(),
   description: z.string().min(5, 'Description is too short').max(250, 'Description too long'),
   link: z.string().url('Invalid URL format').optional().or(z.literal('')).nullable(),
-  expiryDate: z.date().optional().nullable(), // Stays as JS Date from form
+  expiryDate: z.date().optional().nullable(),
   isFeatured: z.boolean().default(false),
   isActive: z.boolean().default(true),
 }).refine(data => data.code || data.link, {
@@ -240,16 +241,16 @@ export default function AdminCouponsPage() {
           code: data.code || null,
           description: data.description || '',
           link: data.link || null,
-          expiryDate: safeToDate(data.expiryDate as Timestamp | undefined) || null, // Ensure it's Date or null
+          expiryDate: safeToDate(data.expiryDate as Timestamp | undefined) || null,
           isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
           isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
-          createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0), // Default to epoch if null
-          updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0), // Default to epoch if null
+          createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0),
+          updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0),
           storeName: 'Loading...' 
         };
 
         try {
-          if (coupon.storeId && db) {
+          if (coupon.storeId && db) { // db check here too
             const storeDocRef = doc(db, 'stores', coupon.storeId);
             const storeSnap = await getDoc(storeDocRef);
             coupon.storeName = storeSnap.exists() ? storeSnap.data()?.name || 'Unknown Store' : 'Store Not Found';
@@ -343,8 +344,7 @@ export default function AdminCouponsPage() {
 
     const jsExpiryDateForSubmit = data.expiryDate ? safeToDate(data.expiryDate) : null;
 
-    // Data for Firestore (allows Timestamp)
-    const submissionData: Partial<Omit<Coupon, 'id' | 'createdAt' | 'store'>> & { updatedAt: FieldValue } = {
+    const submissionData: WithFieldValue<Partial<Omit<Coupon, 'id' | 'createdAt' | 'store'>>> = {
         storeId: data.storeId,
         code: data.code || null,
         description: data.description,
@@ -359,12 +359,11 @@ export default function AdminCouponsPage() {
         const couponDocRef = doc(db, 'coupons', editingCoupon.id);
         await updateDoc(couponDocRef, submissionData);
         
-        // Data for local state (uses JS Date)
          const updatedCoupon: CouponWithStoreName = {
              ...editingCoupon, 
-             ...data, // Spread form data which has JS Date for expiryDate
-             expiryDate: jsExpiryDateForSubmit, // Use the JS Date version for local state
-             updatedAt: new Date(), // Use current JS Date for local state
+             ...data, 
+             expiryDate: jsExpiryDateForSubmit, 
+             updatedAt: new Date(),
              storeName: storeListForDialog.find(s => s.id === data.storeId)?.name || editingCoupon.storeName || 'Unknown Store'
          };
          setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? updatedCoupon : c));
@@ -500,13 +499,13 @@ export default function AdminCouponsPage() {
                                     {updatingFieldId === coupon.id && <Loader2 className="h-4 w-4 animate-spin ml-2 inline-block" />}
                                 </TableCell>
                             <TableCell className="text-right">
-                                 <div className="flex gap-1 justify-end">
+                                <div className="flex gap-1 justify-end">
                                     <Button variant="outline" size="icon" onClick={() => openEditDialog(coupon)} className="h-8 w-8">
                                         <Edit className="h-4 w-4" />
                                         <span className="sr-only">Edit Coupon</span>
                                     </Button>
-                                    <Button variant="destructive" size="icon" onClick={() => handleOpenDeleteDialog(coupon)} className="h-8 w-8">
-                                        <Trash2 className="h-4 w-4" />
+                                    <Button variant="destructive" size="icon" onClick={() => handleOpenDeleteDialog(coupon)} disabled={deletingCouponIdInternal === coupon.id} className="h-8 w-8">
+                                        {deletingCouponIdInternal === coupon.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                                         <span className="sr-only">Delete Coupon</span>
                                     </Button>
                                 </div>
@@ -566,7 +565,7 @@ export default function AdminCouponsPage() {
                 <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="expiryDateEdit" className="text-right">Expiry Date</Label>
                      <Controller name="expiryDate" control={form.control} render={({ field }) => {
-                        const dateForPicker = field.value ? safeToDate(field.value) : null;
+                        const dateForPicker = safeToDate(field.value) ?? undefined; // Ensures undefined if null
                         return ( 
                         <Popover> 
                             <PopoverTrigger asChild> 
@@ -578,7 +577,7 @@ export default function AdminCouponsPage() {
                             <PopoverContent className="w-auto p-0"> 
                                 <Calendar 
                                     mode="single" 
-                                    selected={dateForPicker ?? undefined} 
+                                    selected={dateForPicker} 
                                     onSelect={(date) => field.onChange(date || null)} 
                                     initialFocus 
                                     disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))}
@@ -625,7 +624,7 @@ export default function AdminCouponsPage() {
                     <AlertDialogCancel onClick={() => { setIsDeleteDialogOpen(false); setCouponToDelete(null); }}>Cancel</AlertDialogCancel>
                     <AlertDialogAction
                         onClick={handleDeleteCoupon}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        className={cn(buttonVariants({ variant: "destructive" }))} // Use cn and buttonVariants
                         disabled={deletingCouponIdInternal === couponToDelete?.id}
                     >
                         {deletingCouponIdInternal === couponToDelete?.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
@@ -639,3 +638,5 @@ export default function AdminCouponsPage() {
     </AdminGuard>
   );
 }
+
+    
