@@ -19,16 +19,17 @@ import {
   deleteDoc,
   serverTimestamp,
   where,
-  QueryConstraint,
-  DocumentData,
-  QueryDocumentSnapshot,
+  type QueryConstraint,
+  type DocumentData,
+  type QueryDocumentSnapshot,
   getDoc,
-  Timestamp
+  Timestamp, // Ensure Timestamp is imported as a value
+  type FieldValue // Import FieldValue for serverTimestamp
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Coupon, Store, CouponFormValues as AppCouponFormValues, CashbackType } from '@/lib/types';
+import type { Coupon, Store, CouponFormValues as AppCouponFormValues, CashbackType } from '@/lib/types'; // Renamed CouponFormValues
 import { useToast } from '@/hooks/use-toast';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -45,7 +46,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; // Ensure Select is imported
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, ExternalLink, CalendarIcon, Star, BadgePercent } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -67,11 +68,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  // AlertDialogTrigger, // Removed from here, dialog controlled by state
+  // AlertDialogTrigger, // No longer directly used in JSX in this pattern
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
-import { cn, safeToDate } from '@/lib/utils';
+import { cn, safeToDate } from '@/lib/utils'; // Make sure cn and safeToDate are imported
 import { useDebounce } from '@/hooks/use-debounce';
 import { Switch } from '@/components/ui/switch';
 
@@ -86,7 +87,7 @@ const couponSchema = z.object({
   code: z.string().max(50, "Code too long").optional().nullable(),
   description: z.string().min(5, 'Description is too short').max(250, 'Description too long'),
   link: z.string().url('Invalid URL format').optional().or(z.literal('')).nullable(),
-  expiryDate: z.date().optional().nullable(),
+  expiryDate: z.date().optional().nullable(), // Stays as JS Date from form
   isFeatured: z.boolean().default(false),
   isActive: z.boolean().default(true),
 }).refine(data => data.code || data.link, {
@@ -175,7 +176,7 @@ export default function AdminCouponsPage() {
      }
      
      return () => { isMounted = false; };
-   }, [isEditDialogOpen, toast]); // Added toast to dependency array
+   }, [isEditDialogOpen, toast]);
 
   const form = useForm<AppCouponFormValues>({ 
     resolver: zodResolver(couponSchema),
@@ -239,11 +240,11 @@ export default function AdminCouponsPage() {
           code: data.code || null,
           description: data.description || '',
           link: data.link || null,
-          expiryDate: safeToDate(data.expiryDate as Timestamp | undefined),
+          expiryDate: safeToDate(data.expiryDate as Timestamp | undefined) || null, // Ensure it's Date or null
           isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
           isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
-          createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0),
-          updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0),
+          createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0), // Default to epoch if null
+          updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0), // Default to epoch if null
           storeName: 'Loading...' 
         };
 
@@ -342,10 +343,14 @@ export default function AdminCouponsPage() {
 
     const jsExpiryDateForSubmit = data.expiryDate ? safeToDate(data.expiryDate) : null;
 
-    const submissionData: Partial<AppCouponFormValues & {updatedAt: any}> = {
-        ...data,
+    // Data for Firestore (allows Timestamp)
+    const submissionData: Partial<Omit<Coupon, 'id' | 'createdAt' | 'store'>> & { updatedAt: FieldValue } = {
+        storeId: data.storeId,
         code: data.code || null,
+        description: data.description,
         link: data.link || null,
+        isFeatured: data.isFeatured,
+        isActive: data.isActive,
         expiryDate: jsExpiryDateForSubmit ? Timestamp.fromDate(jsExpiryDateForSubmit) : null,
         updatedAt: serverTimestamp()
     };
@@ -353,11 +358,13 @@ export default function AdminCouponsPage() {
     try {
         const couponDocRef = doc(db, 'coupons', editingCoupon.id);
         await updateDoc(couponDocRef, submissionData);
+        
+        // Data for local state (uses JS Date)
          const updatedCoupon: CouponWithStoreName = {
              ...editingCoupon, 
-             ...data, 
-             updatedAt: new Date(),
-             expiryDate: jsExpiryDateForSubmit, 
+             ...data, // Spread form data which has JS Date for expiryDate
+             expiryDate: jsExpiryDateForSubmit, // Use the JS Date version for local state
+             updatedAt: new Date(), // Use current JS Date for local state
              storeName: storeListForDialog.find(s => s.id === data.storeId)?.name || editingCoupon.storeName || 'Unknown Store'
          };
          setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? updatedCoupon : c));
@@ -493,7 +500,7 @@ export default function AdminCouponsPage() {
                                     {updatingFieldId === coupon.id && <Loader2 className="h-4 w-4 animate-spin ml-2 inline-block" />}
                                 </TableCell>
                             <TableCell className="text-right">
-                                <div className="flex gap-1 justify-end">
+                                 <div className="flex gap-1 justify-end">
                                     <Button variant="outline" size="icon" onClick={() => openEditDialog(coupon)} className="h-8 w-8">
                                         <Edit className="h-4 w-4" />
                                         <span className="sr-only">Edit Coupon</span>
@@ -569,7 +576,13 @@ export default function AdminCouponsPage() {
                                 </Button> 
                             </PopoverTrigger> 
                             <PopoverContent className="w-auto p-0"> 
-                                <Calendar mode="single" selected={dateForPicker ?? undefined} onSelect={(date) => field.onChange(date || null)} initialFocus disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))}/> 
+                                <Calendar 
+                                    mode="single" 
+                                    selected={dateForPicker ?? undefined} 
+                                    onSelect={(date) => field.onChange(date || null)} 
+                                    initialFocus 
+                                    disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))}
+                                /> 
                             </PopoverContent> 
                         </Popover> 
                         );
@@ -595,7 +608,10 @@ export default function AdminCouponsPage() {
             </DialogContent>
         </Dialog>
 
-        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={(isOpen) => {
+          if (!isOpen) setCouponToDelete(null);
+          setIsDeleteDialogOpen(isOpen);
+        }}>
             {couponToDelete && (
                 <AlertDialogContent>
                     <AlertDialogHeader>
@@ -623,5 +639,3 @@ export default function AdminCouponsPage() {
     </AdminGuard>
   );
 }
-
-    
