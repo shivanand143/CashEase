@@ -193,7 +193,7 @@ function AdminPayoutsPageContent() {
         userDisplayName: newUsers[payout.userId]?.displayName || userCache[payout.userId]?.displayName || payout.userId,
         userEmail: newUsers[payout.userId]?.email || userCache[payout.userId]?.email || 'N/A',
     }));
-  }, [userCache]);
+  }, [userCache, toast]); // Added toast to dependency array
 
 
   const fetchPayouts = React.useCallback(async (
@@ -338,35 +338,35 @@ function AdminPayoutsPageContent() {
         const payoutUpdateData: any = {
           status: newPayoutStatus,
           adminNotes: adminNotes.trim() || null,
-          processedAt: serverTimestamp(),
+          processedAt: serverTimestamp() as Timestamp,
           failureReason: (newPayoutStatus === 'failed' || newPayoutStatus === 'rejected') ? failureReason.trim() || null : null,
           updatedAt: serverTimestamp(),
         };
 
         const userProfileUpdates: { [key: string]: any } = { updatedAt: serverTimestamp() };
-        let transactionIdsToUpdateForPayout: string[] = currentPayoutData.transactionIds || [];
+        let linkedTransactionIds: string[] = currentPayoutData.transactionIds || [];
 
         if (newPayoutStatus === 'paid' && originalStatus !== 'paid') {
           console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Processing 'paid' status for payout ${selectedPayout.id}.`);
           
-          if (transactionIdsToUpdateForPayout.length === 0) { // If not pre-linked, find them now
+          if (linkedTransactionIds.length === 0) {
              console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} No pre-linked Tx IDs. Fetching 'confirmed' transactions for user ${selectedPayout.userId} to cover amount ${payoutAmount}.`);
              const transactionsCollectionRef = collection(firestoreDb, 'transactions') as CollectionReference<Transaction>;
-             const transactionsQuery = firestoreQuery(
+             const transactionsQuery: Query<Transaction> = firestoreQuery(
                  transactionsCollectionRef,
                  where('userId', '==', selectedPayout.userId),
                  where('status', '==', 'confirmed' as CashbackStatus),
                  where('payoutId', '==', null),
                  orderBy('transactionDate', 'asc')
              );
-             const confirmedUnpaidSnap = await firestoreTransaction.get<Transaction>(transactionsQuery);
+             const confirmedUnpaidSnap = await firestoreTransaction.get(transactionsQuery);
              console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Found ${confirmedUnpaidSnap.size} confirmed, unpaid transactions.`);
              
              let sumOfSelectedTxs = 0;
              const txIdsToMarkPaid: string[] = [];
 
              for (const txDocSnap of confirmedUnpaidSnap.docs) {
-                 const txData = txDocSnap.data(); // Already Transaction type
+                 const txData = txDocSnap.data() as Transaction; 
                  const txCashbackAmount = txData.finalCashbackAmount ?? txData.initialCashbackAmount ?? 0;
                  if ((sumOfSelectedTxs + txCashbackAmount) <= payoutAmount) {
                     sumOfSelectedTxs += txCashbackAmount;
@@ -375,51 +375,60 @@ function AdminPayoutsPageContent() {
                  if (sumOfSelectedTxs >= payoutAmount) break; 
              }
              
-             // Ensure the sum matches the payout amount requested
              if (Math.abs(sumOfSelectedTxs - payoutAmount) > 0.01) {
                 console.error(`${ADMIN_PAYOUTS_LOG_PREFIX} Sum of selected transactions (₹${sumOfSelectedTxs.toFixed(2)}) does not precisely match payout amount (₹${payoutAmount.toFixed(2)}) after selection. This indicates an issue with transaction availability or selection logic.`);
                 throw new Error("Could not match exact payout amount with available transactions. Verify user's confirmed transactions and payout amount.");
              }
-             transactionIdsToUpdateForPayout = txIdsToMarkPaid;
-             payoutUpdateData.transactionIds = transactionIdsToUpdateForPayout; 
-             console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Will mark these Tx IDs as paid:`, transactionIdsToUpdateForPayout);
+             linkedTransactionIds = txIdsToMarkPaid;
+             payoutUpdateData.transactionIds = linkedTransactionIds; 
+             console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Will mark these Tx IDs as paid:`, linkedTransactionIds);
           }
           
-          // Mark linked transactions as 'paid'
           const batchForTransactions = writeBatch(firestoreDb);
-          transactionIdsToUpdateForPayout.forEach(txId => {
+          linkedTransactionIds.forEach(txId => {
             batchForTransactions.update(doc(firestoreDb, 'transactions', txId), {
               status: 'paid' as CashbackStatus,
               paidDate: serverTimestamp(),
               updatedAt: serverTimestamp()
             });
           });
-          await batchForTransactions.commit(); // Commit this batch *outside* the main transaction if possible, or handle carefully.
-                                            // For simplicity here, we're doing it conceptually. Ideally, this writeBatch would be performed *after* the main transaction succeeds.
-                                            // Let's keep it inside the transaction for now, ensuring atomicity with payout status.
+          // This commit should ideally happen AFTER the main transaction if Firestore allowed nested writes.
+          // Since it doesn't, this batch needs to be committed separately.
+          // This introduces a small risk if the main transaction fails after this batch commits.
+          // For critical systems, a two-phase commit or a Cloud Function to handle this atomicity might be better.
+          // For now, we'll commit it here before the main transaction.update.
+          // Consider moving this commit *after* the transaction.update(payoutRef, payoutUpdateData) if it doesn't cause issues.
+          // However, the Firestore transaction object `firestoreTransaction` does not have a `commit` method.
+          // The batch operations MUST be performed outside the transaction or passed to transaction.set/update/delete.
+          // We will perform updates directly using firestoreTransaction.update within the loop.
+           for (const txId of linkedTransactionIds) {
+               firestoreTransaction.update(doc(firestoreDb, 'transactions', txId), {
+                 status: 'paid' as CashbackStatus,
+                 paidDate: serverTimestamp(),
+                 updatedAt: serverTimestamp()
+               });
+           }
 
-        } else if ((newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') && (originalStatus === 'pending' || originalStatus === 'approved' || originalStatus === 'processing')) {
+
+        } else if ((newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') && (originalStatus !== 'rejected' && originalStatus !== 'failed')) {
           console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Payout ${selectedPayout.id} is ${newPayoutStatus}. Refunding amount ${payoutAmount} to user ${userDocSnap.id}.`);
-          userProfileUpdates.cashbackBalance = increment(payoutAmount); // Refund the amount
+          userProfileUpdates.cashbackBalance = increment(payoutAmount); 
           
-          // Revert status of any 'awaiting_payout' transactions associated with THIS PayoutRequest
-          if (transactionIdsToUpdateForPayout.length > 0) {
-              console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Reverting status for transactions linked to this REJECTED/FAILED payout:`, transactionIdsToUpdateForPayout);
-              const batchForTxRevert = writeBatch(firestoreDb);
-              transactionIdsToUpdateForPayout.forEach(txId => {
-                batchForTxRevert.update(doc(firestoreDb, 'transactions', txId), {
-                    status: 'confirmed' as CashbackStatus, // Revert to confirmed
-                    payoutId: null, // Unlink
+          if (linkedTransactionIds.length > 0) {
+              console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Reverting status for transactions linked to this REJECTED/FAILED payout:`, linkedTransactionIds);
+              for (const txId of linkedTransactionIds) {
+                firestoreTransaction.update(doc(firestoreDb, 'transactions', txId), {
+                    status: 'confirmed' as CashbackStatus, 
+                    payoutId: null, 
                     updatedAt: serverTimestamp()
                 });
-              });
-              await batchForTxRevert.commit();
-              payoutUpdateData.transactionIds = []; // Clear linked IDs on the payout request
+              }
+              payoutUpdateData.transactionIds = []; 
           }
         }
 
         firestoreTransaction.update(payoutRef, payoutUpdateData);
-        if (Object.keys(userProfileUpdates).length > 1) { // Only update user if there are actual balance changes
+        if (Object.keys(userProfileUpdates).length > 1) { 
           firestoreTransaction.update(userRef, userProfileUpdates);
         }
       });
@@ -433,8 +442,8 @@ function AdminPayoutsPageContent() {
                 status: newPayoutStatus,
                 adminNotes: adminNotes.trim() || null,
                 failureReason: (newPayoutStatus === 'failed' || newPayoutStatus === 'rejected') ? failureReason.trim() || null : null,
-                processedAt: new Date(), // Reflect immediate change
-                transactionIds: (newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') ? [] : p.transactionIds,
+                processedAt: new Date(),
+                transactionIds: (newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') ? [] : p.transactionIds, // Keep or clear based on new status
               }
               : p
           )
