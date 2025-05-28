@@ -5,7 +5,7 @@
 import * as React from 'react';
 import {
   collection,
-  query as firestoreQuery, // Renamed to avoid conflict
+  query,
   orderBy,
   startAfter,
   limit,
@@ -19,12 +19,13 @@ import {
   type QueryDocumentSnapshot,
   type Timestamp,
   runTransaction,
-  getDoc,
   writeBatch,
-  increment,
-  type FieldValue,
-  type CollectionReference, // Added
-  type Query // Added
+  type CollectionReference,
+  type Query, // Added Query type
+  // For Converter
+  type FirestoreDataConverter,
+  type WithFieldValue,
+  type SnapshotOptions,
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { PayoutRequest, PayoutStatus, UserProfile, Transaction, CashbackStatus, PayoutMethod } from '@/lib/types';
@@ -42,7 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label'; // Import Label
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertCircle, Loader2, Search, CheckCircle, XCircle, Hourglass, Send, Info, IndianRupee, ListFilter } from 'lucide-react';
@@ -53,6 +54,7 @@ import AdminGuard from '@/components/guards/admin-guard';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { useDebounce } from '@/hooks/use-debounce';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { increment } from 'firebase/firestore';
 
 
 const PAYOUTS_PER_PAGE = 15;
@@ -87,42 +89,67 @@ const getStatusIcon = (status: PayoutStatus) => {
   }
 };
 
-function AdminPayoutsPageSkeleton() {
-   return (
-    <Card>
-      <CardHeader>
-         <Skeleton className="h-6 w-1/4 mb-2"/>
-         <Skeleton className="h-4 w-1/2"/>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto w-full">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {Array.from({ length: 8 }).map((_, index) => (
-                <TableHead key={index}  className="min-w-[120px]"><Skeleton className="h-5 w-full" /></TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {Array.from({ length: 10 }).map((_, rowIndex) => (
-              <TableRow key={rowIndex}>
-                {Array.from({ length: 8 }).map((_, colIndex) => (
-                  <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell>
-                ))}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+// Firestore data converter for the Transaction type
+const transactionConverter: FirestoreDataConverter<Transaction> = {
+  toFirestore(transaction: WithFieldValue<Transaction>): DocumentData {
+    // Convert Dates back to Timestamps if necessary for writing
+    const data: any = { ...transaction };
+    if (transaction.transactionDate instanceof Date) {
+      data.transactionDate = Timestamp.fromDate(transaction.transactionDate);
+    }
+    if (transaction.confirmationDate instanceof Date) {
+      data.confirmationDate = Timestamp.fromDate(transaction.confirmationDate);
+    }
+    if (transaction.paidDate instanceof Date) {
+      data.paidDate = Timestamp.fromDate(transaction.paidDate);
+    }
+    if (transaction.reportedDate instanceof Date) {
+      data.reportedDate = Timestamp.fromDate(transaction.reportedDate);
+    }
+    if (transaction.createdAt instanceof Date) {
+      data.createdAt = Timestamp.fromDate(transaction.createdAt);
+    }
+    if (transaction.updatedAt instanceof Date) {
+      data.updatedAt = Timestamp.fromDate(transaction.updatedAt);
+    }
+    return data;
+  },
+  fromFirestore(snapshot: QueryDocumentSnapshot, options: SnapshotOptions): Transaction {
+    const data = snapshot.data(options);
+    return {
+      id: snapshot.id,
+      userId: data.userId,
+      storeId: data.storeId,
+      storeName: data.storeName,
+      orderId: data.orderId,
+      clickId: data.clickId,
+      conversionId: data.conversionId,
+      productDetails: data.productDetails,
+      transactionDate: safeToDate(data.transactionDate) || new Date(0),
+      reportedDate: safeToDate(data.reportedDate),
+      saleAmount: data.saleAmount,
+      cashbackRateApplied: data.cashbackRateApplied,
+      initialCashbackAmount: data.initialCashbackAmount,
+      finalSaleAmount: data.finalSaleAmount,
+      finalCashbackAmount: data.finalCashbackAmount,
+      currency: data.currency,
+      status: data.status,
+      confirmationDate: safeToDate(data.confirmationDate),
+      rejectionReason: data.rejectionReason,
+      paidDate: safeToDate(data.paidDate),
+      payoutId: data.payoutId,
+      adminNotes: data.adminNotes,
+      notesToUser: data.notesToUser,
+      createdAt: safeToDate(data.createdAt) || new Date(0),
+      updatedAt: safeToDate(data.updatedAt) || new Date(0),
+    };
+  }
+};
+
 
 function AdminPayoutsPageContent() {
   const [payouts, setPayouts] = React.useState<PayoutRequestWithUser[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [pageLoading, setPageLoading] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = React.useState(true);
@@ -156,7 +183,9 @@ function AdminPayoutsPageContent() {
   const fetchUserDataForPayouts = React.useCallback(async (payoutRequests: PayoutRequest[]): Promise<PayoutRequestWithUser[]> => {
     if (!isMountedRef.current) return payoutRequests;
     if (!payoutRequests || payoutRequests.length === 0) return payoutRequests;
-    if (!db || firebaseInitializationError) {
+    
+    const firestoreDb = db; // Shadow db for type safety after check
+    if (!firestoreDb || firebaseInitializationError) {
         if(isMountedRef.current) setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchUserData."));
         return payoutRequests.map(p => ({ ...p, userDisplayName: p.userId, userEmail: 'N/A (DB Error)' }));
     }
@@ -175,7 +204,7 @@ function AdminPayoutsPageContent() {
         for (let i = 0; i < userIdsToFetch.length; i += 30) {
             const chunk = userIdsToFetch.slice(i, i + 30);
             if (chunk.length === 0) continue;
-            const usersQuery = firestoreQuery(collection(db, 'users'), where('__name__', 'in', chunk));
+            const usersQuery = query(collection(firestoreDb, 'users'), where('__name__', 'in', chunk));
             const userSnaps = await getDocs(usersQuery);
             userSnaps.forEach(docSnap => {
                 const data = docSnap.data();
@@ -193,7 +222,7 @@ function AdminPayoutsPageContent() {
         userDisplayName: newUsers[payout.userId]?.displayName || userCache[payout.userId]?.displayName || payout.userId,
         userEmail: newUsers[payout.userId]?.email || userCache[payout.userId]?.email || 'N/A',
     }));
-  }, [userCache, toast]); // Added toast to dependency array
+  }, [userCache]);
 
 
   const fetchPayouts = React.useCallback(async (
@@ -203,10 +232,11 @@ function AdminPayoutsPageContent() {
     if (!isMountedRef.current) return;
     console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Fetching payouts. LoadMore: ${loadMoreOperation}, Status: ${filterStatus}, Term: '${debouncedSearchTerm}'`);
     
-    if (!db || firebaseInitializationError) {
+    const firestoreDb = db; // Shadow db for type safety after check
+    if (!firestoreDb || firebaseInitializationError) {
       if(isMountedRef.current) {
         setPageError(firebaseInitializationError || "Database connection not available.");
-        if(!loadMoreOperation) setLoading(false); else setLoadingMore(false);
+        if(!loadMoreOperation) setPageLoading(false); else setLoadingMore(false);
         setHasMore(false);
       }
       return;
@@ -214,7 +244,7 @@ function AdminPayoutsPageContent() {
 
     if (!loadMoreOperation) {
       if(isMountedRef.current) {
-        setLoading(true); setPayouts([]); setLastVisible(null); setHasMore(true); setPageError(null);
+        setPageLoading(true); setPayouts([]); setLastVisible(null); setHasMore(true); setPageError(null);
       }
     } else {
       if (!docToStartAfter && loadMoreOperation) { if(isMountedRef.current) setLoadingMore(false); return; }
@@ -223,7 +253,7 @@ function AdminPayoutsPageContent() {
     if(isMountedRef.current) setIsSearching(debouncedSearchTerm !== '');
 
     try {
-      const payoutsCollectionRef = collection(db, 'payoutRequests');
+      const payoutsCollectionRef = collection(firestoreDb, 'payoutRequests');
       const constraints: QueryConstraint[] = [];
 
       if (filterStatus !== 'all') {
@@ -239,7 +269,7 @@ function AdminPayoutsPageContent() {
       }
       constraints.push(limit(PAYOUTS_PER_PAGE));
 
-      const q = firestoreQuery(payoutsCollectionRef, ...constraints);
+      const q = query(payoutsCollectionRef, ...constraints);
       const querySnapshot = await getDocs(q);
       
       const rawPayoutsData = querySnapshot.docs.map(docSnap => ({
@@ -267,7 +297,7 @@ function AdminPayoutsPageContent() {
       }
     } finally {
       if(isMountedRef.current){
-        if (!loadMoreOperation) setLoading(false); else setLoadingMore(false);
+        if (!loadMoreOperation) setPageLoading(false); else setLoadingMore(false);
         setIsSearching(false);
       }
     }
@@ -301,12 +331,12 @@ function AdminPayoutsPageContent() {
       toast({ variant: "destructive", title: "Error", description: "No payout selected." });
       return;
     }
-    if (!db || firebaseInitializationError) {
+    const firestoreDb = db; // Shadow db for type safety
+    if (!firestoreDb || firebaseInitializationError) {
       toast({ variant: "destructive", title: "Database Error", description: firebaseInitializationError || "Database not available." });
-      setIsUpdating(false); // Ensure this is reset on early exit
+      setIsUpdating(false); 
       return;
     }
-    const firestoreDb = db; // Use this non-null version after the check
 
     if ((updateStatus === 'rejected' || updateStatus === 'failed') && !failureReason.trim()) {
       toast({ variant: "destructive", title: "Input Required", description: "Reason is required for rejection or failure." });
@@ -344,15 +374,16 @@ function AdminPayoutsPageContent() {
         };
 
         const userProfileUpdates: { [key: string]: any } = { updatedAt: serverTimestamp() };
-        let linkedTransactionIds: string[] = currentPayoutData.transactionIds || [];
+        let transactionIdsToMarkPaid = currentPayoutData.transactionIds || [];
 
         if (newPayoutStatus === 'paid' && originalStatus !== 'paid') {
           console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Processing 'paid' status for payout ${selectedPayout.id}.`);
           
-          if (linkedTransactionIds.length === 0) {
+          if (transactionIdsToMarkPaid.length === 0) {
              console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} No pre-linked Tx IDs. Fetching 'confirmed' transactions for user ${selectedPayout.userId} to cover amount ${payoutAmount}.`);
-             const transactionsCollectionRef = collection(firestoreDb, 'transactions') as CollectionReference<Transaction>;
-             const transactionsQuery: Query<Transaction> = firestoreQuery(
+             
+             const transactionsCollectionRef = collection(firestoreDb, 'transactions').withConverter(transactionConverter);
+             const transactionsQuery: Query<Transaction> = query(
                  transactionsCollectionRef,
                  where('userId', '==', selectedPayout.userId),
                  where('status', '==', 'confirmed' as CashbackStatus),
@@ -363,63 +394,45 @@ function AdminPayoutsPageContent() {
              console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Found ${confirmedUnpaidSnap.size} confirmed, unpaid transactions.`);
              
              let sumOfSelectedTxs = 0;
-             const txIdsToMarkPaid: string[] = [];
+             const txIdsToUpdate: string[] = [];
 
              for (const txDocSnap of confirmedUnpaidSnap.docs) {
-                 const txData = txDocSnap.data() as Transaction; 
+                 const txData = txDocSnap.data(); 
                  const txCashbackAmount = txData.finalCashbackAmount ?? txData.initialCashbackAmount ?? 0;
-                 if ((sumOfSelectedTxs + txCashbackAmount) <= payoutAmount) {
+                 if (txCashbackAmount > 0 && (sumOfSelectedTxs + txCashbackAmount) <= payoutAmount) {
                     sumOfSelectedTxs += txCashbackAmount;
-                    txIdsToMarkPaid.push(txDocSnap.id);
+                    txIdsToUpdate.push(txDocSnap.id);
                  }
                  if (sumOfSelectedTxs >= payoutAmount) break; 
              }
              
              if (Math.abs(sumOfSelectedTxs - payoutAmount) > 0.01) {
-                console.error(`${ADMIN_PAYOUTS_LOG_PREFIX} Sum of selected transactions (₹${sumOfSelectedTxs.toFixed(2)}) does not precisely match payout amount (₹${payoutAmount.toFixed(2)}) after selection. This indicates an issue with transaction availability or selection logic.`);
-                throw new Error("Could not match exact payout amount with available transactions. Verify user's confirmed transactions and payout amount.");
+                console.error(`${ADMIN_PAYOUTS_LOG_PREFIX} Could not exactly match payout amount (₹${payoutAmount.toFixed(2)}) with available transactions (sum ₹${sumOfSelectedTxs.toFixed(2)}).`);
+                throw new Error("Could not precisely match payout amount with available transactions. Verify user's confirmed transactions.");
              }
-             linkedTransactionIds = txIdsToMarkPaid;
-             payoutUpdateData.transactionIds = linkedTransactionIds; 
-             console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Will mark these Tx IDs as paid:`, linkedTransactionIds);
+             transactionIdsToMarkPaid = txIdsToUpdate;
+             payoutUpdateData.transactionIds = transactionIdsToMarkPaid; 
+             console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Will mark these Tx IDs as paid:`, transactionIdsToMarkPaid);
           }
           
-          const batchForTransactions = writeBatch(firestoreDb);
-          linkedTransactionIds.forEach(txId => {
-            batchForTransactions.update(doc(firestoreDb, 'transactions', txId), {
-              status: 'paid' as CashbackStatus,
-              paidDate: serverTimestamp(),
-              updatedAt: serverTimestamp()
-            });
-          });
-          // This commit should ideally happen AFTER the main transaction if Firestore allowed nested writes.
-          // Since it doesn't, this batch needs to be committed separately.
-          // This introduces a small risk if the main transaction fails after this batch commits.
-          // For critical systems, a two-phase commit or a Cloud Function to handle this atomicity might be better.
-          // For now, we'll commit it here before the main transaction.update.
-          // Consider moving this commit *after* the transaction.update(payoutRef, payoutUpdateData) if it doesn't cause issues.
-          // However, the Firestore transaction object `firestoreTransaction` does not have a `commit` method.
-          // The batch operations MUST be performed outside the transaction or passed to transaction.set/update/delete.
-          // We will perform updates directly using firestoreTransaction.update within the loop.
-           for (const txId of linkedTransactionIds) {
-               firestoreTransaction.update(doc(firestoreDb, 'transactions', txId), {
+           for (const txId of transactionIdsToMarkPaid) {
+               firestoreTransaction.update(doc(firestoreDb, 'transactions', txId).withConverter(transactionConverter), {
                  status: 'paid' as CashbackStatus,
                  paidDate: serverTimestamp(),
                  updatedAt: serverTimestamp()
                });
            }
-
-
         } else if ((newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') && (originalStatus !== 'rejected' && originalStatus !== 'failed')) {
           console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Payout ${selectedPayout.id} is ${newPayoutStatus}. Refunding amount ${payoutAmount} to user ${userDocSnap.id}.`);
           userProfileUpdates.cashbackBalance = increment(payoutAmount); 
           
-          if (linkedTransactionIds.length > 0) {
-              console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Reverting status for transactions linked to this REJECTED/FAILED payout:`, linkedTransactionIds);
-              for (const txId of linkedTransactionIds) {
-                firestoreTransaction.update(doc(firestoreDb, 'transactions', txId), {
+          if (transactionIdsToMarkPaid.length > 0) {
+              console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Reverting status for transactions previously linked to this REJECTED/FAILED payout:`, transactionIdsToMarkPaid);
+              for (const txId of transactionIdsToMarkPaid) {
+                firestoreTransaction.update(doc(firestoreDb, 'transactions', txId).withConverter(transactionConverter), {
                     status: 'confirmed' as CashbackStatus, 
                     payoutId: null, 
+                    paidDate: null,
                     updatedAt: serverTimestamp()
                 });
               }
@@ -428,7 +441,7 @@ function AdminPayoutsPageContent() {
         }
 
         firestoreTransaction.update(payoutRef, payoutUpdateData);
-        if (Object.keys(userProfileUpdates).length > 1) { 
+        if (Object.keys(userProfileUpdates).length > 1 || (userProfileUpdates.cashbackBalance !== undefined)) { 
           firestoreTransaction.update(userRef, userProfileUpdates);
         }
       });
@@ -443,7 +456,7 @@ function AdminPayoutsPageContent() {
                 adminNotes: adminNotes.trim() || null,
                 failureReason: (newPayoutStatus === 'failed' || newPayoutStatus === 'rejected') ? failureReason.trim() || null : null,
                 processedAt: new Date(),
-                transactionIds: (newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') ? [] : p.transactionIds, // Keep or clear based on new status
+                transactionIds: (newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') ? [] : p.transactionIds,
               }
               : p
           )
@@ -465,8 +478,8 @@ function AdminPayoutsPageContent() {
     }
   };
 
-  if (loading && payouts.length === 0 && !pageError) {
-    return <AdminGuard><AdminPayoutsPageSkeleton /></AdminGuard>;
+  if (pageLoading && payouts.length === 0 && !pageError) {
+    return <AdminGuard><PayoutHistoryTableSkeleton /></AdminGuard>;
   }
 
   return (
@@ -511,11 +524,11 @@ function AdminPayoutsPageContent() {
                 placeholder="Search by User ID..."
                 value={searchTermInput}
                 onChange={(e) => setSearchTermInput(e.target.value)}
-                disabled={isSearching || loading}
+                disabled={isSearching || pageLoading}
                 className="h-10"
                 />
-                <Button type="submit" disabled={isSearching || loading} className="h-10">
-                {isSearching || (loading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                <Button type="submit" disabled={isSearching || pageLoading} className="h-10">
+                {isSearching || (pageLoading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 <span className="sr-only sm:not-sr-only sm:ml-2">Search</span>
                 </Button>
             </form>
@@ -528,9 +541,9 @@ function AdminPayoutsPageContent() {
           <CardDescription>Review and process user payout requests.</CardDescription>
         </CardHeader>
         <CardContent>
-           {loading && payouts.length === 0 && !pageError ? (
-             <AdminPayoutsPageSkeleton />
-           ) : !loading && payouts.length === 0 && !pageError ? (
+           {pageLoading && payouts.length === 0 && !pageError ? (
+             <PayoutHistoryTableSkeleton />
+           ) : !pageLoading && payouts.length === 0 && !pageError ? (
              <p className="text-center text-muted-foreground py-8">
                 {debouncedSearchTerm || filterStatus !== 'all' ? 'No payout requests found matching your criteria.' : 'No payout requests found.'}
              </p>
@@ -612,7 +625,7 @@ function AdminPayoutsPageContent() {
                 </Table>
              </div>
           )}
-           {hasMore && !loading && payouts.length > 0 && (
+           {hasMore && !pageLoading && payouts.length > 0 && (
             <div className="mt-6 text-center">
               <Button onClick={handleLoadMore} disabled={loadingMore}>
                 {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -641,7 +654,7 @@ function AdminPayoutsPageContent() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="approved">Approved (User Notified, Ready for Bank Txn)</SelectItem>
+                    <SelectItem value="approved">Approved (Ready for Bank Txn)</SelectItem>
                     <SelectItem value="processing">Processing Payment (Bank Txn Initiated)</SelectItem>
                     <SelectItem value="paid">Paid (Payment Confirmed & Transactions Updated)</SelectItem>
                     <SelectItem value="rejected">Rejected (Refund Balance to User)</SelectItem>
@@ -663,7 +676,7 @@ function AdminPayoutsPageContent() {
              {(updateStatus === 'failed' || updateStatus === 'rejected') && (
                  <div>
                      <Label htmlFor="failure-reason-dialog" className="text-sm font-medium mb-1 block">
-                        {updateStatus === 'failed' ? 'Failure Reason*' : 'Rejection Reason*'}
+                        {updateStatus === 'failed' ? 'Failure Reason*' : 'Rejection Reason*''}
                      </Label>
                      <Textarea
                          id="failure-reason-dialog"
@@ -698,3 +711,4 @@ function AdminPayoutsPageContent() {
 export default function AdminPayoutsPageWrapper() {
     return <AdminPayoutsPageContent />;
 }
+
