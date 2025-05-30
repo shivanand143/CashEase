@@ -17,10 +17,10 @@ import {
   DocumentData,
   QueryDocumentSnapshot,
   Timestamp,
-  Firestore
+  Firestore,
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Click, Conversion, UserProfile, Store } from '@/lib/types';
+import type { Click, Conversion, UserProfile, Store } from '@/lib/types'; // Ensure all types are imported
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,7 +41,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
 import { useDebounce } from '@/hooks/use-debounce';
-import { safeToDate, formatCurrency } from '@/lib/utils';
+import { formatCurrency, safeToDate } from '@/lib/utils';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 const ITEMS_PER_PAGE = 15;
@@ -101,74 +101,83 @@ export default function AdminClicksPage() {
   const debouncedSearchTerm = useDebounce(searchTermInput, 500);
   const [isSearching, setIsSearching] = React.useState(false);
 
-  const [userCache, setUserCache] = React.useState<Record<string, UserProfile>>({});
-  const [storeCache, setStoreCache] = React.useState<Record<string, Store>>({});
-  const [conversionCache, setConversionCache] = React.useState<Record<string, Conversion>>({});
-
   const fetchClickDetails = React.useCallback(async (clicksToEnrich: Click[]): Promise<CombinedClickData[]> => {
     console.log(`${ADMIN_CLICKS_LOG_PREFIX} fetchClickDetails called for ${clicksToEnrich.length} clicks.`);
-    if (!db || firebaseInitializationError) {
-      console.error(`${ADMIN_CLICKS_LOG_PREFIX} Firestore not available for fetching details.`);
-      setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchClickDetails."));
-      return clicksToEnrich.map(click => ({ click }));
-    }
-    const firestoreDb = db as Firestore;
-
+    
     const enrichedDataPromises = clicksToEnrich.map(async (click): Promise<CombinedClickData> => {
       let userProfile: UserProfile | null = null;
-      if (click.userId) {
-        userProfile = userCache[click.userId] || null;
-        if (!userProfile) {
-          try {
-            const userRef = doc(firestoreDb, 'users', click.userId);
-            const userSnap = await getDoc(userRef);
-            if (userSnap.exists()) {
-              userProfile = { uid: userSnap.id, ...userSnap.data() } as UserProfile;
-              setUserCache(prev => ({ ...prev, [click.userId!]: userProfile! }));
-            }
-          } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch user ${click.userId}`, e); }
-        }
-      }
-
-      let storeDataFromDetails: Store | null = null; // Renamed to avoid conflict with module 'Store'
-      if (click.storeId) {
-        storeDataFromDetails = storeCache[click.storeId] || null;
-        if (!storeDataFromDetails) {
-          try {
-            const storeRef = doc(firestoreDb, 'stores', click.storeId);
-            const storeSnap = await getDoc(storeRef);
-            if (storeSnap.exists()) {
-              storeDataFromDetails = { id: storeSnap.id, ...storeSnap.data() } as Store;
-              setStoreCache(prev => ({ ...prev, [click.storeId!]: storeDataFromDetails! }));
-            }
-          } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch store ${click.storeId}`, e); }
-        }
-      }
-
+      let storeDataFromDetails: Store | null = null;
       let conversion: Conversion | null = null;
-      if (click.clickId) { // Use click.clickId (the UUID) to find conversion
-        conversion = conversionCache[click.clickId] || null;
-        if (!conversion) {
-          try {
-            const convQuery = query(collection(firestoreDb, 'conversions'), where('clickId', '==', click.clickId), limit(1));
-            const convSnap = await getDocs(convQuery);
-            if (!convSnap.empty) {
-              const convData = convSnap.docs[0].data();
-              conversion = {
-                id: convSnap.docs[0].id,
-                ...convData,
-                timestamp: safeToDate(convData.timestamp as Timestamp | undefined) || new Date(0),
-              } as Conversion;
-              setConversionCache(prev => ({ ...prev, [click.clickId!]: conversion! }));
-            }
-          } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch conversion for click ${click.clickId}`, e); }
-        }
+
+      if (!db || firebaseInitializationError) {
+        console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Firestore not available for fetching details for click ${click.id}. Error: ${firebaseInitializationError}`);
+        return { click, user: null, conversion: null, store: null };
+      }
+      const firestoreDb = db as Firestore; // Type assertion after check
+
+      if (click.userId) {
+        try {
+          const userRef = doc(firestoreDb, 'users', click.userId);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            const data = userSnap.data();
+            userProfile = { 
+              uid: userSnap.id, ...data,
+              createdAt: data.createdAt as Timestamp, // Assuming these are Timestamps from Firestore
+              updatedAt: data.updatedAt as Timestamp,
+              lastPayoutRequestAt: data.lastPayoutRequestAt as Timestamp || null,
+            } as UserProfile;
+          }
+        } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch user ${click.userId}`, e); }
+      }
+
+      if (click.storeId) {
+        try {
+          const storeRef = doc(firestoreDb, 'stores', click.storeId);
+          const storeSnap = await getDoc(storeRef);
+          if (storeSnap.exists()) {
+            const data = storeSnap.data();
+            storeDataFromDetails = { 
+              id: storeSnap.id, ...data,
+              createdAt: data.createdAt as Timestamp,
+              updatedAt: data.updatedAt as Timestamp,
+            } as Store;
+          }
+        } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch store ${click.storeId}`, e); }
+      }
+
+      if (click.clickId) {
+        try {
+          const convQuery = query(collection(firestoreDb, 'conversions'), where('clickId', '==', click.clickId), limit(1));
+          const convSnap = await getDocs(convQuery);
+          if (!convSnap.empty) {
+            const convDoc = convSnap.docs[0];
+            const convData = convDoc.data();
+            conversion = {
+              id: convDoc.id,
+              clickId: convData.clickId, // Required
+              originalClickFirebaseId: convData.originalClickFirebaseId || null,
+              userId: convData.userId || null,
+              storeId: convData.storeId || null,
+              storeName: convData.storeName || null,
+              orderId: convData.orderId, // Required
+              saleAmount: typeof convData.saleAmount === 'number' ? convData.saleAmount : 0, // Required, default to 0 if not number
+              currency: convData.currency || 'INR',
+              commissionAmount: convData.commissionAmount || null,
+              status: (convData.status || 'unknown_status') as Conversion['status'], // Required, default & cast
+              timestamp: (convData.timestamp instanceof Timestamp ? convData.timestamp : Timestamp.fromDate(new Date(0))) as Timestamp, // Required, ensure Timestamp
+              postbackData: convData.postbackData || null,
+              processingError: convData.processingError || null,
+            };
+          }
+        } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch conversion for click ${click.clickId}`, e); }
       }
       return { click, user: userProfile, conversion, store: storeDataFromDetails };
     });
 
     return Promise.all(enrichedDataPromises);
-  }, [userCache, storeCache, conversionCache]);
+  }, []);
+
 
   const fetchTrackingData = React.useCallback(async (
     loadMoreOperation = false,
@@ -176,7 +185,7 @@ export default function AdminClicksPage() {
   ) => {
     console.log(`${ADMIN_CLICKS_LOG_PREFIX} fetchTrackingData: loadMore=${loadMoreOperation}, term='${debouncedSearchTerm}', filter='${filterType}'`);
     if (!db || firebaseInitializationError) {
-      setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchTrackingData."));
+      setPageError(firebaseInitializationError || "DB error in fetchTrackingData.");
       setPageLoading(false); setLoadingMore(false); setHasMore(false);
       return;
     }
@@ -196,14 +205,15 @@ export default function AdminClicksPage() {
       let constraints: QueryConstraint[] = [];
 
       if (debouncedSearchTerm.trim() && filterType !== 'all') {
-        if (filterType === 'clickId') { // Search by the UUID clickId field in the document
+        if (filterType === 'clickId') {
           constraints.push(where('clickId', '==', debouncedSearchTerm.trim()));
         } else if (filterType === 'orderId') {
-          const convQuery = query(collection(firestoreDb, 'conversions'), where('orderId', '==', debouncedSearchTerm.trim()), limit(1));
+          if (!db) { throw new Error("DB not available for orderId search"); }
+          const convQuery = query(collection(db, 'conversions'), where('orderId', '==', debouncedSearchTerm.trim()), limit(1));
           const convSnap = await getDocs(convQuery);
           if (!convSnap.empty) {
             const convData = convSnap.docs[0].data() as Conversion;
-            if (convData.clickId) constraints.push(where('clickId', '==', convData.clickId)); // Now query clicks by this clickId
+            if (convData.clickId) constraints.push(where('clickId', '==', convData.clickId));
             else { setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); return; }
           } else { setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); return; }
         } else if (filterType === 'userId' || filterType === 'storeId') {
@@ -219,11 +229,14 @@ export default function AdminClicksPage() {
       const clickQuerySnapshot = await getDocs(q);
       console.log(`${ADMIN_CLICKS_LOG_PREFIX} Firestore query executed, got ${clickQuerySnapshot.size} click docs.`);
 
-      const fetchedClicks = clickQuerySnapshot.docs.map(docSnap => ({
-        id: docSnap.id, ...docSnap.data(),
-        timestamp: safeToDate(docSnap.data().timestamp as Timestamp | undefined) || new Date(0),
-      } as Click));
-
+      const fetchedClicks = clickQuerySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id, ...data,
+          timestamp: data.timestamp as Timestamp, // Assume it's Timestamp from Firestore
+        } as Click;
+      });
+      
       const enrichedResults = await fetchClickDetails(fetchedClicks);
       console.log(`${ADMIN_CLICKS_LOG_PREFIX} Enriched ${enrichedResults.length} clicks.`);
 
@@ -258,11 +271,7 @@ export default function AdminClicksPage() {
   }, [debouncedSearchTerm, filterType, toast, fetchClickDetails]);
 
   React.useEffect(() => {
-    let isMounted = true;
-    if (isMounted) {
-        fetchTrackingData(false, null);
-    }
-    return () => { isMounted = false; };
+    fetchTrackingData(false, null);
   }, [filterType, debouncedSearchTerm, fetchTrackingData]);
 
 
@@ -345,11 +354,11 @@ export default function AdminClicksPage() {
               </p>
             ) : (
               <div className="overflow-x-auto">
-                <Table className="min-w-[1400px]"> {/* Increased min-width */}
+                <Table className="min-w-[1400px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="min-w-[180px]">User</TableHead>
-                      <TableHead className="min-w-[150px]">Click ID</TableHead>
+                      <TableHead className="min-w-[150px]">Click ID (Doc ID)</TableHead>
                       <TableHead className="min-w-[180px]">Item Clicked</TableHead>
                       <TableHead className="min-w-[150px]">Store</TableHead>
                       <TableHead className="min-w-[180px]">Clicked At</TableHead>
@@ -362,8 +371,9 @@ export default function AdminClicksPage() {
                   <TableBody>
                     {combinedData.map(({ click, user, conversion, store: storeFromDetails }) => {
                        const displayStoreName = click.storeName || storeFromDetails?.name || click.storeId || 'N/A';
-                       const clickTimestamp = safeToDate(click.timestamp);
-                       const conversionTimestamp = conversion ? safeToDate(conversion.timestamp) : null;
+                       const clickTimestampObject = click.timestamp; // This is already a Timestamp
+                       const conversionTimestampObject = conversion?.timestamp; // This is also a Timestamp
+
                        return (
                         <TableRow key={click.id}>
                             <TableCell>
@@ -389,6 +399,7 @@ export default function AdminClicksPage() {
                             </TableCell>
                             <TableCell>
                               <div className="font-mono text-xs truncate max-w-[120px]" title={click.clickId || undefined}>{click.clickId ? `${click.clickId}`: 'N/A'}</div>
+                              <div className="font-mono text-[10px] text-muted-foreground truncate max-w-[120px]" title={click.id || undefined}>Doc: {click.id}</div>
                             </TableCell>
                             <TableCell className="truncate max-w-[180px]" title={click.productId ? `Product: ${click.productName || click.productId}` : click.couponId ? `Coupon ID: ${click.couponId}` : 'Store Page Visit'}>
                               {click.productId ? <><ShoppingCart className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> {click.productName || click.productId}</> :
@@ -399,7 +410,7 @@ export default function AdminClicksPage() {
                               {displayStoreName}
                             </TableCell>
                             <TableCell className="whitespace-nowrap">
-                              {clickTimestamp ? format(clickTimestamp, 'PPp') : 'N/A'}
+                              {clickTimestampObject ? format(clickTimestampObject.toDate(), 'PPp') : 'N/A'}
                             </TableCell>
                             <TableCell>
                               {conversion ? (
@@ -416,7 +427,7 @@ export default function AdminClicksPage() {
                                     <div className="font-mono text-xs truncate max-w-[120px]" title={`Order ID: ${conversion.orderId}`}>OID: {conversion.orderId}</div>
                                     <div className="text-xs" title={`Sale: ${formatCurrency(conversion.saleAmount)}`}>Sale: {formatCurrency(conversion.saleAmount)}</div>
                                     <div className="text-[10px] text-muted-foreground mt-0.5">
-                                        {conversionTimestamp ? format(conversionTimestamp, 'Pp') : 'N/A'}
+                                        {conversionTimestampObject ? format(conversionTimestampObject.toDate(), 'Pp') : 'N/A'}
                                     </div>
                                   </div>
                               ) : (
