@@ -23,12 +23,12 @@ import {
   type DocumentData,
   type QueryDocumentSnapshot,
   getDoc,
-  Timestamp, // Ensure Timestamp is imported as a value
-  type FieldValue, // Import FieldValue for serverTimestamp
-  type WithFieldValue // Import WithFieldValue
+  Timestamp,
+  type FieldValue,
+  type WithFieldValue
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Coupon, Store, CouponFormValues as AppCouponFormValues, CashbackType } from '@/lib/types';
+import type { Coupon, Store, CouponFormValues as AppCouponFormValues } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
@@ -47,8 +47,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, ExternalLink, CalendarIcon, Star, BadgePercent } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; // Ensure Select components are imported
+import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, ExternalLink, CalendarIcon, Star, BadgePercent, MoreHorizontal } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -76,6 +76,15 @@ import { format } from 'date-fns';
 import { cn, safeToDate } from '@/lib/utils';
 import { useDebounce } from '@/hooks/use-debounce';
 import { Switch } from '@/components/ui/switch';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
 
 const COUPONS_PER_PAGE = 20;
 
@@ -117,7 +126,7 @@ function CouponsTableSkeleton() {
 
 export default function AdminCouponsPage() {
   const [coupons, setCoupons] = React.useState<CouponWithStoreName[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [pageLoading, setPageLoading] = React.useState(true); // Renamed for clarity
   const [error, setError] = React.useState<string | null>(null);
   const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = React.useState(true);
@@ -135,11 +144,19 @@ export default function AdminCouponsPage() {
   
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [couponToDelete, setCouponToDelete] = React.useState<CouponWithStoreName | null>(null);
-  const [deletingCouponIdInternal, setDeletingCouponIdInternal] = React.useState<string | null>(null);
+  const [deletingCouponIdInternal, setDeletingCouponIdInternal] = React.useState<string | null>(null); // Used for loading state on delete button
 
   const [updatingFieldId, setUpdatingFieldId] = React.useState<string | null>(null);
   const [loadingStoresForDialog, setLoadingStoresForDialog] = React.useState(false);
   const [storeListForDialog, setStoreListForDialog] = React.useState<{ id: string; name: string }[]>([]);
+
+  const form = useForm<AppCouponFormValues>({ 
+    resolver: zodResolver(couponSchema),
+    defaultValues: {
+      storeId: '', code: null, description: '', link: null, expiryDate: null, 
+      isFeatured: false, isActive: true,
+    },
+  });
 
    React.useEffect(() => {
      let isMounted = true;
@@ -179,18 +196,6 @@ export default function AdminCouponsPage() {
      return () => { isMounted = false; };
    }, [isEditDialogOpen, toast]);
 
-  const form = useForm<AppCouponFormValues>({ 
-    resolver: zodResolver(couponSchema),
-    defaultValues: {
-      storeId: '',
-      code: null,
-      description: '',
-      link: null,
-      expiryDate: null, 
-      isFeatured: false,
-      isActive: true,
-    },
-  });
 
   const fetchCoupons = React.useCallback(async (
     isLoadMoreOperation: boolean,
@@ -199,14 +204,14 @@ export default function AdminCouponsPage() {
   ) => {
     let isMounted = true;
     
-    if (!isLoadMoreOperation) setLoading(true); else setLoadingMore(true);
+    if (!isLoadMoreOperation) setPageLoading(true); else setLoadingMore(true);
     if (!isLoadMoreOperation) setError(null);
     setIsSearching(currentSearchTerm !== '');
 
     if (!db || firebaseInitializationError) {
       if(isMounted) {
         setError(firebaseInitializationError || "Database connection not available.");
-        if(!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+        if(!isLoadMoreOperation) setPageLoading(false); else setLoadingMore(false);
         setHasMore(false);
       }
       return () => { isMounted = false; };
@@ -241,16 +246,16 @@ export default function AdminCouponsPage() {
           code: data.code || null,
           description: data.description || '',
           link: data.link || null,
-          expiryDate: safeToDate(data.expiryDate as Timestamp | undefined) || null,
+          expiryDate: safeToDate(data.expiryDate as Timestamp | Date | undefined) || null,
           isFeatured: typeof data.isFeatured === 'boolean' ? data.isFeatured : false,
           isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
-          createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0),
-          updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0),
+          createdAt: safeToDate(data.createdAt as Timestamp | Date) || new Date(0),
+          updatedAt: safeToDate(data.updatedAt as Timestamp | Date) || new Date(0),
           storeName: 'Loading...' 
         };
 
         try {
-          if (coupon.storeId && db) { // db check here too
+          if (coupon.storeId && db) {
             const storeDocRef = doc(db, 'stores', coupon.storeId);
             const storeSnap = await getDoc(storeDocRef);
             coupon.storeName = storeSnap.exists() ? storeSnap.data()?.name || 'Unknown Store' : 'Store Not Found';
@@ -290,7 +295,7 @@ export default function AdminCouponsPage() {
       }
     } finally {
       if(isMounted){
-        if(!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+        if(!isLoadMoreOperation) setPageLoading(false); else setLoadingMore(false);
         setIsSearching(false);
       }
     }
@@ -317,7 +322,7 @@ export default function AdminCouponsPage() {
 
   const openEditDialog = (coupon: CouponWithStoreName) => {
     setEditingCoupon(coupon);
-    const expiryDateForForm = coupon.expiryDate ? safeToDate(coupon.expiryDate) : null;
+    const expiryDateForForm = coupon.expiryDate ? safeToDate(coupon.expiryDate as Timestamp | Date) : null;
     form.reset({
       storeId: coupon.storeId,
       code: coupon.code ?? null,
@@ -352,7 +357,7 @@ export default function AdminCouponsPage() {
         isFeatured: data.isFeatured,
         isActive: data.isActive,
         expiryDate: jsExpiryDateForSubmit ? Timestamp.fromDate(jsExpiryDateForSubmit) : null,
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp() as FieldValue
     };
 
     try {
@@ -415,7 +420,7 @@ export default function AdminCouponsPage() {
     }
   };
 
-  if (loading && coupons.length === 0 && !error) {
+  if (pageLoading && coupons.length === 0 && !error) {
     return (
       <AdminGuard>
         <CouponsTableSkeleton />
@@ -433,7 +438,7 @@ export default function AdminCouponsPage() {
             </Button>
         </div>
 
-        {error && !loading && (
+        {error && !pageLoading && (
             <Alert variant="destructive"> <AlertCircle className="h-4 w-4" /> <AlertTitle>Error</AlertTitle> <AlertDescription>{error}</AlertDescription> </Alert>
         )}
 
@@ -441,9 +446,9 @@ export default function AdminCouponsPage() {
             <CardHeader> <CardTitle>Filter & Search</CardTitle> <CardDescription>Search by coupon description.</CardDescription> </CardHeader>
             <CardContent className="flex flex-col sm:flex-row gap-4">
             <form onSubmit={handleSearch} className="flex-1 flex gap-2">
-                <Input type="search" placeholder="Search by Coupon Description..." value={searchTermInput} onChange={(e) => setSearchTermInput(e.target.value)} disabled={isSearching || loading} className="h-10 text-base"/>
-                <Button type="submit" disabled={isSearching || loading} className="h-10">
-                {isSearching || (loading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                <Input type="search" placeholder="Search by Coupon Description..." value={searchTermInput} onChange={(e) => setSearchTermInput(e.target.value)} disabled={isSearching || pageLoading} className="h-10 text-base"/>
+                <Button type="submit" disabled={isSearching || pageLoading} className="h-10">
+                {isSearching || (pageLoading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 <span className="sr-only sm:not-sr-only sm:ml-2">Search</span>
                 </Button>
             </form>
@@ -453,9 +458,9 @@ export default function AdminCouponsPage() {
         <Card>
             <CardHeader> <CardTitle>Coupon List</CardTitle> <CardDescription>View and manage coupons and promotional offers.</CardDescription> </CardHeader>
             <CardContent>
-            {loading && coupons.length === 0 && !error ? (
+            {pageLoading && coupons.length === 0 && !error ? (
                 <CouponsTableSkeleton />
-            ) : !loading && coupons.length === 0 && !error ? (
+            ) : !pageLoading && coupons.length === 0 && !error ? (
                 <p className="text-center text-muted-foreground py-8"> {debouncedSearchTerm ? `No coupons found matching "${debouncedSearchTerm}".` : "No coupons found."} </p>
             ) : (
                 <div className="overflow-x-auto w-full">
@@ -473,7 +478,7 @@ export default function AdminCouponsPage() {
                     </TableHeader>
                     <TableBody>
                     {coupons.map((coupon) => {
-                        const expiryDateForDisplay = coupon.expiryDate ? safeToDate(coupon.expiryDate) : null; 
+                        const expiryDateForDisplay = coupon.expiryDate ? safeToDate(coupon.expiryDate as Timestamp | Date) : null; 
                         const isExpired = expiryDateForDisplay ? expiryDateForDisplay < new Date(new Date().setHours(0,0,0,0)) : false;
                         return (
                             <TableRow key={coupon.id} className={!coupon.isActive || isExpired ? 'opacity-50 bg-muted/30' : ''}>
@@ -517,7 +522,7 @@ export default function AdminCouponsPage() {
                 </Table>
                 </div>
             )}
-            {hasMore && !loading && coupons.length > 0 && (
+            {hasMore && !pageLoading && coupons.length > 0 && (
                 <div className="mt-6 text-center"> <Button onClick={handleLoadMore} disabled={loadingMore}> {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Load More Coupons </Button> </div>
             )}
             {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
@@ -565,7 +570,7 @@ export default function AdminCouponsPage() {
                 <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="expiryDateEdit" className="text-right">Expiry Date</Label>
                      <Controller name="expiryDate" control={form.control} render={({ field }) => {
-                        const dateForPicker = safeToDate(field.value) ?? undefined; // Ensures undefined if null
+                        const dateForPicker = safeToDate(field.value) ?? undefined;
                         return ( 
                         <Popover> 
                             <PopoverTrigger asChild> 
@@ -624,7 +629,7 @@ export default function AdminCouponsPage() {
                     <AlertDialogCancel onClick={() => { setIsDeleteDialogOpen(false); setCouponToDelete(null); }}>Cancel</AlertDialogCancel>
                     <AlertDialogAction
                         onClick={handleDeleteCoupon}
-                        className={cn(buttonVariants({ variant: "destructive" }))} // Use cn and buttonVariants
+                        className={cn(buttonVariants({ variant: "destructive" }))}
                         disabled={deletingCouponIdInternal === couponToDelete?.id}
                     >
                         {deletingCouponIdInternal === couponToDelete?.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
@@ -638,5 +643,3 @@ export default function AdminCouponsPage() {
     </AdminGuard>
   );
 }
-
-    
