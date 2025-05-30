@@ -21,13 +21,17 @@ export function formatCurrency(amount: number | undefined | null): string {
 }
 
 // Helper function to safely convert Firestore Timestamps or JS Dates to JS Dates
+// This function is now LESS central, as we primarily work with Timestamps.
+// It's still useful for converting a Timestamp to a Date specifically for UI components
+// that require a JS Date object (like react-day-picker).
 export const safeToDate = (fieldValue: any): Date | null => {
   if (fieldValue instanceof Timestamp) {
     return fieldValue.toDate();
   }
-  if (fieldValue instanceof Date) {
+  if (fieldValue instanceof Date) { // If it's already a JS Date
     return fieldValue;
   }
+  // Attempt to parse if it's a string (less common for Firestore fields)
   if (typeof fieldValue === 'string') {
     try {
       const date = new Date(fieldValue);
@@ -36,7 +40,10 @@ export const safeToDate = (fieldValue: any): Date | null => {
       }
     } catch (e) { /* Ignore */ }
   }
+  // Handle Firestore's serverTimestamp() FieldValue during optimistic updates if data is read before committed.
+  // This case is rare for direct usage as FieldValue is a sentinel.
   if (typeof fieldValue === 'object' && fieldValue !== null && typeof (fieldValue as any).toDate === 'function') {
+    // This might catch Timestamps again, but also other objects with toDate, be cautious.
     try {
       return (fieldValue as any).toDate();
     } catch (e) { /* Ignore */ }
@@ -44,12 +51,12 @@ export const safeToDate = (fieldValue: any): Date | null => {
   return null;
 };
 
+
 export function isValidHttpUrl(string: string | undefined | null): boolean {
   if (!string) return false;
   let url;
   try {
-    // Basic sanity checks for common error strings or overly long strings
-    if (string.startsWith("Error:") || string.startsWith("Unhandled") || string.length > 2083) { // Max URL length
+    if (string.startsWith("Error:") || string.startsWith("Unhandled") || string.length > 2083) {
       console.warn("Invalid URL pattern detected in isValidHttpUrl:", string);
       return false;
     }
@@ -63,14 +70,13 @@ export function isValidHttpUrl(string: string | undefined | null): boolean {
 export const appendClickIdToUrl = (url: string, clickId: string, storeAffiliateLink?: string | null): string => {
   if (!url || !isValidHttpUrl(url)) {
     console.warn("ProductCard/CouponCard: Attempted to append click ID to an invalid URL:", url);
-    // Fallback to store's main affiliate link if product/coupon link is bad, then to '#'
     const fallbackUrl = (storeAffiliateLink && isValidHttpUrl(storeAffiliateLink)) ? storeAffiliateLink : '#';
     if (fallbackUrl === '#') return '#';
     try {
       const fallbackUrlObj = new URL(fallbackUrl);
-      fallbackUrlObj.searchParams.set('click_id', clickId); // Using 'click_id'
+      fallbackUrlObj.searchParams.set('click_id', clickId);
       fallbackUrlObj.searchParams.set('subid', clickId);
-      fallbackUrlObj.searchParams.set('aff_sub', clickId); // Common parameter for affiliate tracking
+      fallbackUrlObj.searchParams.set('aff_sub', clickId);
       return fallbackUrlObj.toString();
     } catch (e) {
         console.error("Error appending click ID to fallback URL:", fallbackUrl, e);
@@ -79,12 +85,12 @@ export const appendClickIdToUrl = (url: string, clickId: string, storeAffiliateL
   }
   try {
     const urlObj = new URL(url);
-    urlObj.searchParams.set('click_id', clickId); // Consistent parameter name
-    urlObj.searchParams.set('subid', clickId); // Common parameter
-    urlObj.searchParams.set('aff_sub', clickId); // Another common parameter
+    urlObj.searchParams.set('click_id', clickId);
+    urlObj.searchParams.set('subid', clickId);
+    urlObj.searchParams.set('aff_sub', clickId);
     return urlObj.toString();
   } catch (e) {
     console.warn("Error appending click ID to URL, returning original:", url, e);
-    return url; // Fallback to original URL if parsing/modification fails
+    return url;
   }
 };
