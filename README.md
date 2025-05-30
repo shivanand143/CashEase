@@ -1,4 +1,5 @@
 
+
 # MagicSaver - Cashback & Coupons (Rebuild)
 
 This is a Next.js application built with Firebase, ShadCN UI, and TypeScript. It aims to replicate core functionalities of a cashback and coupon platform.

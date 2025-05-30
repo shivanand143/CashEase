@@ -28,9 +28,10 @@ import {
   type FirestoreDataConverter, // Keep for potential future use or other parts if needed
   type WithFieldValue,         // For writing data with FieldValues
   type SnapshotOptions,
+  type Firestore,
 } from 'firebase/firestore';
-import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { PayoutRequest, PayoutStatus, UserProfile, Transaction, CashbackStatus, PayoutMethod, Store } from '@/lib/types'; // Ensure Store is imported
+import { db, firebaseInitializationError, auth as firebaseAuthService } from '@/lib/firebase/config';
+import type { PayoutRequest, PayoutStatus, UserProfile, Transaction, CashbackStatus, PayoutMethod, Store } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -148,6 +149,7 @@ function AdminPayoutsPageContent() {
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
 
   const [userCache, setUserCache] = React.useState<Record<string, Pick<UserProfile, 'displayName' | 'email'>>>({});
+  const [storeCache, setStoreCache] = React.useState<Record<string, Pick<Store, 'name'>>>({}); // Added storeCache
 
   const fetchUserDataForPayouts = React.useCallback(async (payoutRequests: PayoutRequest[]): Promise<PayoutRequestWithUserDetails[]> => {
     if (!db || firebaseInitializationError) {
@@ -167,7 +169,8 @@ function AdminPayoutsPageContent() {
 
     const newUsers: Record<string, Pick<UserProfile, 'displayName' | 'email'>> = {};
     try {
-      for (let i = 0; i < userIdsToFetch.length; i += 30) { // Firestore 'in' query limit is 30
+      // Fetch in chunks of 30 for Firestore 'in' query limit
+      for (let i = 0; i < userIdsToFetch.length; i += 30) {
         const chunk = userIdsToFetch.slice(i, i + 30);
         if (chunk.length === 0) continue;
         const usersQuery = query(collection(db, 'users'), where('__name__', 'in', chunk));
@@ -188,7 +191,7 @@ function AdminPayoutsPageContent() {
       userDisplayName: newUsers[payout.userId]?.displayName || userCache[payout.userId]?.displayName || payout.userId,
       userEmail: newUsers[payout.userId]?.email || userCache[payout.userId]?.email || 'N/A',
     }));
-  }, [userCache]);
+  }, [userCache]); // Removed toast as it's not directly used here
 
   const fetchPayouts = React.useCallback(async (
     loadMoreOperation = false,
@@ -200,6 +203,7 @@ function AdminPayoutsPageContent() {
       setHasMore(false);
       return;
     }
+    const firestoreDb = db; // Now db is confirmed to be Firestore
 
     if (!loadMoreOperation) {
       setPageLoading(true); setPayouts([]); setLastVisible(null); setHasMore(true); setPageError(null);
@@ -210,13 +214,14 @@ function AdminPayoutsPageContent() {
     setIsSearching(debouncedSearchTerm !== '');
 
     try {
-      const payoutsCollectionRef = collection(db, 'payoutRequests');
+      const payoutsCollectionRef = collection(firestoreDb, 'payoutRequests');
       const constraints: QueryConstraint[] = [];
 
       if (filterStatus !== 'all') {
         constraints.push(where('status', '==', filterStatus));
       }
       if (debouncedSearchTerm.trim()) {
+        // This assumes searchTerm is a userId. For other fields, adjust accordingly.
         constraints.push(where('userId', '==', debouncedSearchTerm.trim()));
       }
 
@@ -234,9 +239,9 @@ function AdminPayoutsPageContent() {
         return {
             id: docSnap.id,
             ...data,
-            requestedAt: data.requestedAt as Timestamp, // Assume it's always Timestamp
+            requestedAt: data.requestedAt as Timestamp,
             processedAt: data.processedAt ? data.processedAt as Timestamp : null,
-            updatedAt: data.updatedAt ? data.updatedAt as Timestamp : null,
+            updatedAt: data.updatedAt ? data.updatedAt as Timestamp : null, // Handle updatedAt
         } as PayoutRequest;
       });
       const payoutsWithUserData = await fetchUserDataForPayouts(rawPayoutsData);
@@ -258,17 +263,20 @@ function AdminPayoutsPageContent() {
   }, [filterStatus, debouncedSearchTerm, toast, fetchUserDataForPayouts]);
 
   React.useEffect(() => {
+    let isMounted = true;
     if (adminAuthLoading) {
       setPageLoading(true);
       return;
     }
     if (!adminUser && !adminAuthLoading) {
       setPageLoading(false); 
+      // AdminGuard should handle redirect
       return;
     }
-    if(adminUser) {
+    if(adminUser && isMounted) {
       fetchPayouts(false, null);
     }
+    return () => { isMounted = false; };
   }, [adminUser, adminAuthLoading, filterStatus, debouncedSearchTerm, fetchPayouts]);
 
   const handleSearch = (e: React.FormEvent) => e.preventDefault();
@@ -325,28 +333,28 @@ function AdminPayoutsPageContent() {
         if (!userDocSnap.exists()) throw new Error(`User profile ${selectedPayout.userId} not found.`);
 
         const currentPayoutData = payoutDocSnap.data() as PayoutRequest;
-        const currentUserData = userDocSnap.data() as UserProfile;
+        // const currentUserData = userDocSnap.data() as UserProfile;
         
         const payoutUpdateData: Partial<WithFieldValue<PayoutRequest>> = {
             status: newPayoutStatus,
             adminNotes: adminNotes.trim() || null,
-            processedAt: serverTimestamp(), 
+            processedAt: serverTimestamp(),
             failureReason: (newPayoutStatus === 'failed' || newPayoutStatus === 'rejected') ? failureReason.trim() || null : null,
             updatedAt: serverTimestamp(),
         };
 
         const userProfileUpdates: { [key: string]: any } = { updatedAt: serverTimestamp() };
-        let linkedTransactionIds: string[] = currentPayoutData.transactionIds || [];
+        let transactionIdsToFinalize: string[] = currentPayoutData.transactionIds || [];
 
         if (newPayoutStatus === 'paid' && originalStatus !== 'paid') {
             console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Processing 'paid' status for payout ${selectedPayout.id}.`);
             
-            if (!linkedTransactionIds || linkedTransactionIds.length === 0) {
+            if (!transactionIdsToFinalize || transactionIdsToFinalize.length === 0) {
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} No pre-linked Tx IDs. Fetching 'confirmed' transactions for user ${selectedPayout.userId} to cover amount ${payoutAmount}.`);
                 
                 const untypedTransactionsCollectionRef = collection(firestoreDb, 'transactions');
                 const transactionsQuery = query(
-                   untypedTransactionsCollectionRef, // Use untyped collection for query inside transaction
+                   untypedTransactionsCollectionRef,
                    where('userId', '==', selectedPayout.userId),
                    where('status', '==', 'confirmed' as CashbackStatus),
                    where('payoutId', '==', null), 
@@ -359,7 +367,7 @@ function AdminPayoutsPageContent() {
                 const collectedTxIds: string[] = [];
 
                 for (const txDocSnap of confirmedUnpaidSnap.docs) {
-                    const txData = txDocSnap.data() as Transaction; // Manually cast data
+                    const txData = txDocSnap.data() as Transaction;
                     const txCashbackAmount = txData.finalCashbackAmount ?? txData.initialCashbackAmount ?? 0;
                     if (txCashbackAmount > 0 && (sumOfSelectedTxs + txCashbackAmount) <= payoutAmount) {
                         sumOfSelectedTxs += txCashbackAmount;
@@ -368,20 +376,27 @@ function AdminPayoutsPageContent() {
                     if (sumOfSelectedTxs >= payoutAmount) break;
                 }
                 
+                sumOfSelectedTxs = parseFloat(sumOfSelectedTxs.toFixed(2));
                 if (Math.abs(sumOfSelectedTxs - payoutAmount) > 0.01 && collectedTxIds.length === 0 && payoutAmount > 0) {
                     console.warn(`${ADMIN_PAYOUTS_LOG_PREFIX} Could not find exact match or any transactions for payout amount ${payoutAmount} for payout ${selectedPayout.id}. Sum: ${sumOfSelectedTxs}. This might lead to issues.`);
+                    // Decide if to throw error or proceed with what was found if sumOfSelectedTxs > MIN_PAYOUT_AMOUNT
+                    // For now, let's assume we need exact or very close match, so we'll throw.
+                    throw new Error(`Could not gather enough confirmed transactions to match payout amount of ${formatCurrency(payoutAmount)}. Found ${formatCurrency(sumOfSelectedTxs)}.`);
                 } else {
                     console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Matched ${collectedTxIds.length} transactions summing to ₹${sumOfSelectedTxs.toFixed(2)} for payout amount ₹${payoutAmount.toFixed(2)}.`);
                 }
                 payoutUpdateData.transactionIds = collectedTxIds; 
-                linkedTransactionIds = collectedTxIds;
+                transactionIdsToFinalize = collectedTxIds; // Use these for the batch update
             }
+            // If transactionIdsToFinalize already existed (e.g., from user request logic), we use those.
         } else if ((newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') && 
                    (originalStatus === 'pending' || originalStatus === 'approved' || originalStatus === 'processing' || originalStatus === 'awaiting_payout')) {
+            // If payout is rejected/failed, and it was never 'paid', the user's balance was debited at request time.
+            // Now, we need to credit it back.
             console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Payout ${selectedPayout.id} is ${newPayoutStatus}. Refunding amount ${payoutAmount} to user ${userDocSnap.id}.`);
             userProfileUpdates.cashbackBalance = increment(payoutAmount); 
-            payoutUpdateData.transactionIds = []; // Clear linked transactions if payout is rejected/failed
-            linkedTransactionIds = []; 
+            payoutUpdateData.transactionIds = []; // Clear linked transactions
+            transactionIdsToFinalize = []; // No transactions to update status for if rejected
         }
 
         firestoreTransaction.update(payoutRef, payoutUpdateData);
@@ -394,9 +409,9 @@ function AdminPayoutsPageContent() {
       const postTransactionBatch = writeBatch(firestoreDb);
       let batchHasUpdates = false;
 
-      if (newPayoutStatus === 'paid' && linkedTransactionIds.length > 0) {
-        console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Batch updating ${linkedTransactionIds.length} transactions to 'paid' status.`);
-        for (const txId of linkedTransactionIds) {
+      if (newPayoutStatus === 'paid' && transactionIdsToFinalize.length > 0) {
+        console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Batch updating ${transactionIdsToFinalize.length} transactions to 'paid' status.`);
+        for (const txId of transactionIdsToFinalize) {
           const txRef = doc(firestoreDb, 'transactions', txId);
           postTransactionBatch.update(txRef, {
             status: 'paid' as CashbackStatus,
@@ -409,7 +424,9 @@ function AdminPayoutsPageContent() {
       } else if ((newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') && 
                  (originalStatus === 'awaiting_payout' || originalStatus === 'approved' || originalStatus === 'processing' || originalStatus === 'paid') && 
                  (currentPayoutData.transactionIds && currentPayoutData.transactionIds.length > 0)) {
-         console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Batch reverting ${currentPayoutData.transactionIds.length} transactions from '${originalStatus}' to 'confirmed'.`);
+         // If payout was rejected/failed AND it was previously in a state where transactions were 'awaiting_payout'
+         // then revert those transactions back to 'confirmed' and clear their payoutId.
+         console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Batch reverting ${currentPayoutData.transactionIds.length} transactions from status indicating payout link to 'confirmed'.`);
          for (const txId of currentPayoutData.transactionIds) {
             const txRef = doc(firestoreDb, 'transactions', txId);
             postTransactionBatch.update(txRef, {
@@ -436,7 +453,7 @@ function AdminPayoutsPageContent() {
               adminNotes: adminNotes.trim() || null,
               failureReason: (newPayoutStatus === 'failed' || newPayoutStatus === 'rejected') ? failureReason.trim() || null : null,
               processedAt: Timestamp.now(), 
-              transactionIds: linkedTransactionIds, 
+              transactionIds: transactionIdsToFinalize, 
               updatedAt: Timestamp.now(),
               }
               : p
@@ -445,7 +462,8 @@ function AdminPayoutsPageContent() {
       toast({ title: "Payout Updated", description: `Status set to ${newPayoutStatus}.` });
       setIsDialogOpen(false);
       setSelectedPayout(null);
-      await fetchUserDataForPayouts(payouts); 
+      // Optionally, re-fetch the specific user's profile if balances were touched
+      // await fetchUserProfile(selectedPayout.userId); // if useAuth had such a function
     } catch (err) {
       console.error(`${ADMIN_PAYOUTS_LOG_PREFIX} Error updating payout request:`, err);
       const errorMsg = err instanceof Error ? err.message : "Failed to update payout.";
@@ -543,8 +561,8 @@ function AdminPayoutsPageContent() {
                 </TableHeader>
                 <TableBody>
                     {payouts.map((payout) => {
-                        const requestedAt = payout.requestedAt instanceof Timestamp ? payout.requestedAt.toDate() : null;
-                        const processedAt = payout.processedAt instanceof Timestamp ? payout.processedAt.toDate() : null;
+                        const requestedAtDate = payout.requestedAt ? payout.requestedAt.toDate() : null;
+                        const processedAtDate = payout.processedAt ? payout.processedAt.toDate() : null;
                         return (
                             <TableRow key={payout.id}>
                                 <TableCell>
@@ -575,7 +593,7 @@ function AdminPayoutsPageContent() {
                                     </Tooltip>
                                    </TooltipProvider>
                                 </TableCell>
-                                <TableCell className="whitespace-nowrap">{requestedAt ? format(requestedAt, 'PPp') : 'N/A'}</TableCell>
+                                <TableCell className="whitespace-nowrap">{requestedAtDate ? format(requestedAtDate, 'PPp') : 'N/A'}</TableCell>
                                 <TableCell>
                                 <Badge variant={getStatusVariant(payout.status)} className="flex items-center gap-1 w-fit text-xs whitespace-nowrap">
                                     {getStatusIcon(payout.status)}
@@ -583,7 +601,7 @@ function AdminPayoutsPageContent() {
                                 </Badge>
                                 </TableCell>
                                 <TableCell className="whitespace-nowrap">
-                                    {processedAt ? format(processedAt, 'PPp') : '-'}
+                                    {processedAtDate ? format(processedAtDate, 'PPp') : '-'}
                                 </TableCell>
                                  <TableCell className="text-xs text-muted-foreground truncate max-w-[200px]">
                                     <TooltipProvider>
@@ -693,5 +711,3 @@ function AdminPayoutsPageContent() {
 export default function AdminPayoutsPage() {
     return <AdminPayoutsPageContent />;
 }
-
-    
