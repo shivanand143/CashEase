@@ -14,7 +14,7 @@ import {
   deleteDoc,
   addDoc,
   serverTimestamp,
-  Timestamp
+  Timestamp // Import Timestamp
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { Banner, BannerFormValues } from '@/lib/types';
@@ -22,7 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { Textarea } from '@/components/ui/textarea'; // Not used currently but good to keep if needed
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { AlertCircle, Loader2, Edit, Trash2, PlusCircle, Image as ImageIcon, ArrowUpDown } from 'lucide-react';
@@ -49,7 +49,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
-import { safeToDate } from '@/lib/utils';
+// safeToDate is not needed here if Banner type uses Timestamp for createdAt/updatedAt
+// import { safeToDate } from '@/lib/utils';
 import Image from 'next/image';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -119,15 +120,12 @@ export default function AdminBannersPage() {
   });
 
   const fetchBanners = useCallback(async () => {
-    let isMounted = true;
     setLoading(true);
     setError(null);
 
     if (firebaseInitializationError || !db) {
-      if (isMounted) {
-        setError(firebaseInitializationError || "Database connection not available.");
-        setLoading(false);
-      }
+      setError(firebaseInitializationError || "Database connection not available.");
+      setLoading(false);
       return;
     }
 
@@ -135,25 +133,33 @@ export default function AdminBannersPage() {
       const bannersCollection = collection(db, 'banners');
       const q = query(bannersCollection, orderBy('order', 'asc'));
       const querySnapshot = await getDocs(q);
-      const bannersData = querySnapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-        createdAt: safeToDate(docSnap.data().createdAt as Timestamp | undefined),
-        updatedAt: safeToDate(docSnap.data().updatedAt as Timestamp | undefined),
-      } as Banner));
-      if (isMounted) {
-        setBanners(bannersData);
-      }
+      const bannersData = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        // Construct the object explicitly to satisfy TypeScript and ensure all fields match Banner type
+        const bannerItem: Banner = {
+            id: docSnap.id,
+            title: data.title ?? null,
+            subtitle: data.subtitle ?? null,
+            imageUrl: data.imageUrl as string, // Banner type requires imageUrl
+            link: data.link ?? null,
+            altText: data.altText ?? null,
+            dataAiHint: data.dataAiHint ?? null,
+            order: data.order as number, // Banner type requires order
+            isActive: data.isActive as boolean, // Banner type requires isActive
+            // These should be Timestamps from Firestore, matching Banner type
+            createdAt: data.createdAt as Timestamp, 
+            updatedAt: data.updatedAt as Timestamp,
+        };
+        return bannerItem;
+      });
+      setBanners(bannersData);
     } catch (err) {
       console.error("Error fetching banners:", err);
-      if (isMounted) {
-        setError(err instanceof Error ? err.message : "Failed to fetch banners");
-        toast({ variant: "destructive", title: "Fetch Error", description: String(err) });
-      }
+      const errorMessage = err instanceof Error ? err.message : "Failed to fetch banners";
+      setError(errorMessage);
+      toast({ variant: "destructive", title: "Fetch Error", description: errorMessage });
     } finally {
-      if (isMounted) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
   }, [toast]);
 
@@ -193,6 +199,7 @@ export default function AdminBannersPage() {
     setIsSaving(true);
     setError(null);
 
+    // Ensure optional fields are explicitly null if empty, matching BannerFormValues and Banner type expectations
     const submissionData = {
       ...data,
       title: data.title || null,
@@ -213,7 +220,7 @@ export default function AdminBannersPage() {
       }
       setIsDialogOpen(false);
       form.reset();
-      fetchBanners();
+      fetchBanners(); // Refetch to update the list
     } catch (err) {
       console.error("Error saving banner:", err);
       const errorMsg = err instanceof Error ? err.message : "Could not save banner details.";
@@ -268,7 +275,7 @@ export default function AdminBannersPage() {
             <CardDescription>Manage homepage promotional banners.</CardDescription>
           </CardHeader>
           <CardContent>
-            {banners.length === 0 && !error ? (
+            {banners.length === 0 && !error && !loading ? (
               <p className="text-center text-muted-foreground py-8">No banners found. Add one to get started!</p>
             ) : (
               <div className="space-y-4">
@@ -282,6 +289,7 @@ export default function AdminBannersPage() {
                           fill
                           className="object-cover"
                           data-ai-hint={banner.dataAiHint || "banner image"}
+                          onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/150x75.png?text=Error'; }}
                         />
                     </div>
                     <div className="flex-grow">
@@ -348,7 +356,7 @@ export default function AdminBannersPage() {
                 {form.watch('imageUrl') && (
                     <div className="mt-2 rounded-md border overflow-hidden max-w-xs mx-auto sm:mx-0">
                         <Image
-                            src={form.watch('imageUrl')!}
+                            src={form.watch('imageUrl')!} // Already checked it exists
                             alt="Banner Preview"
                             width={200}
                             height={100}
