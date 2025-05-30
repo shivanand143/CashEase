@@ -10,13 +10,14 @@ import {
   startAfter,
   limit,
   getDocs,
+  doc,
+  getDoc,
   where,
   QueryConstraint,
   DocumentData,
   QueryDocumentSnapshot,
   Timestamp,
-  doc,
-  getDoc
+  Firestore
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { Click, Conversion, UserProfile, Store } from '@/lib/types';
@@ -34,7 +35,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Loader2, Search, ExternalLink, FileText, Tag, ShoppingCart, User as UserIcon, CheckCircle, XCircle } from 'lucide-react';
+import { AlertCircle, Loader2, Search, ExternalLink, FileText, ShoppingCart, Tag, User as UserIconLucide, CheckCircle, XCircle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import AdminGuard from '@/components/guards/admin-guard';
@@ -65,7 +66,7 @@ function AdminClicksPageSkeleton() {
           <Table>
             <TableHeader>
               <TableRow>
-                {Array.from({ length: 10 }).map((_, index) => (
+                {Array.from({ length: 9 }).map((_, index) => (
                   <TableHead key={index}><Skeleton className="h-5 w-full min-w-[120px]" /></TableHead>
                 ))}
               </TableRow>
@@ -73,7 +74,7 @@ function AdminClicksPageSkeleton() {
             <TableBody>
               {Array.from({ length: 10 }).map((_, rowIndex) => (
                 <TableRow key={rowIndex}>
-                  {Array.from({ length: 10 }).map((_, colIndex) => (
+                  {Array.from({ length: 9 }).map((_, colIndex) => (
                     <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell>
                   ))}
                 </TableRow>
@@ -111,15 +112,16 @@ export default function AdminClicksPage() {
       setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchClickDetails."));
       return clicksToEnrich.map(click => ({ click }));
     }
+    const firestoreDb = db as Firestore; // Type assertion after check
 
     const enrichedDataPromises = clicksToEnrich.map(async (click): Promise<CombinedClickData> => {
       let userProfile: UserProfile | null = userCache[click.userId || ''] || null;
       let storeDataFromCache: Store | null = storeCache[click.storeId || ''] || null;
       let conversion: Conversion | null = click.clickId ? conversionCache[click.clickId] || null : null;
 
-      if (db && click.userId && !userProfile) {
+      if (click.userId && !userProfile) {
         try {
-          const userRef = doc(db, 'users', click.userId);
+          const userRef = doc(firestoreDb, 'users', click.userId);
           const userSnap = await getDoc(userRef);
           if (userSnap.exists()) {
             userProfile = { uid: userSnap.id, ...userSnap.data() } as UserProfile;
@@ -129,12 +131,12 @@ export default function AdminClicksPage() {
       }
 
       let storeForCard: Store | null = null;
-      if (db && click.storeId) {
+      if (click.storeId) {
         if (storeDataFromCache) {
           storeForCard = storeDataFromCache;
         } else {
           try {
-            const storeRef = doc(db, 'stores', click.storeId);
+            const storeRef = doc(firestoreDb, 'stores', click.storeId);
             const storeSnap = await getDoc(storeRef);
             if (storeSnap.exists()) {
               storeForCard = { id: storeSnap.id, ...storeSnap.data() } as Store;
@@ -144,9 +146,9 @@ export default function AdminClicksPage() {
         }
       }
 
-      if (db && click.clickId && !conversion) {
+      if (click.clickId && !conversion) {
         try {
-          const convQuery = query(collection(db, 'conversions'), where('clickId', '==', click.clickId), limit(1));
+          const convQuery = query(collection(firestoreDb, 'conversions'), where('clickId', '==', click.clickId), limit(1));
           const convSnap = await getDocs(convQuery);
           if (!convSnap.empty) {
             const convData = convSnap.docs[0].data();
@@ -167,18 +169,17 @@ export default function AdminClicksPage() {
     return Promise.all(enrichedDataPromises);
   }, [userCache, storeCache, conversionCache]);
 
-
   const fetchTrackingData = React.useCallback(async (
     loadMoreOperation = false,
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null
   ) => {
     console.log(`${ADMIN_CLICKS_LOG_PREFIX} fetchTrackingData: loadMore=${loadMoreOperation}, term='${debouncedSearchTerm}', filter='${filterType}'`);
-    
     if (firebaseInitializationError || !db) {
       setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchTrackingData."));
       setPageLoading(false); setLoadingMore(false); setHasMore(false);
       return;
     }
+    const firestoreDb = db as Firestore; // Type assertion
 
     if (!loadMoreOperation) {
       setPageLoading(true); setCombinedData([]); setLastVisibleClick(null); setHasMore(true);
@@ -190,18 +191,18 @@ export default function AdminClicksPage() {
     setIsSearching(debouncedSearchTerm !== '');
 
     try {
-      const clicksCollectionRef = collection(db, 'clicks');
+      const clicksCollectionRef = collection(firestoreDb, 'clicks');
       const constraints: QueryConstraint[] = [];
 
       if (debouncedSearchTerm.trim() && filterType !== 'all') {
         if (filterType === 'clickId') {
-          const clickDocRef = doc(db, 'clicks', debouncedSearchTerm.trim());
+          const clickDocRef = doc(firestoreDb, 'clicks', debouncedSearchTerm.trim());
           const clickDocSnap = await getDoc(clickDocRef);
           if (clickDocSnap.exists()) {
-            const clickData = { 
-              id: clickDocSnap.id, 
-              ...clickDocSnap.data(), 
-              timestamp: safeToDate(clickDocSnap.data().timestamp as Timestamp | undefined) || new Date(0) 
+            const clickData = {
+              id: clickDocSnap.id,
+              ...clickDocSnap.data(),
+              timestamp: safeToDate(clickDocSnap.data().timestamp as Timestamp | undefined) || new Date(0)
             } as Click;
             const enrichedSingle = await fetchClickDetails([clickData]);
             setCombinedData(enrichedSingle); setHasMore(false);
@@ -211,7 +212,7 @@ export default function AdminClicksPage() {
           setPageLoading(false); setLoadingMore(false); setIsSearching(false);
           return;
         } else if (filterType === 'orderId') {
-          const convQuery = query(collection(db, 'conversions'), where('orderId', '==', debouncedSearchTerm.trim()), limit(1));
+          const convQuery = query(collection(firestoreDb, 'conversions'), where('orderId', '==', debouncedSearchTerm.trim()), limit(1));
           const convSnap = await getDocs(convQuery);
           if (!convSnap.empty) {
             const convData = convSnap.docs[0].data() as Conversion;
@@ -222,7 +223,7 @@ export default function AdminClicksPage() {
           constraints.push(where(filterType, '==', debouncedSearchTerm.trim()));
         }
       }
-      
+
       constraints.push(orderBy('timestamp', 'desc'));
       if (loadMoreOperation && docToStartAfter) constraints.push(startAfter(docToStartAfter));
       constraints.push(limit(ITEMS_PER_PAGE));
@@ -232,17 +233,17 @@ export default function AdminClicksPage() {
       console.log(`${ADMIN_CLICKS_LOG_PREFIX} Firestore query executed, got ${clickQuerySnapshot.size} click docs.`);
 
       const fetchedClicks = clickQuerySnapshot.docs.map(docSnap => ({
-        id: docSnap.id, ...docSnap.data(), 
+        id: docSnap.id, ...docSnap.data(),
         timestamp: safeToDate(docSnap.data().timestamp as Timestamp | undefined) || new Date(0),
       } as Click));
-      
+
       const enrichedResults = await fetchClickDetails(fetchedClicks);
       console.log(`${ADMIN_CLICKS_LOG_PREFIX} Enriched ${enrichedResults.length} clicks.`);
-      
+
       let finalResults = enrichedResults;
       if (debouncedSearchTerm.trim() && filterType === 'all') {
         const lowerSearch = debouncedSearchTerm.toLowerCase();
-        finalResults = enrichedResults.filter(item => 
+        finalResults = enrichedResults.filter(item =>
           item.click.storeName?.toLowerCase().includes(lowerSearch) ||
           item.store?.name?.toLowerCase().includes(lowerSearch) ||
           item.click.productName?.toLowerCase().includes(lowerSearch) ||
@@ -355,14 +356,14 @@ export default function AdminClicksPage() {
                 <Table className="min-w-[1200px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[180px]">User</TableHead>
-                      <TableHead className="w-[150px]">Click Info</TableHead>
-                      <TableHead className="w-[180px]">Item Clicked</TableHead>
-                      <TableHead className="w-[150px]">Store</TableHead>
-                      <TableHead className="w-[180px]">Clicked At</TableHead>
-                      <TableHead className="w-[150px]">Purchase Status</TableHead>
-                      <TableHead className="w-[180px]">Conversion Details</TableHead>
-                      <TableHead className="text-right w-[200px]">Affiliate Link</TableHead>
+                      <TableHead className="min-w-[180px]">User</TableHead>
+                      <TableHead className="min-w-[150px]">Click Info</TableHead>
+                      <TableHead className="min-w-[180px]">Item Clicked</TableHead>
+                      <TableHead className="min-w-[150px]">Store</TableHead>
+                      <TableHead className="min-w-[180px]">Clicked At</TableHead>
+                      <TableHead className="min-w-[150px]">Purchase Status</TableHead>
+                      <TableHead className="min-w-[180px]">Conversion Details</TableHead>
+                      <TableHead className="text-right min-w-[200px]">Affiliate Link</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -394,55 +395,55 @@ export default function AdminClicksPage() {
                             )}
                             </TableCell>
                             <TableCell>
-                            <div className="font-mono text-xs truncate max-w-[120px]" title={click.clickId || undefined}>{click.clickId ? `ID: ${click.clickId}`: 'N/A'}</div>
+                              <div className="font-mono text-xs truncate max-w-[120px]" title={click.clickId || undefined}>{click.clickId ? `ID: ${click.clickId}`: 'N/A'}</div>
                             </TableCell>
                             <TableCell className="truncate max-w-[180px]" title={click.productId ? `Product: ${click.productName || click.productId}` : click.couponId ? `Coupon ID: ${click.couponId}` : 'Store Page Visit'}>
-                            {click.productId ? <><ShoppingCart className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> {click.productName || click.productId}</> :
-                            click.couponId ? <><Tag className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> Coupon: {click.couponId}</> : 
-                            'Store Page Visit'}
+                              {click.productId ? <><ShoppingCart className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> {click.productName || click.productId}</> :
+                              click.couponId ? <><Tag className="inline-block mr-1 h-3 w-3 text-muted-foreground" /> Coupon: {click.couponId}</> :
+                              'Store Page Visit'}
                             </TableCell>
                             <TableCell className="font-medium truncate max-w-[150px]" title={displayStoreName}>
-                            {displayStoreName}
+                              {displayStoreName}
                             </TableCell>
                             <TableCell className="whitespace-nowrap">
-                            {clickTimestamp ? format(clickTimestamp, 'PPp') : 'N/A'}
+                              {clickTimestamp ? format(clickTimestamp, 'PPp') : 'N/A'}
                             </TableCell>
                             <TableCell>
-                            {conversion ? (
-                                <Badge variant={conversion.status === 'received' || conversion.status === 'processed' ? 'default' : conversion.status === 'unmatched_click' ? 'secondary' : 'outline'} className="text-[10px] capitalize">
-                                 <CheckCircle className="mr-1 h-3 w-3 text-green-500" /> Converted ({conversion.status.replace('_', ' ')})
-                                </Badge>
-                            ) : (
-                                <Badge variant="outline" className="text-[10px]"> <XCircle className="mr-1 h-3 w-3 text-destructive"/> No Conversion</Badge>
-                            )}
+                              {conversion ? (
+                                  <Badge variant={conversion.status === 'received' || conversion.status === 'processed' ? 'default' : conversion.status === 'unmatched_click' ? 'secondary' : 'outline'} className="text-[10px] capitalize">
+                                    <CheckCircle className="mr-1 h-3 w-3 text-green-500" /> Converted ({conversion.status.replace('_', ' ')})
+                                  </Badge>
+                              ) : (
+                                  <Badge variant="outline" className="text-[10px]"> <XCircle className="mr-1 h-3 w-3 text-destructive"/> No Conversion</Badge>
+                              )}
                             </TableCell>
                             <TableCell>
-                            {conversion ? (
-                                <div>
-                                <div className="font-mono text-xs truncate max-w-[120px]" title={`Order ID: ${conversion.orderId}`}>OID: {conversion.orderId}</div>
-                                <div className="text-xs" title={`Sale: ${formatCurrency(conversion.saleAmount)}`}>Sale: {formatCurrency(conversion.saleAmount)}</div>
-                                <div className="text-[10px] text-muted-foreground mt-0.5">
-                                    {conversionTimestamp ? format(conversionTimestamp, 'Pp') : 'N/A'}
-                                </div>
-                                </div>
-                            ) : (
-                                <span className="text-xs text-muted-foreground italic">-</span>
-                            )}
+                              {conversion ? (
+                                  <div>
+                                    <div className="font-mono text-xs truncate max-w-[120px]" title={`Order ID: ${conversion.orderId}`}>OID: {conversion.orderId}</div>
+                                    <div className="text-xs" title={`Sale: ${formatCurrency(conversion.saleAmount)}`}>Sale: {formatCurrency(conversion.saleAmount)}</div>
+                                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                                        {conversionTimestamp ? format(conversionTimestamp, 'Pp') : 'N/A'}
+                                    </div>
+                                  </div>
+                              ) : (
+                                  <span className="text-xs text-muted-foreground italic">-</span>
+                              )}
                             </TableCell>
                             <TableCell className="text-right">
                                 <TooltipProvider>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                    <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs">
-                                        <a href={click.affiliateLink || '#'} target="_blank" rel="noopener noreferrer" className="truncate block max-w-[200px]">
-                                        View Link <ExternalLink className="h-3 w-3 ml-1 inline-block align-middle"/>
-                                        </a>
-                                    </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        <p className="max-w-md break-all">{click.affiliateLink || 'No Link'}</p>
-                                    </TooltipContent>
-                                </Tooltip>
+                                  <Tooltip>
+                                      <TooltipTrigger asChild>
+                                      <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs">
+                                          <a href={click.affiliateLink || '#'} target="_blank" rel="noopener noreferrer" className="truncate block max-w-[200px]">
+                                            View Link <ExternalLink className="h-3 w-3 ml-1 inline-block align-middle"/>
+                                          </a>
+                                      </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                          <p className="max-w-md break-all">{click.affiliateLink || 'No Link'}</p>
+                                      </TooltipContent>
+                                  </Tooltip>
                                 </TooltipProvider>
                             </TableCell>
                         </TableRow>
@@ -467,3 +468,5 @@ export default function AdminClicksPage() {
     </AdminGuard>
   );
 }
+
+```

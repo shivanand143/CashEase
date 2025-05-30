@@ -1,4 +1,3 @@
-
 import { initializeApp, getApps, getApp, FirebaseApp, FirebaseOptions } from "firebase/app";
 import { getAuth, Auth } from "firebase/auth";
 import { getFirestore, Firestore } from "firebase/firestore";
@@ -17,14 +16,11 @@ const firebaseConfig: FirebaseOptions = {
 // Function to check if all required keys have values
 function checkFirebaseConfig(config: FirebaseOptions): string[] {
     const requiredKeys: Array<keyof FirebaseOptions> = [
-        'apiKey', 'authDomain', 'projectId' // storageBucket, messagingSenderId, appId are often essential too
+        'apiKey', 'authDomain', 'projectId', 'appId' // These are generally critical
     ];
-    // More robust check for critical values
+    // storageBucket and messagingSenderId are often essential too depending on features used.
+    // measurementId is for Analytics and is often optional for core functionality.
     const missing = requiredKeys.filter(key => !config[key]);
-    if (!config.appId && !config.messagingSenderId && !config.storageBucket && !config.measurementId) {
-        // If none of the 'often essential but sometimes optional' are present, flag appId as generally needed.
-        if (!config.appId) missing.push('appId');
-    }
     return missing;
 }
 
@@ -45,17 +41,15 @@ if (missingEnvVars.length > 0) {
 } else {
   try {
     // Initialize Firebase only if config is valid and no previous error occurred
-    if (!firebaseInitializationError) { // Check if error is not already set
-        if (!getApps().length) {
-            app = initializeApp(firebaseConfig);
-            console.log("Firebase primary app initialized successfully.");
-        } else {
-            app = getApp(); // Get default app if already initialized
-            console.log("Firebase primary app already initialized, using existing instance.");
-        }
-        auth = getAuth(app);
-        db = getFirestore(app);
+    if (!getApps().length) {
+        app = initializeApp(firebaseConfig);
+        console.log("Firebase primary app initialized successfully.");
+    } else {
+        app = getApp(); // Get default app if already initialized
+        console.log("Firebase primary app already initialized, using existing instance.");
     }
+    auth = getAuth(app);
+    db = getFirestore(app);
   } catch (error: any) {
     firebaseInitializationError = `Error initializing Firebase primary app: ${error.message}`;
     console.error(firebaseInitializationError);
