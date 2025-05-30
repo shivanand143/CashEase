@@ -3,7 +3,6 @@
 
 import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,7 +23,9 @@ import {
   DocumentData,
   QueryDocumentSnapshot,
   addDoc,
-  getDoc
+  getDoc,
+  Timestamp, // Import Timestamp
+  FieldValue // Import FieldValue
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { Category, CategoryFormValues as CategoryFormType } from '@/lib/types';
@@ -38,13 +39,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, CheckCircle, XCircle, Building2, UploadCloud } from 'lucide-react';
+import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, Building2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -55,7 +55,6 @@ import {
   DialogDescription,
   DialogFooter,
   DialogClose,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -69,8 +68,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import AdminGuard from '@/components/guards/admin-guard';
-import { format, isValid } from 'date-fns';
-import { cn, safeToDate } from '@/lib/utils';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import {
   DropdownMenu,
@@ -131,7 +130,7 @@ function CategoriesTableSkeleton() {
   );
 }
 
-export default function AdminCategoriesPage() {
+function AdminCategoriesPageContent() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -147,7 +146,11 @@ export default function AdminCategoriesPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null);
+  const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null); // For state-controlled dialog
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  const [categoryToDelete, setCategoryToDelete] = React.useState<Category | null>(null);
+
+
   const [updatingFieldId, setUpdatingFieldId] = useState<string | null>(null);
 
   const form = useForm<CategoryFormValues>({
@@ -168,26 +171,23 @@ export default function AdminCategoriesPage() {
     currentSearchTerm: string,
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null
   ) => {
-    let isMounted = true;
     if (!db || firebaseInitializationError) {
-      if(isMounted) {
-        setError(firebaseInitializationError || "Database connection not available.");
-        if(!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
-        setHasMore(false);
-      }
-      return () => {isMounted = false;};
+      setError(firebaseInitializationError || "Database connection not available.");
+      if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+      setHasMore(false);
+      return;
     }
 
     if (!isLoadMoreOperation) {
       setLoading(true); setCategories([]); setLastVisible(null); setHasMore(true);
     } else {
       if (!docToStartAfter && isLoadMoreOperation) {
-          if(isMounted) setLoadingMore(false);
-          return () => {isMounted = false;};
+        setLoadingMore(false);
+        return;
       }
       setLoadingMore(true);
     }
-    if(!isLoadMoreOperation) setError(null);
+    if (!isLoadMoreOperation) setError(null);
     setIsSearching(currentSearchTerm !== '');
 
     try {
@@ -222,36 +222,30 @@ export default function AdminCategoriesPage() {
           order: typeof data.order === 'number' ? data.order : 0,
           isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
           dataAiHint: data.dataAiHint || null,
-          createdAt: safeToDate(data.createdAt),
-          updatedAt: safeToDate(data.updatedAt),
-        } as Category;
+          createdAt: data.createdAt as Timestamp | FieldValue, // Assign Firestore Timestamp or FieldValue
+          updatedAt: data.updatedAt as Timestamp | FieldValue, // Assign Firestore Timestamp or FieldValue
+        } as Category; // Ensure the object conforms to the Category type
       });
 
-      if(isMounted){
-        setCategories(prev => isLoadMoreOperation ? [...prev, ...categoriesData] : categoriesData);
-        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-        setHasMore(querySnapshot.docs.length === CATEGORIES_PER_PAGE);
-      }
+      setCategories(prev => isLoadMoreOperation ? [...prev, ...categoriesData] : categoriesData);
+      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+      setHasMore(querySnapshot.docs.length === CATEGORIES_PER_PAGE);
     } catch (err) {
       console.error("Error fetching categories:", err);
       const errorMsg = err instanceof Error ? err.message : "Failed to fetch categories";
-      if(isMounted) {
-        setError(errorMsg);
-        toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
-        setHasMore(false);
-      }
+      setError(errorMsg);
+      toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+      setHasMore(false);
     } finally {
-      if(isMounted){
-        if(!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
-        setIsSearching(false);
-      }
+      if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+      setIsSearching(false);
     }
-    return () => {isMounted = false;};
   }, [toast]);
 
   useEffect(() => {
     fetchCategories(false, debouncedSearchTerm, null);
   }, [debouncedSearchTerm, fetchCategories]);
+
 
   const handleSearchSubmit = (e: React.FormEvent) => e.preventDefault();
 
@@ -283,21 +277,21 @@ export default function AdminCategoriesPage() {
     setIsDialogOpen(true);
   };
 
-   const generateSlugFromName = (name: string) => {
+  const generateSlugFromName = (name: string) => {
     return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-   };
+  };
 
-   useEffect(() => {
-       const subscription = form.watch((value, { name }) => {
-         if (name === "name" && !editingCategory && isDialogOpen) { // Only for new categories and when dialog is open
-           const newSlug = generateSlugFromName(value.name || "");
-           if (form.getValues("slug") !== newSlug) { // Avoid unnecessary updates
-             form.setValue("slug", newSlug, { shouldValidate: true });
-           }
-         }
-       });
-       return () => subscription.unsubscribe();
-   }, [form, editingCategory, isDialogOpen]);
+  useEffect(() => {
+    const subscription = form.watch((value, { name, type }) => {
+      if (name === "name" && !editingCategory && isDialogOpen && type === 'change') {
+        const newSlug = generateSlugFromName(value.name || "");
+        if (form.getValues("slug") !== newSlug) {
+          form.setValue("slug", newSlug, { shouldValidate: true });
+        }
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [form, editingCategory, isDialogOpen]);
 
 
   const onSubmit = async (data: CategoryFormValues) => {
@@ -309,23 +303,22 @@ export default function AdminCategoriesPage() {
     setIsSaving(true);
     setError(null);
 
-    const submissionData: Partial<CategoryFormType> = {
+    const submissionData: Partial<CategoryFormType> & { updatedAt: FieldValue, createdAt?: FieldValue } = {
       ...data,
       imageUrl: data.imageUrl || null,
       description: data.description || null,
       dataAiHint: data.dataAiHint || null,
+      updatedAt: serverTimestamp(),
     };
 
     try {
-      // Check if slug already exists for a new category or if it's changed for an existing one
       if (!editingCategory || (editingCategory && editingCategory.slug !== data.slug)) {
         const categoriesRef = collection(db, 'categories');
         const q = query(categoriesRef, where('slug', '==', data.slug));
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
-          // If slug exists and it's not the current editing category's original slug
           if (!editingCategory || querySnapshot.docs[0].id !== editingCategory.id) {
-            form.setError('slug', { type: 'manual', message: 'This slug is already in use. Please choose another.' });
+            form.setError('slug', { type: 'manual', message: 'This slug is already in use.' });
             setIsSaving(false);
             return;
           }
@@ -334,13 +327,14 @@ export default function AdminCategoriesPage() {
 
       if (editingCategory) {
         const categoryDocRef = doc(db, 'categories', editingCategory.id);
-        await updateDoc(categoryDocRef, { ...submissionData, updatedAt: serverTimestamp() });
+        await updateDoc(categoryDocRef, submissionData);
         setCategories(prev => prev.map(c => c.id === editingCategory.id ? { ...c, ...submissionData, updatedAt: new Date() } as Category : c));
         toast({ title: "Category Updated", description: `${data.name} details saved.` });
       } else {
-        const docRef = await addDoc(collection(db, 'categories'), { ...submissionData, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-        const newCategory = { id: docRef.id, ...submissionData, createdAt: new Date(), updatedAt: new Date() } as Category;
-        setCategories(prev => [newCategory, ...prev].sort((a,b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name)));
+        submissionData.createdAt = serverTimestamp();
+        const docRef = await addDoc(collection(db, 'categories'), submissionData);
+        const newCategoryData = { ...submissionData, id: docRef.id, createdAt: new Date(), updatedAt: new Date() } as Category;
+        setCategories(prev => [newCategoryData, ...prev].sort((a,b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name)));
         toast({ title: "Category Added", description: `${data.name} has been created.` });
       }
       setIsDialogOpen(false);
@@ -354,10 +348,10 @@ export default function AdminCategoriesPage() {
       setIsSaving(false);
     }
   };
-
+  
   const handleDeleteCategory = async (categoryId: string) => {
     if (!categoryId || !db) return;
-    setDeletingCategoryId(categoryId);
+    // setDeletingCategoryId(categoryId); // This was for inline loader on button, not needed with dialog state
     try {
       await deleteDoc(doc(db, 'categories', categoryId));
       setCategories(prev => prev.filter(c => c.id !== categoryId));
@@ -367,7 +361,9 @@ export default function AdminCategoriesPage() {
       const errorMsg = err instanceof Error ? err.message : "Could not delete the category.";
       toast({ variant: "destructive", title: "Deletion Failed", description: errorMsg });
     } finally {
-      setDeletingCategoryId(null);
+      // setDeletingCategoryId(null);
+      setIsDeleteDialogOpen(false); // Close dialog
+      setCategoryToDelete(null); // Clear the category to delete
     }
   };
 
@@ -387,220 +383,241 @@ export default function AdminCategoriesPage() {
     }
   };
 
+  const handleOpenDeleteDialog = (category: Category) => {
+    setCategoryToDelete(category);
+    setIsDeleteDialogOpen(true);
+  };
+
 
   if (loading && categories.length === 0 && !error) {
     return <CategoriesTableSkeleton />;
   }
 
   return (
-    <AdminGuard>
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold flex items-center gap-2"><Building2 className="w-7 h-7" /> Manage Categories</h1>
-          <Button onClick={openAddDialog}>
-            <PlusCircle className="mr-2 h-4 w-4" /> Add New Category
-          </Button>
-        </div>
-
-        {error && !loading && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Filter & Search Categories</CardTitle>
-            <CardDescription>Search by category name.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col sm:flex-row gap-4">
-            <form onSubmit={handleSearchSubmit} className="flex-1 flex gap-2">
-              <Input
-                type="search"
-                placeholder="Search by Category Name..."
-                value={searchTermInput}
-                onChange={(e) => setSearchTermInput(e.target.value)}
-                disabled={isSearching || loading}
-                className="h-10 text-base"
-              />
-              <Button type="submit" disabled={isSearching || loading} className="h-10">
-                {isSearching || (loading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                 <span className="sr-only sm:not-sr-only sm:ml-2">Search</span>
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Category List</CardTitle>
-            <CardDescription>View and manage product categories.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading && categories.length === 0 ? (
-              <CategoriesTableSkeleton />
-            ) : !loading && categories.length === 0 && !error ? (
-              <p className="text-center text-muted-foreground py-8">
-                {debouncedSearchTerm ? `No categories found matching "${debouncedSearchTerm}".` : "No categories found."}
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Image</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Slug</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="text-center">Order</TableHead>
-                      <TableHead className="text-center">Active</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {categories.map((category) => (
-                      <TableRow key={category.id} className={!category.isActive ? 'opacity-50 bg-muted/30' : ''}>
-                        <TableCell>
-                          {category.imageUrl ? (
-                            <Image src={category.imageUrl} alt={category.name} width={40} height={40} className="rounded-sm object-contain" data-ai-hint={category.dataAiHint || "category icon"} />
-                          ) : (
-                            <div className="w-10 h-10 bg-muted flex items-center justify-center text-xs text-muted-foreground rounded-sm"><Building2 className="w-5 h-5"/></div>
-                          )}
-                        </TableCell>
-                        <TableCell className="font-medium">{category.name}</TableCell>
-                        <TableCell className="font-mono text-xs">{category.slug}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground max-w-xs truncate" title={category.description || ""}>{category.description || '-'}</TableCell>
-                        <TableCell className="text-center">{category.order}</TableCell>
-                        <TableCell className="text-center">
-                          <Switch
-                            checked={category.isActive}
-                            onCheckedChange={() => handleToggleActive(category)}
-                            disabled={updatingFieldId === category.id}
-                            aria-label="Toggle Active Status"
-                          />
-                           {updatingFieldId === category.id && <Loader2 className="h-4 w-4 animate-spin ml-2 inline-block" />}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <AlertDialog>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" className="h-8 w-8 p-0">
-                                  <span className="sr-only">Open menu</span>
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                <DropdownMenuItem onClick={() => openEditDialog(category)}>
-                                  <Edit className="mr-2 h-4 w-4" /> Edit
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                 <AlertDialogTrigger asChild>
-                                  <Button variant="ghost" className="w-full justify-start px-2 py-1.5 text-sm font-normal text-destructive hover:bg-destructive/10 focus:text-destructive focus:bg-destructive/10 h-auto relative flex cursor-default select-none items-center rounded-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50">
-                                    <Trash2 className="mr-2 h-4 w-4" /> Delete
-                                  </Button>
-                                </AlertDialogTrigger>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This action cannot be undone. This will permanently delete the category "{category.name}".
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel onClick={() => setDeletingCategoryId(null)}>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => handleDeleteCategory(category.id)} className="bg-destructive hover:bg-destructive/90">
-                                  {deletingCategoryId === category.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null} Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-            {hasMore && !loading && categories.length > 0 && (
-              <div className="mt-6 text-center">
-                <Button onClick={handleLoadMore} disabled={loadingMore}>
-                  {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Load More Categories
-                </Button>
-              </div>
-            )}
-            {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
-          </CardContent>
-        </Card>
-
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{editingCategory ? 'Edit Category' : 'Add New Category'}</DialogTitle>
-              <DialogDescription>
-                {editingCategory ? `Update details for ${editingCategory.name}.` : 'Enter the details for the new category.'}
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="nameDialog" className="text-right">Name*</Label>
-                <Input id="nameDialog" {...form.register('name')} className="col-span-3" disabled={isSaving} />
-                {form.formState.errors.name && <p className="col-span-3 col-start-2 text-sm text-destructive mt-1 text-right">{form.formState.errors.name.message}</p>}
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="slugDialog" className="text-right">Slug*</Label>
-                <Input id="slugDialog" {...form.register('slug')} className="col-span-3" disabled={isSaving || !!editingCategory} placeholder={editingCategory ? undefined : "auto-generated from name"} />
-                {editingCategory && <p className="col-span-3 col-start-2 text-xs text-muted-foreground mt-1 text-right">Slug cannot be changed after creation.</p>}
-                {form.formState.errors.slug && <p className="col-span-3 col-start-2 text-sm text-destructive mt-1 text-right">{form.formState.errors.slug.message}</p>}
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="descriptionDialog" className="text-right">Description</Label>
-                <Textarea id="descriptionDialog" {...form.register('description')} className="col-span-3" rows={2} disabled={isSaving} />
-                {form.formState.errors.description && <p className="col-span-3 col-start-2 text-sm text-destructive mt-1 text-right">{form.formState.errors.description.message}</p>}
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="imageUrlDialog" className="text-right">Image URL</Label>
-                <Input id="imageUrlDialog" {...form.register('imageUrl')} className="col-span-3" placeholder="https://..." disabled={isSaving} />
-                {form.watch('imageUrl') && <Image src={form.watch('imageUrl')!} alt="Image Preview" width={40} height={40} className="col-span-3 col-start-2 object-contain border rounded-sm mt-1" data-ai-hint="category icon preview"/>}
-                {form.formState.errors.imageUrl && <p className="col-span-3 col-start-2 text-sm text-destructive mt-1 text-right">{form.formState.errors.imageUrl.message}</p>}
-              </div>
-               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="dataAiHintDialog" className="text-right">AI Hint</Label>
-                <Input id="dataAiHintDialog" {...form.register('dataAiHint')} className="col-span-3" placeholder="e.g., clothing fashion" disabled={isSaving} />
-                {form.formState.errors.dataAiHint && <p className="col-span-3 col-start-2 text-sm text-destructive mt-1 text-right">{form.formState.errors.dataAiHint.message}</p>}
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="orderDialog" className="text-right">Order*</Label>
-                <Input id="orderDialog" type="number" {...form.register('order', { valueAsNumber: true })} className="col-span-3" disabled={isSaving} />
-                 {form.formState.errors.order && <p className="col-span-3 col-start-2 text-sm text-destructive mt-1 text-right">{form.formState.errors.order.message}</p>}
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                 <Label htmlFor="isActiveDialog" className="text-right">Status</Label>
-                <div className="col-span-3 flex items-center space-x-2">
-                  <Controller name="isActive" control={form.control} render={({ field }) => ( <Checkbox id="isActiveDialog" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
-                  <Label htmlFor="isActiveDialog" className="font-normal">Active</Label>
-                </div>
-              </div>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button type="button" variant="outline" disabled={isSaving}>Cancel</Button>
-                </DialogClose>
-                <Button type="submit" disabled={isSaving}>
-                  {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  {editingCategory ? 'Save Changes' : 'Add Category'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold flex items-center gap-2"><Building2 className="w-7 h-7" /> Manage Categories</h1>
+        <Button onClick={openAddDialog}>
+          <PlusCircle className="mr-2 h-4 w-4" /> Add New Category
+        </Button>
       </div>
-    </AdminGuard>
+
+      {error && !loading && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Filter & Search Categories</CardTitle>
+          <CardDescription>Search by category name.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col sm:flex-row gap-4">
+          <form onSubmit={handleSearchSubmit} className="flex-1 flex gap-2">
+            <Input
+              type="search"
+              placeholder="Search by Category Name..."
+              value={searchTermInput}
+              onChange={(e) => setSearchTermInput(e.target.value)}
+              disabled={isSearching || loading}
+              className="h-10 text-base"
+            />
+            <Button type="submit" disabled={isSearching || loading} className="h-10">
+              {isSearching || (loading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+               <span className="sr-only sm:not-sr-only sm:ml-2">Search</span>
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Category List</CardTitle>
+          <CardDescription>View and manage product categories.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading && categories.length === 0 ? (
+            <CategoriesTableSkeleton />
+          ) : !loading && categories.length === 0 && !error ? (
+            <p className="text-center text-muted-foreground py-8">
+              {debouncedSearchTerm ? `No categories found matching "${debouncedSearchTerm}".` : "No categories found."}
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Image</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Slug</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-center">Order</TableHead>
+                    <TableHead className="text-center">Active</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {categories.map((category) => (
+                    <TableRow key={category.id} className={!category.isActive ? 'opacity-50 bg-muted/30' : ''}>
+                      <TableCell>
+                        {category.imageUrl ? (
+                          <Image src={category.imageUrl} alt={category.name} width={40} height={40} className="rounded-sm object-contain" data-ai-hint={category.dataAiHint || "category icon"} />
+                        ) : (
+                          <div className="w-10 h-10 bg-muted flex items-center justify-center text-xs text-muted-foreground rounded-sm"><Building2 className="w-5 h-5"/></div>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-medium">{category.name}</TableCell>
+                      <TableCell className="font-mono text-xs">{category.slug}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground max-w-xs truncate" title={category.description || ""}>{category.description || '-'}</TableCell>
+                      <TableCell className="text-center">{category.order}</TableCell>
+                      <TableCell className="text-center">
+                        <Switch
+                          checked={category.isActive}
+                          onCheckedChange={() => handleToggleActive(category)}
+                          disabled={updatingFieldId === category.id}
+                          aria-label="Toggle Active Status"
+                        />
+                         {updatingFieldId === category.id && <Loader2 className="h-4 w-4 animate-spin ml-2 inline-block" />}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0">
+                                <span className="sr-only">Open menu</span>
+                                <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                            <DropdownMenuItem onClick={() => openEditDialog(category)}>
+                                <Edit className="mr-2 h-4 w-4" /> Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                onSelect={() => handleOpenDeleteDialog(category)}
+                                className="text-destructive hover:!bg-destructive/10 focus:!bg-destructive/10 focus:!text-destructive"
+                            >
+                                <Trash2 className="mr-2 h-4 w-4" /> Delete
+                            </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          {hasMore && !loading && categories.length > 0 && (
+            <div className="mt-6 text-center">
+              <Button onClick={handleLoadMore} disabled={loadingMore}>
+                {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Load More Categories
+              </Button>
+            </div>
+          )}
+          {loadingMore && <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" /></div>}
+        </CardContent>
+      </Card>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingCategory ? 'Edit Category' : 'Add New Category'}</DialogTitle>
+            <DialogDescription>
+              {editingCategory ? `Update details for ${editingCategory.name}.` : 'Enter the details for the new category.'}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="nameDialog" className="text-right">Name*</Label>
+              <Input id="nameDialog" {...form.register('name')} className="col-span-3" disabled={isSaving} />
+              {form.formState.errors.name && <p className="col-span-3 col-start-2 text-sm text-destructive mt-1 text-right">{form.formState.errors.name.message}</p>}
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="slugDialog" className="text-right">Slug*</Label>
+              <Input id="slugDialog" {...form.register('slug')} className="col-span-3" disabled={isSaving || !!editingCategory} placeholder={editingCategory ? undefined : "auto-generated from name"} />
+              {editingCategory && <p className="col-span-3 col-start-2 text-xs text-muted-foreground mt-1 text-right">Slug cannot be changed after creation.</p>}
+              {form.formState.errors.slug && <p className="col-span-3 col-start-2 text-sm text-destructive mt-1 text-right">{form.formState.errors.slug.message}</p>}
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="descriptionDialog" className="text-right">Description</Label>
+              <Textarea id="descriptionDialog" {...form.register('description')} className="col-span-3" rows={2} disabled={isSaving} />
+              {form.formState.errors.description && <p className="col-span-3 col-start-2 text-sm text-destructive mt-1 text-right">{form.formState.errors.description.message}</p>}
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="imageUrlDialog" className="text-right">Image URL</Label>
+              <Input id="imageUrlDialog" {...form.register('imageUrl')} className="col-span-3" placeholder="https://..." disabled={isSaving} />
+              {form.watch('imageUrl') && <Image src={form.watch('imageUrl')!} alt="Image Preview" width={40} height={40} className="col-span-3 col-start-2 object-contain border rounded-sm mt-1" data-ai-hint="category icon preview"/>}
+              {form.formState.errors.imageUrl && <p className="col-span-3 col-start-2 text-sm text-destructive mt-1 text-right">{form.formState.errors.imageUrl.message}</p>}
+            </div>
+             <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="dataAiHintDialog" className="text-right">AI Hint</Label>
+              <Input id="dataAiHintDialog" {...form.register('dataAiHint')} className="col-span-3" placeholder="e.g., clothing fashion" disabled={isSaving} />
+              {form.formState.errors.dataAiHint && <p className="col-span-3 col-start-2 text-sm text-destructive mt-1 text-right">{form.formState.errors.dataAiHint.message}</p>}
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="orderDialog" className="text-right">Order*</Label>
+              <Input id="orderDialog" type="number" {...form.register('order', { valueAsNumber: true })} className="col-span-3" disabled={isSaving} />
+               {form.formState.errors.order && <p className="col-span-3 col-start-2 text-sm text-destructive mt-1 text-right">{form.formState.errors.order.message}</p>}
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+               <Label htmlFor="isActiveDialog" className="text-right">Status</Label>
+              <div className="col-span-3 flex items-center space-x-2">
+                <Controller name="isActive" control={form.control} render={({ field }) => ( <Checkbox id="isActiveDialog" checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} /> )}/>
+                <Label htmlFor="isActiveDialog" className="font-normal">Active</Label>
+              </div>
+            </div>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline" disabled={isSaving}>Cancel</Button>
+              </DialogClose>
+              <Button type="submit" disabled={isSaving}>
+                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {editingCategory ? 'Save Changes' : 'Add Category'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+            {categoryToDelete && (
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete the category "{categoryToDelete?.name}".
+                    </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => { setIsDeleteDialogOpen(false); setCategoryToDelete(null); }}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                        onClick={() => handleDeleteCategory(categoryToDelete.id)}
+                        className="bg-destructive hover:bg-destructive/90"
+                        disabled={isSaving} // Use isSaving for main form, or introduce a new deleting state if needed
+                    >
+                        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                        Delete
+                    </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            )}
+        </AlertDialog>
+    </div>
   );
+}
+
+
+export default function AdminCategoriesPage() {
+    return (
+      <AdminGuard>
+        <AdminCategoriesPageContent />
+      </AdminGuard>
+    );
 }
 
     

@@ -18,6 +18,7 @@ const nextConfig = {
       ignoreBuildErrors: false,
     },
   productionBrowserSourceMaps: true, // Explicitly enable source maps for easier debugging of client-side code
+  output: 'standalone', // Recommended for server deployments (like Firebase App Hosting)
   // Add any other stable configurations you need here.
   // Avoid highly experimental features if you're facing build issues.
 };
