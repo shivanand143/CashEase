@@ -17,17 +17,18 @@ import {
   type QueryConstraint,
   type DocumentData,
   type QueryDocumentSnapshot,
-  Timestamp, // Value import
+  Timestamp, // Value import for Timestamp.fromDate and serverTimestamp
   runTransaction,
   writeBatch,
-  type CollectionReference, // Ensure CollectionReference is imported
-  type Query, // Ensure Query is imported
-  type WithFieldValue, // For toFirestore
-  type SnapshotOptions, // For fromFirestore
-  increment,
+  type CollectionReference, // Type import
+  // Query type can be inferred or explicitly DocumentData for this fix
   type Firestore,
   type FieldValue,
-  getDoc
+  type FirestoreDataConverter, // For converter definition
+  type WithFieldValue, // For toFirestore
+  type SnapshotOptions, // For fromFirestore
+  getDoc, // For fetching user profile directly
+  increment
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { PayoutRequest, PayoutStatus, UserProfile, Transaction, CashbackStatus, PayoutMethod } from '@/lib/types';
@@ -51,7 +52,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { AlertCircle, Loader2, Search, CheckCircle, XCircle, Hourglass, Send, Info, IndianRupee, ListFilter, User as UserIconLucide } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { formatCurrency } from '@/lib/utils'; // safeToDate removed from here
+import { formatCurrency, safeToDate } from '@/lib/utils';
 import AdminGuard from '@/components/guards/admin-guard';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -66,7 +67,91 @@ interface PayoutRequestWithUser extends PayoutRequest {
   userEmail?: string | null;
 }
 
-// No FirestoreDataConverter needed if we handle Timestamps directly in main logic
+// Firestore Data Converter for PayoutRequest (optional, but good for consistency if used elsewhere)
+const payoutRequestConverter: FirestoreDataConverter<PayoutRequest> = {
+    toFirestore(payoutRequest: WithFieldValue<PayoutRequest>): DocumentData {
+        const data: any = { ...payoutRequest };
+        if (payoutRequest.requestedAt instanceof Date) {
+            data.requestedAt = Timestamp.fromDate(payoutRequest.requestedAt);
+        }
+        if (payoutRequest.processedAt instanceof Date) {
+            data.processedAt = Timestamp.fromDate(payoutRequest.processedAt);
+        } else if (payoutRequest.processedAt === null) {
+            data.processedAt = null;
+        }
+        // Other fields are directly assignable
+        return data;
+    },
+    fromFirestore(snapshot: QueryDocumentSnapshot, options: SnapshotOptions): PayoutRequest {
+        const data = snapshot.data(options)!;
+        return {
+            id: snapshot.id,
+            userId: data.userId,
+            amount: data.amount,
+            status: data.status as PayoutStatus,
+            requestedAt: data.requestedAt as Timestamp, // Keep as Timestamp
+            processedAt: data.processedAt ? data.processedAt as Timestamp : null, // Keep as Timestamp or null
+            paymentMethod: data.paymentMethod as PayoutMethod,
+            paymentDetails: data.paymentDetails,
+            transactionIds: Array.isArray(data.transactionIds) ? data.transactionIds : [],
+            adminNotes: data.adminNotes || null,
+            failureReason: data.failureReason || null,
+        };
+    }
+};
+
+
+// Firestore Data Converter for Transaction (if you decide to use it consistently)
+// For now, payouts page handles Transaction data manually within transaction.
+const transactionConverter: FirestoreDataConverter<Transaction> = {
+    toFirestore(transaction: WithFieldValue<Transaction>): DocumentData {
+        const data: { [key: string]: any } = {};
+        // Iterate over transaction properties and handle date conversions
+        for (const key in transaction) {
+            if (Object.prototype.hasOwnProperty.call(transaction, key) && key !== 'id') {
+                const typedKey = key as keyof Transaction;
+                const value = transaction[typedKey];
+                if (value instanceof Date) {
+                    data[typedKey] = Timestamp.fromDate(value);
+                } else {
+                    data[typedKey] = value;
+                }
+            }
+        }
+        return data;
+    },
+    fromFirestore(snapshot: QueryDocumentSnapshot, options: SnapshotOptions): Transaction {
+        const data = snapshot.data(options)!;
+        return {
+            id: snapshot.id,
+            userId: data.userId,
+            storeId: data.storeId,
+            storeName: data.storeName ?? null,
+            orderId: data.orderId ?? null,
+            clickId: data.clickId ?? null,
+            conversionId: data.conversionId ?? null,
+            productDetails: data.productDetails ?? null,
+            transactionDate: data.transactionDate as Timestamp, // Expect Timestamp
+            reportedDate: data.reportedDate ? data.reportedDate as Timestamp : null, // Expect Timestamp
+            saleAmount: data.saleAmount,
+            cashbackRateApplied: data.cashbackRateApplied ?? null,
+            initialCashbackAmount: data.initialCashbackAmount,
+            finalSaleAmount: data.finalSaleAmount ?? data.saleAmount,
+            finalCashbackAmount: data.finalCashbackAmount ?? data.initialCashbackAmount,
+            currency: data.currency || 'INR',
+            status: data.status as CashbackStatus,
+            confirmationDate: data.confirmationDate ? data.confirmationDate as Timestamp : null,
+            rejectionReason: data.rejectionReason || null,
+            paidDate: data.paidDate ? data.paidDate as Timestamp : null,
+            payoutId: data.payoutId || null,
+            adminNotes: data.adminNotes || null,
+            notesToUser: data.notesToUser || null,
+            createdAt: data.createdAt as Timestamp, // Expect Timestamp
+            updatedAt: data.updatedAt as Timestamp, // Expect Timestamp
+        };
+    }
+};
+
 
 const getStatusVariant = (status: PayoutStatus): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
@@ -148,18 +233,15 @@ function AdminPayoutsPageContent() {
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
 
   const [userCache, setUserCache] = React.useState<Record<string, Pick<UserProfile, 'displayName' | 'email'>>>({});
-  const isMountedRef = React.useRef(true);
-  
+
   const fetchUserDataForPayouts = React.useCallback(async (payoutRequests: PayoutRequest[]): Promise<PayoutRequestWithUser[]> => {
     if (!payoutRequests || payoutRequests.length === 0) return payoutRequests;
     
     if (!db || firebaseInitializationError) {
-      if (isMountedRef.current) {
         setPageError(prev => (prev ? prev + "; " : "") + (firebaseInitializationError || "DB error in fetchUserData."));
-      }
-      return payoutRequests.map(p => ({ ...p, userDisplayName: p.userId, userEmail: 'N/A (DB Error)' }));
+        return payoutRequests.map(p => ({ ...p, userDisplayName: p.userId, userEmail: 'N/A (DB Error)' }));
     }
-    const firestoreDb = db;
+    const firestoreDb = db as Firestore;
 
     const userIdsToFetch = [...new Set(payoutRequests.map(p => p.userId).filter(uid => uid && !userCache[uid]))];
     if (userIdsToFetch.length === 0) {
@@ -182,14 +264,10 @@ function AdminPayoutsPageContent() {
           newUsers[docSnap.id] = { displayName: data.displayName || null, email: data.email || null };
         });
       }
-      if (isMountedRef.current) {
-        setUserCache(prev => ({ ...prev, ...newUsers }));
-      }
+      setUserCache(prev => ({ ...prev, ...newUsers }));
     } catch (userFetchError) {
       console.error(`${ADMIN_PAYOUTS_LOG_PREFIX} Error fetching user data for payouts:`, userFetchError);
-      if (isMountedRef.current) {
-        setPageError(prev => (prev ? prev + "; " : "") + "Error fetching user details for some payouts.");
-      }
+      setPageError(prev => (prev ? prev + "; " : "") + "Error fetching user details for some payouts.");
     }
 
     return payoutRequests.map(payout => ({
@@ -203,29 +281,26 @@ function AdminPayoutsPageContent() {
     loadMoreOperation = false,
     docToStartAfter: QueryDocumentSnapshot<DocumentData> | null = null
   ) => {
-    if (!isMountedRef.current) return;
     console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Fetching payouts. LoadMore: ${loadMoreOperation}, Status: ${filterStatus}, Term: '${debouncedSearchTerm}'`);
     
     if (!db || firebaseInitializationError) {
-      if(isMountedRef.current) {
         setPageError(firebaseInitializationError || "Database connection not available.");
         if(!loadMoreOperation) setPageLoading(false); else setLoadingMore(false);
         setHasMore(false);
-      }
-      return;
+        return;
     }
-    const firestoreDb = db; 
+    const firestoreDb = db as Firestore; 
 
     if (!loadMoreOperation) {
       setPageLoading(true); setPayouts([]); setLastVisible(null); setHasMore(true); setPageError(null);
     } else {
-      if (!docToStartAfter && loadMoreOperation) { if(isMountedRef.current) setLoadingMore(false); return; }
+      if (!docToStartAfter && loadMoreOperation) { setLoadingMore(false); return; }
       setLoadingMore(true);
     }
     setIsSearching(debouncedSearchTerm !== '');
 
     try {
-      const payoutsCollectionRef = collection(firestoreDb, 'payoutRequests');
+      const payoutsCollectionRef = collection(firestoreDb, 'payoutRequests').withConverter(payoutRequestConverter);
       const constraints: QueryConstraint[] = [];
 
       if (filterStatus !== 'all') {
@@ -244,55 +319,37 @@ function AdminPayoutsPageContent() {
       const q = query(payoutsCollectionRef, ...constraints);
       const querySnapshot = await getDocs(q);
       
-      const rawPayoutsData = querySnapshot.docs.map(docSnap => {
-        const data = docSnap.data();
-        return {
-          id: docSnap.id,
-          ...data,
-          // Timestamps will be handled as Firestore Timestamp objects
-          requestedAt: data.requestedAt as Timestamp, 
-          processedAt: data.processedAt as Timestamp | null,
-        } as PayoutRequest;
-      });
-
+      const rawPayoutsData = querySnapshot.docs.map(docSnap => docSnap.data());
       const payoutsWithUserData = await fetchUserDataForPayouts(rawPayoutsData);
       
-      if(isMountedRef.current){
-        setPayouts(prev => loadMoreOperation ? [...prev, ...payoutsWithUserData] : payoutsWithUserData);
-        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-        setHasMore(querySnapshot.docs.length === PAYOUTS_PER_PAGE);
-      }
+      setPayouts(prev => loadMoreOperation ? [...prev, ...payoutsWithUserData] : payoutsWithUserData);
+      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+      setHasMore(querySnapshot.docs.length === PAYOUTS_PER_PAGE);
 
     } catch (err) {
       console.error(`${ADMIN_PAYOUTS_LOG_PREFIX} Error fetching payout requests:`, err);
       const errorMsg = err instanceof Error ? err.message : "Failed to fetch payouts";
-      if(isMountedRef.current) { 
-        setPageError(errorMsg);
-        toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
-        setHasMore(false);
-      }
+      setPageError(errorMsg);
+      toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+      setHasMore(false);
     } finally {
-      if(isMountedRef.current){
-        if (!loadMoreOperation) setPageLoading(false); else setLoadingMore(false);
-        setIsSearching(false);
-      }
+      if (!loadMoreOperation) setPageLoading(false); else setLoadingMore(false);
+      setIsSearching(false);
     }
   }, [filterStatus, debouncedSearchTerm, toast, fetchUserDataForPayouts]);
 
   React.useEffect(() => {
-    isMountedRef.current = true;
     if (adminAuthLoading) {
-      if(isMountedRef.current) setPageLoading(true);
+      setPageLoading(true);
       return;
     }
     if (!adminUser && !adminAuthLoading) {
-      if(isMountedRef.current) setPageLoading(false); 
+      setPageLoading(false); 
       return;
     }
-    if(adminUser && isMountedRef.current) {
+    if(adminUser) {
       fetchPayouts(false, null);
     }
-    return () => { isMountedRef.current = false; };
   }, [adminUser, adminAuthLoading, filterStatus, debouncedSearchTerm, fetchPayouts]);
 
   const handleSearch = (e: React.FormEvent) => e.preventDefault();
@@ -316,12 +373,12 @@ function AdminPayoutsPageContent() {
       toast({ variant: "destructive", title: "Error", description: "No payout selected." });
       return;
     }
-    const firestoreDb = db; // db is already checked at the top of fetchPayouts
-    if (!firestoreDb) {
-        toast({ variant: "destructive", title: "Database Error", description: "Database not available." });
+    if (!db || firebaseInitializationError) {
+        toast({ variant: "destructive", title: "Database Error", description: firebaseInitializationError || "Database not available." });
         setIsUpdating(false);
         return;
     }
+    const firestoreDb = db as Firestore;
 
 
     if ((updateStatus === 'rejected' || updateStatus === 'failed') && !failureReason.trim()) {
@@ -350,25 +407,26 @@ function AdminPayoutsPageContent() {
 
         const currentPayoutData = payoutDocSnap.data() as PayoutRequest;
         
-        const payoutUpdateData: Partial<PayoutRequest> & { updatedAt: FieldValue } = {
+        const payoutUpdateData: Partial<WithFieldValue<PayoutRequest>> = {
             status: newPayoutStatus,
             adminNotes: adminNotes.trim() || null,
             processedAt: serverTimestamp() as Timestamp,
             failureReason: (newPayoutStatus === 'failed' || newPayoutStatus === 'rejected') ? failureReason.trim() || null : null,
-            updatedAt: serverTimestamp(),
+            updatedAt: serverTimestamp() as Timestamp,
         };
 
         const userProfileUpdates: { [key: string]: any } = { updatedAt: serverTimestamp() };
-        let linkedTransactionIds: string[] = (currentPayoutData.transactionIds as string[]) || []; // Ensure it's an array
+        let linkedTransactionIds: string[] = currentPayoutData.transactionIds || [];
 
         if (newPayoutStatus === 'paid' && originalStatus !== 'paid') {
             console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Processing 'paid' status for payout ${selectedPayout.id}.`);
             if (!linkedTransactionIds || linkedTransactionIds.length === 0) {
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} No pre-linked Tx IDs. Fetching 'confirmed' transactions for user ${selectedPayout.userId} to cover amount ${payoutAmount}.`);
                 
-                const transactionsCollectionRef = collection(firestoreDb, 'transactions');
+                // Use untyped reference for query inside transaction
+                const untypedTransactionsCollectionRef = collection(firestoreDb, 'transactions');
                 const transactionsQuery = query(
-                   transactionsCollectionRef,
+                   untypedTransactionsCollectionRef,
                    where('userId', '==', selectedPayout.userId),
                    where('status', '==', 'confirmed' as CashbackStatus),
                    where('payoutId', '==', null),
@@ -381,7 +439,7 @@ function AdminPayoutsPageContent() {
                 const collectedTxIds: string[] = [];
 
                 for (const txDocSnap of confirmedUnpaidSnap.docs) {
-                    const txData = txDocSnap.data() as Transaction; 
+                    const txData = txDocSnap.data() as Transaction; // Manual cast
                     const txCashbackAmount = txData.finalCashbackAmount ?? txData.initialCashbackAmount ?? 0;
                     if (txCashbackAmount > 0 && (sumOfSelectedTxs + txCashbackAmount) <= payoutAmount) {
                         sumOfSelectedTxs += txCashbackAmount;
@@ -394,16 +452,17 @@ function AdminPayoutsPageContent() {
                     console.error(`${ADMIN_PAYOUTS_LOG_PREFIX} Could not exactly match payout amount (₹${payoutAmount.toFixed(2)}) with available transactions (sum ₹${sumOfSelectedTxs.toFixed(2)}).`);
                     throw new Error("Could not precisely match payout amount with available transactions. Verify user's confirmed transactions.");
                 }
-                (payoutUpdateData as any).transactionIds = collectedTxIds; 
+                payoutUpdateData.transactionIds = collectedTxIds; 
                 linkedTransactionIds = collectedTxIds;
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Will mark these Tx IDs as paid:`, linkedTransactionIds);
             }
+             // For 'paid' status, user's balance was already debited when they requested. No further user balance change here for 'paid'.
         } else if ((newPayoutStatus === 'rejected' || newPayoutStatus === 'failed') && 
                    (originalStatus === 'pending' || originalStatus === 'approved' || originalStatus === 'processing' || originalStatus === 'awaiting_payout')) {
           console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Payout ${selectedPayout.id} is ${newPayoutStatus}. Refunding amount ${payoutAmount} to user ${userDocSnap.id}.`);
           userProfileUpdates.cashbackBalance = increment(payoutAmount); 
           
-          if (linkedTransactionIds.length > 0) {
+          if (linkedTransactionIds.length > 0) { // This case might be rare if Tx are linked only on 'paid'
               console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Reverting status for transactions previously linked to this REJECTED/FAILED payout:`, linkedTransactionIds);
               for (const txId of linkedTransactionIds) {
                 const txRef = doc(firestoreDb, 'transactions', txId);
@@ -414,7 +473,7 @@ function AdminPayoutsPageContent() {
                     updatedAt: serverTimestamp()
                 });
               }
-              (payoutUpdateData as any).transactionIds = []; // Clear linked IDs as they are no longer part of this failed payout
+              payoutUpdateData.transactionIds = []; // Clear linked IDs
           }
         }
 
@@ -424,6 +483,8 @@ function AdminPayoutsPageContent() {
         }
       }); 
 
+      // Separate batch for marking transactions as 'paid' if the status is 'paid'
+      // This happens outside the main transaction because we might read transactions, then write to them.
       if (newPayoutStatus === 'paid' && linkedTransactionIds.length > 0) {
           const paidBatch = writeBatch(firestoreDb);
           for (const txId of linkedTransactionIds) {
@@ -441,14 +502,14 @@ function AdminPayoutsPageContent() {
       
       setPayouts(prev =>
           prev.map(p =>
-          p.id === selectedPayout!.id // Add null check for selectedPayout
+          p.id === selectedPayout!.id 
               ? {
               ...p,
               status: newPayoutStatus,
               adminNotes: adminNotes.trim() || null,
               failureReason: (newPayoutStatus === 'failed' || newPayoutStatus === 'rejected') ? failureReason.trim() || null : null,
-              processedAt: Timestamp.now(), // Use current Timestamp for client-side update
-              transactionIds: (payoutUpdateData as any).transactionIds || p.transactionIds,
+              processedAt: Timestamp.now(), 
+              transactionIds: payoutUpdateData.transactionIds || p.transactionIds,
               }
               : p
           )
@@ -467,7 +528,7 @@ function AdminPayoutsPageContent() {
   };
 
   if (adminAuthLoading || (pageLoading && payouts.length === 0 && !pageError)) {
-    return <PayoutHistoryTableSkeleton />;
+    return <AdminGuard><PayoutHistoryTableSkeleton /></AdminGuard>;
   }
 
   return (
@@ -553,8 +614,9 @@ function AdminPayoutsPageContent() {
                 </TableHeader>
                 <TableBody>
                     {payouts.map((payout) => {
-                        const requestedAtDate = payout.requestedAt instanceof Timestamp ? payout.requestedAt.toDate() : payout.requestedAt;
-                        const processedAtDate = payout.processedAt instanceof Timestamp ? payout.processedAt.toDate() : payout.processedAt;
+                        // Ensure timestamps are JS Dates for formatting
+                        const requestedAtDate = payout.requestedAt instanceof Timestamp ? payout.requestedAt.toDate() : null;
+                        const processedAtDate = payout.processedAt instanceof Timestamp ? payout.processedAt.toDate() : null;
                         return (
                             <TableRow key={payout.id}>
                                 <TableCell>
@@ -703,3 +765,5 @@ function AdminPayoutsPageContent() {
 export default function AdminPayoutsPage() {
     return <AdminPayoutsPageContent />;
 }
+
+```
