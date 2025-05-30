@@ -1,4 +1,3 @@
-
 // src/app/admin/clicks/page.tsx
 "use client";
 
@@ -13,11 +12,11 @@ import {
   doc,
   getDoc,
   where,
-  QueryConstraint,
-  DocumentData,
-  QueryDocumentSnapshot,
-  Timestamp,
-  Firestore,
+  type QueryConstraint,
+  type DocumentData,
+  type QueryDocumentSnapshot,
+  Timestamp, // Value import
+  type Firestore, // Type import
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
 import type { Click, Conversion, UserProfile, Store } from '@/lib/types'; // Ensure all types are imported
@@ -41,7 +40,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
 import { useDebounce } from '@/hooks/use-debounce';
-import { formatCurrency, safeToDate } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 const ITEMS_PER_PAGE = 15;
@@ -115,6 +114,7 @@ export default function AdminClicksPage() {
       }
       const firestoreDb = db as Firestore; // Type assertion after check
 
+      // Fetch User Profile
       if (click.userId) {
         try {
           const userRef = doc(firestoreDb, 'users', click.userId);
@@ -123,15 +123,16 @@ export default function AdminClicksPage() {
             const data = userSnap.data();
             userProfile = { 
               uid: userSnap.id, ...data,
-              createdAt: data.createdAt as Timestamp, // Assuming these are Timestamps from Firestore
+              createdAt: data.createdAt as Timestamp, 
               updatedAt: data.updatedAt as Timestamp,
-              lastPayoutRequestAt: data.lastPayoutRequestAt as Timestamp || null,
+              lastPayoutRequestAt: data.lastPayoutRequestAt instanceof Timestamp ? data.lastPayoutRequestAt : null,
             } as UserProfile;
           }
         } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch user ${click.userId}`, e); }
       }
 
-      if (click.storeId) {
+      // Fetch Store Details (if not already present in click.storeName - often click only has storeId)
+      if (click.storeId && !click.storeName) { // Only fetch if storeName is missing
         try {
           const storeRef = doc(firestoreDb, 'stores', click.storeId);
           const storeSnap = await getDoc(storeRef);
@@ -146,7 +147,9 @@ export default function AdminClicksPage() {
         } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch store ${click.storeId}`, e); }
       }
 
-      if (click.clickId) {
+      // Fetch Conversion
+      // Use click.clickId (the UUID field) to find the conversion, not click.id (Firestore document ID)
+      if (click.clickId) { 
         try {
           const convQuery = query(collection(firestoreDb, 'conversions'), where('clickId', '==', click.clickId), limit(1));
           const convSnap = await getDocs(convQuery);
@@ -155,22 +158,22 @@ export default function AdminClicksPage() {
             const convData = convDoc.data();
             conversion = {
               id: convDoc.id,
-              clickId: convData.clickId, // Required
+              clickId: convData.clickId,
               originalClickFirebaseId: convData.originalClickFirebaseId || null,
               userId: convData.userId || null,
               storeId: convData.storeId || null,
               storeName: convData.storeName || null,
-              orderId: convData.orderId, // Required
-              saleAmount: typeof convData.saleAmount === 'number' ? convData.saleAmount : 0, // Required, default to 0 if not number
+              orderId: convData.orderId,
+              saleAmount: typeof convData.saleAmount === 'number' ? convData.saleAmount : 0,
               currency: convData.currency || 'INR',
-              commissionAmount: convData.commissionAmount || null,
-              status: (convData.status || 'unknown_status') as Conversion['status'], // Required, default & cast
-              timestamp: (convData.timestamp instanceof Timestamp ? convData.timestamp : Timestamp.fromDate(new Date(0))) as Timestamp, // Required, ensure Timestamp
+              commissionAmount: convData.commissionAmount ?? null,
+              status: (convData.status || 'unknown_status') as Conversion['status'],
+              timestamp: convData.timestamp as Timestamp, // Expect Timestamp from Firestore
               postbackData: convData.postbackData || null,
               processingError: convData.processingError || null,
             };
           }
-        } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch conversion for click ${click.clickId}`, e); }
+        } catch (e) { console.warn(`${ADMIN_CLICKS_LOG_PREFIX} Failed to fetch conversion for clickId ${click.clickId}`, e); }
       }
       return { click, user: userProfile, conversion, store: storeDataFromDetails };
     });
@@ -205,17 +208,22 @@ export default function AdminClicksPage() {
       let constraints: QueryConstraint[] = [];
 
       if (debouncedSearchTerm.trim() && filterType !== 'all') {
-        if (filterType === 'clickId') {
+        if (filterType === 'clickId') { // Search by click.clickId (the UUID field)
           constraints.push(where('clickId', '==', debouncedSearchTerm.trim()));
         } else if (filterType === 'orderId') {
-          if (!db) { throw new Error("DB not available for orderId search"); }
-          const convQuery = query(collection(db, 'conversions'), where('orderId', '==', debouncedSearchTerm.trim()), limit(1));
-          const convSnap = await getDocs(convQuery);
-          if (!convSnap.empty) {
-            const convData = convSnap.docs[0].data() as Conversion;
-            if (convData.clickId) constraints.push(where('clickId', '==', convData.clickId));
-            else { setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); return; }
-          } else { setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); return; }
+          // First find conversion by orderId, then find click by the conversion's clickId
+          const convSearchQuery = query(collection(firestoreDb, 'conversions'), where('orderId', '==', debouncedSearchTerm.trim()), limit(1));
+          const convSearchSnap = await getDocs(convSearchQuery);
+          if (!convSearchSnap.empty) {
+            const convData = convSearchSnap.docs[0].data() as Conversion;
+            if (convData.clickId) { // Use the clickId from the conversion to find the click
+              constraints.push(where('clickId', '==', convData.clickId));
+            } else { 
+              setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); return; 
+            }
+          } else { 
+            setCombinedData([]); setHasMore(false); setPageLoading(false); setLoadingMore(false); setIsSearching(false); return; 
+          }
         } else if (filterType === 'userId' || filterType === 'storeId') {
           constraints.push(where(filterType, '==', debouncedSearchTerm.trim()));
         }
@@ -233,7 +241,7 @@ export default function AdminClicksPage() {
         const data = docSnap.data();
         return {
           id: docSnap.id, ...data,
-          timestamp: data.timestamp as Timestamp, // Assume it's Timestamp from Firestore
+          timestamp: data.timestamp as Timestamp, // Expect Timestamp from Firestore
         } as Click;
       });
       
@@ -271,12 +279,14 @@ export default function AdminClicksPage() {
   }, [debouncedSearchTerm, filterType, toast, fetchClickDetails]);
 
   React.useEffect(() => {
+    // Initial fetch
     fetchTrackingData(false, null);
-  }, [filterType, debouncedSearchTerm, fetchTrackingData]);
+  }, [filterType, debouncedSearchTerm, fetchTrackingData]); // Re-fetch if filter or search term changes
 
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // fetchTrackingData is called by useEffect due to debouncedSearchTerm change
   };
   const handleLoadMore = () => {
     if (!loadingMore && hasMore && lastVisibleClick) {
@@ -313,7 +323,7 @@ export default function AdminClicksPage() {
                 <SelectTrigger id="filterTypeSelClicksAdmin" className="h-10"><SelectValue placeholder="Filter by..." /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Fields (General Search)</SelectItem>
-                  <SelectItem value="clickId">Click ID</SelectItem>
+                  <SelectItem value="clickId">Click ID (Original UUID)</SelectItem>
                   <SelectItem value="userId">User ID</SelectItem>
                   <SelectItem value="storeId">Store ID</SelectItem>
                   <SelectItem value="orderId">Order ID (from Conversion)</SelectItem>
@@ -371,8 +381,8 @@ export default function AdminClicksPage() {
                   <TableBody>
                     {combinedData.map(({ click, user, conversion, store: storeFromDetails }) => {
                        const displayStoreName = click.storeName || storeFromDetails?.name || click.storeId || 'N/A';
-                       const clickTimestampObject = click.timestamp; // This is already a Timestamp
-                       const conversionTimestampObject = conversion?.timestamp; // This is also a Timestamp
+                       const clickTimestampObject = click.timestamp; // This is Timestamp | FieldValue
+                       const conversionTimestampObject = conversion?.timestamp; // This is Timestamp | FieldValue
 
                        return (
                         <TableRow key={click.id}>
@@ -410,7 +420,7 @@ export default function AdminClicksPage() {
                               {displayStoreName}
                             </TableCell>
                             <TableCell className="whitespace-nowrap">
-                              {clickTimestampObject ? format(clickTimestampObject.toDate(), 'PPp') : 'N/A'}
+                              {clickTimestampObject && clickTimestampObject instanceof Timestamp ? format(clickTimestampObject.toDate(), 'PPp') : 'N/A'}
                             </TableCell>
                             <TableCell>
                               {conversion ? (
@@ -427,7 +437,7 @@ export default function AdminClicksPage() {
                                     <div className="font-mono text-xs truncate max-w-[120px]" title={`Order ID: ${conversion.orderId}`}>OID: {conversion.orderId}</div>
                                     <div className="text-xs" title={`Sale: ${formatCurrency(conversion.saleAmount)}`}>Sale: {formatCurrency(conversion.saleAmount)}</div>
                                     <div className="text-[10px] text-muted-foreground mt-0.5">
-                                        {conversionTimestampObject ? format(conversionTimestampObject.toDate(), 'Pp') : 'N/A'}
+                                        {conversionTimestampObject && conversionTimestampObject instanceof Timestamp ? format(conversionTimestampObject.toDate(), 'Pp') : 'N/A'}
                                     </div>
                                   </div>
                               ) : (
