@@ -19,16 +19,16 @@ import {
   deleteDoc,
   serverTimestamp,
   where,
-  QueryConstraint,
-  DocumentData,
-  QueryDocumentSnapshot,
+  type QueryConstraint,
+  type DocumentData,
+  type QueryDocumentSnapshot,
   addDoc,
   getDoc,
-  Timestamp, // Import Timestamp
-  FieldValue // Import FieldValue
+  Timestamp, // Value import
+  type FieldValue // Type import
 } from 'firebase/firestore';
 import { db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { Category, CategoryFormValues as CategoryFormType } from '@/lib/types';
+import type { Category, CategoryFormValues as AppCategoryFormValues } from '@/lib/types'; // Renamed CategoryFormValues to avoid conflict
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -44,7 +44,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, Building2 } from 'lucide-react';
+import { AlertCircle, Loader2, Search, Edit, Trash2, PlusCircle, Building2, MoreHorizontal } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -71,6 +71,8 @@ import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
+import { useDebounce } from '@/hooks/use-debounce';
+import { Switch } from '@/components/ui/switch';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -79,9 +81,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal } from "lucide-react";
-import { useDebounce } from '@/hooks/use-debounce';
-import { Switch } from '@/components/ui/switch';
 
 const CATEGORIES_PER_PAGE = 20;
 
@@ -132,7 +131,7 @@ function CategoriesTableSkeleton() {
 
 function AdminCategoriesPageContent() {
   const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(true); // Renamed for clarity
   const [error, setError] = useState<string | null>(null);
   const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -146,10 +145,9 @@ function AdminCategoriesPageContent() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null); // For state-controlled dialog
+  
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [categoryToDelete, setCategoryToDelete] = React.useState<Category | null>(null);
-
 
   const [updatingFieldId, setUpdatingFieldId] = useState<string | null>(null);
 
@@ -173,13 +171,13 @@ function AdminCategoriesPageContent() {
   ) => {
     if (!db || firebaseInitializationError) {
       setError(firebaseInitializationError || "Database connection not available.");
-      if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+      if (!isLoadMoreOperation) setPageLoading(false); else setLoadingMore(false);
       setHasMore(false);
       return;
     }
 
     if (!isLoadMoreOperation) {
-      setLoading(true); setCategories([]); setLastVisible(null); setHasMore(true);
+      setPageLoading(true); setCategories([]); setLastVisible(null); setHasMore(true);
     } else {
       if (!docToStartAfter && isLoadMoreOperation) {
         setLoadingMore(false);
@@ -213,6 +211,8 @@ function AdminCategoriesPageContent() {
 
       const categoriesData = querySnapshot.docs.map(docSnap => {
         const data = docSnap.data();
+        const createdAtFromServer = data.createdAt;
+        const updatedAtFromServer = data.updatedAt;
         return {
           id: docSnap.id,
           name: data.name || '',
@@ -222,8 +222,8 @@ function AdminCategoriesPageContent() {
           order: typeof data.order === 'number' ? data.order : 0,
           isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
           dataAiHint: data.dataAiHint || null,
-          createdAt: data.createdAt as Timestamp | FieldValue, // Assign Firestore Timestamp or FieldValue
-          updatedAt: data.updatedAt as Timestamp | FieldValue, // Assign Firestore Timestamp or FieldValue
+          createdAt: createdAtFromServer instanceof Timestamp ? createdAtFromServer : Timestamp.fromDate(new Date(0)),
+          updatedAt: updatedAtFromServer instanceof Timestamp ? updatedAtFromServer : Timestamp.fromDate(new Date(0)),
         } as Category; // Ensure the object conforms to the Category type
       });
 
@@ -237,7 +237,7 @@ function AdminCategoriesPageContent() {
       toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
       setHasMore(false);
     } finally {
-      if (!isLoadMoreOperation) setLoading(false); else setLoadingMore(false);
+      if (!isLoadMoreOperation) setPageLoading(false); else setLoadingMore(false);
       setIsSearching(false);
     }
   }, [toast]);
@@ -283,9 +283,9 @@ function AdminCategoriesPageContent() {
 
   useEffect(() => {
     const subscription = form.watch((value, { name, type }) => {
-      if (name === "name" && !editingCategory && isDialogOpen && type === 'change') {
+      if (name === "name" && !editingCategory && isDialogOpen && type === 'change') { // Only auto-generate for new categories
         const newSlug = generateSlugFromName(value.name || "");
-        if (form.getValues("slug") !== newSlug) {
+        if (form.getValues("slug") !== newSlug || form.getValues("slug") === '') {
           form.setValue("slug", newSlug, { shouldValidate: true });
         }
       }
@@ -295,46 +295,83 @@ function AdminCategoriesPageContent() {
 
 
   const onSubmit = async (data: CategoryFormValues) => {
-    if (!db) {
-      setError("Database not available.");
+    if (!db || firebaseInitializationError) {
+      setError(firebaseInitializationError || "Database not available.");
       setIsSaving(false);
       return;
     }
     setIsSaving(true);
     setError(null);
 
-    const submissionData: Partial<CategoryFormType> & { updatedAt: FieldValue, createdAt?: FieldValue } = {
-      ...data,
-      imageUrl: data.imageUrl || null,
+    const finalSlug = data.slug || generateSlugFromName(data.name);
+    if (!finalSlug) {
+        form.setError('slug', {type: 'manual', message: 'Slug could not be generated. Please enter a name.'});
+        setIsSaving(false);
+        return;
+    }
+
+    // Check for slug uniqueness
+    if (!editingCategory || (editingCategory && editingCategory.slug !== finalSlug)) {
+        const categoriesRef = collection(db, 'categories');
+        const q = query(categoriesRef, where('slug', '==', finalSlug), limit(1));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+            // Check if the found document is the one being edited
+            if (!editingCategory || querySnapshot.docs[0].id !== editingCategory.id) {
+                form.setError('slug', { type: 'manual', message: 'This slug is already in use. Please choose a unique one.' });
+                setIsSaving(false);
+                return;
+            }
+        }
+    }
+    
+    const submissionData: Omit<AppCategoryFormValues, 'slug'> & { slug: string; updatedAt: FieldValue; createdAt?: FieldValue } = {
+      name: data.name,
+      slug: finalSlug,
       description: data.description || null,
+      imageUrl: data.imageUrl || null,
+      order: data.order,
+      isActive: data.isActive,
       dataAiHint: data.dataAiHint || null,
       updatedAt: serverTimestamp(),
     };
 
     try {
-      if (!editingCategory || (editingCategory && editingCategory.slug !== data.slug)) {
-        const categoriesRef = collection(db, 'categories');
-        const q = query(categoriesRef, where('slug', '==', data.slug));
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          if (!editingCategory || querySnapshot.docs[0].id !== editingCategory.id) {
-            form.setError('slug', { type: 'manual', message: 'This slug is already in use.' });
-            setIsSaving(false);
-            return;
-          }
-        }
-      }
-
       if (editingCategory) {
         const categoryDocRef = doc(db, 'categories', editingCategory.id);
-        await updateDoc(categoryDocRef, submissionData);
-        setCategories(prev => prev.map(c => c.id === editingCategory.id ? { ...c, ...submissionData, updatedAt: new Date() } as Category : c));
+        // Slug is not updated for existing categories
+        const { slug, ...updateData } = submissionData;
+        await updateDoc(categoryDocRef, updateData);
+        
+        const updatedCategoryForState: Category = {
+          ...editingCategory,
+          name: data.name,
+          description: data.description || null,
+          imageUrl: data.imageUrl || null,
+          order: data.order,
+          isActive: data.isActive,
+          dataAiHint: data.dataAiHint || null,
+          updatedAt: Timestamp.now(), // Optimistic update with current client Timestamp
+        };
+        setCategories(prev => prev.map(c => c.id === editingCategory!.id ? updatedCategoryForState : c));
         toast({ title: "Category Updated", description: `${data.name} details saved.` });
       } else {
         submissionData.createdAt = serverTimestamp();
         const docRef = await addDoc(collection(db, 'categories'), submissionData);
-        const newCategoryData = { ...submissionData, id: docRef.id, createdAt: new Date(), updatedAt: new Date() } as Category;
-        setCategories(prev => [newCategoryData, ...prev].sort((a,b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name)));
+        
+        const newCategoryForState: Category = {
+          id: docRef.id,
+          name: data.name,
+          slug: finalSlug,
+          description: data.description || null,
+          imageUrl: data.imageUrl || null,
+          order: data.order,
+          isActive: data.isActive,
+          dataAiHint: data.dataAiHint || null,
+          createdAt: Timestamp.now(), // Optimistic update with current client Timestamp
+          updatedAt: Timestamp.now(), // Optimistic update with current client Timestamp
+        };
+        setCategories(prev => [newCategoryForState, ...prev].sort((a,b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name)));
         toast({ title: "Category Added", description: `${data.name} has been created.` });
       }
       setIsDialogOpen(false);
@@ -351,7 +388,6 @@ function AdminCategoriesPageContent() {
   
   const handleDeleteCategory = async (categoryId: string) => {
     if (!categoryId || !db) return;
-    // setDeletingCategoryId(categoryId); // This was for inline loader on button, not needed with dialog state
     try {
       await deleteDoc(doc(db, 'categories', categoryId));
       setCategories(prev => prev.filter(c => c.id !== categoryId));
@@ -361,9 +397,8 @@ function AdminCategoriesPageContent() {
       const errorMsg = err instanceof Error ? err.message : "Could not delete the category.";
       toast({ variant: "destructive", title: "Deletion Failed", description: errorMsg });
     } finally {
-      // setDeletingCategoryId(null);
-      setIsDeleteDialogOpen(false); // Close dialog
-      setCategoryToDelete(null); // Clear the category to delete
+      setIsDeleteDialogOpen(false); 
+      setCategoryToDelete(null); 
     }
   };
 
@@ -373,7 +408,7 @@ function AdminCategoriesPageContent() {
     const newActiveState = !category.isActive;
     try {
       await updateDoc(doc(db, 'categories', category.id), { isActive: newActiveState, updatedAt: serverTimestamp() });
-      setCategories(prev => prev.map(c => c.id === category.id ? { ...c, isActive: newActiveState, updatedAt: new Date() } : c));
+      setCategories(prev => prev.map(c => c.id === category.id ? { ...c, isActive: newActiveState, updatedAt: Timestamp.now() } : c));
       toast({ title: `Category ${newActiveState ? 'Activated' : 'Deactivated'}` });
     } catch (err) {
       console.error("Error toggling active status:", err);
@@ -388,8 +423,7 @@ function AdminCategoriesPageContent() {
     setIsDeleteDialogOpen(true);
   };
 
-
-  if (loading && categories.length === 0 && !error) {
+  if (pageLoading && categories.length === 0 && !error) {
     return <CategoriesTableSkeleton />;
   }
 
@@ -402,7 +436,7 @@ function AdminCategoriesPageContent() {
         </Button>
       </div>
 
-      {error && !loading && (
+      {error && !pageLoading && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
@@ -422,11 +456,11 @@ function AdminCategoriesPageContent() {
               placeholder="Search by Category Name..."
               value={searchTermInput}
               onChange={(e) => setSearchTermInput(e.target.value)}
-              disabled={isSearching || loading}
+              disabled={isSearching || pageLoading}
               className="h-10 text-base"
             />
-            <Button type="submit" disabled={isSearching || loading} className="h-10">
-              {isSearching || (loading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            <Button type="submit" disabled={isSearching || pageLoading} className="h-10">
+              {isSearching || (pageLoading && debouncedSearchTerm) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                <span className="sr-only sm:not-sr-only sm:ml-2">Search</span>
             </Button>
           </form>
@@ -439,9 +473,7 @@ function AdminCategoriesPageContent() {
           <CardDescription>View and manage product categories.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading && categories.length === 0 ? (
-            <CategoriesTableSkeleton />
-          ) : !loading && categories.length === 0 && !error ? (
+          {categories.length === 0 && !error && !pageLoading ? (
             <p className="text-center text-muted-foreground py-8">
               {debouncedSearchTerm ? `No categories found matching "${debouncedSearchTerm}".` : "No categories found."}
             </p>
@@ -493,14 +525,14 @@ function AdminCategoriesPageContent() {
                             <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Actions</DropdownMenuLabel>
                             <DropdownMenuItem onClick={() => openEditDialog(category)}>
-                                <Edit className="mr-2 h-4 w-4" /> Edit
+                                <Edit className="mr-2 h-4 w-4" /> <span>Edit</span>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                                 onSelect={() => handleOpenDeleteDialog(category)}
                                 className="text-destructive hover:!bg-destructive/10 focus:!bg-destructive/10 focus:!text-destructive"
                             >
-                                <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                <Trash2 className="mr-2 h-4 w-4" /> <span>Delete</span>
                             </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
@@ -511,7 +543,7 @@ function AdminCategoriesPageContent() {
               </Table>
             </div>
           )}
-          {hasMore && !loading && categories.length > 0 && (
+          {hasMore && !pageLoading && categories.length > 0 && (
             <div className="mt-6 text-center">
               <Button onClick={handleLoadMore} disabled={loadingMore}>
                 {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -598,7 +630,7 @@ function AdminCategoriesPageContent() {
                     <AlertDialogAction
                         onClick={() => handleDeleteCategory(categoryToDelete.id)}
                         className="bg-destructive hover:bg-destructive/90"
-                        disabled={isSaving} // Use isSaving for main form, or introduce a new deleting state if needed
+                        disabled={isSaving}
                     >
                         {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
                         Delete
