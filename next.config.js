@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone', // Good for deployments, ensure your deployment platform supports this
+  output: 'standalone', // Recommended for Firebase App Hosting / Cloud Run
   images: {
     remotePatterns: [
       {

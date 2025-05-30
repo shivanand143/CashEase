@@ -10,7 +10,8 @@
       "**/.*",
       "**/node_modules/**",
       ".firebase",
-      "out"
+      "out",
+      ".next/cache"
     ]
   },
   "emulators": {
