@@ -177,9 +177,11 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
 
   return (
     <Card className="overflow-hidden h-full flex flex-col group border shadow-sm hover:shadow-lg transition-shadow duration-300">
-      <Link href={`/stores/${product.storeId}/products?highlight=${product.id}`} passHref legacyBehavior>
-        <a className="block aspect-[1/1] w-full relative overflow-hidden bg-muted p-1"> {/* Adjusted for smaller square-ish image, reduced padding */}
-            <Image
+      <Link
+        href={`/stores/${product.storeId}/products?highlight=${product.id}`}
+        className="block aspect-[1/1] w-full relative overflow-hidden bg-muted p-1"
+      >
+        <Image
             src={imageUrl}
             alt={productTitle}
             fill
@@ -189,8 +191,7 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
             onError={(e) => {
                 (e.target as HTMLImageElement).src = `https://placehold.co/150x150.png?text=${encodeURIComponent(placeholderTextForImage)}`;
             }}
-            />
-        </a>
+        />
       </Link>
       <CardContent className="p-2 flex flex-col flex-grow justify-between">
         <div>
