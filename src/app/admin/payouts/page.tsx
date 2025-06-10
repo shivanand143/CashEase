@@ -22,14 +22,14 @@ import {
   runTransaction,
   writeBatch,
   type CollectionReference,
-  type Query as FirestoreQueryType, // Use aliased import
+  type Query as FirestoreQueryType,
   getDoc,
   increment,
   type WithFieldValue,
   type Firestore,
-  type Transaction as FirestoreTransactionType, // Use aliased import
-  type QuerySnapshot, // Import QuerySnapshot for casting if needed
-  documentId, // Import documentId
+  type Transaction as FirestoreTransactionType,
+  type QuerySnapshot,
+  documentId,
 } from 'firebase/firestore';
 import { db, firebaseInitializationError, auth as firebaseAuthService } from '@/lib/firebase/config';
 import type { PayoutRequest, PayoutStatus, UserProfile, Transaction, CashbackStatus, PayoutMethod, Store } from '@/lib/types';
@@ -53,7 +53,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { AlertCircle, Loader2, Search, CheckCircle, XCircle, Hourglass, Send, Info, IndianRupee, ListFilter, User as UserIconLucide } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, safeToDate } from '@/lib/utils';
 import AdminGuard from '@/components/guards/admin-guard';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -229,7 +229,7 @@ function AdminPayoutsPageContent() {
       }
       constraints.push(limit(PAYOUTS_PER_PAGE));
 
-      const q = query(payoutsCollectionRef, ...constraints) as FirestoreQueryType<PayoutRequest>;
+      const q = query(payoutsCollectionRef, ...constraints);
       const querySnapshot = await getDocs(q);
 
       const rawPayoutsData = querySnapshot.docs.map(docSnap => {
@@ -330,7 +330,7 @@ function AdminPayoutsPageContent() {
         if (!userDocSnap.exists()) throw new Error(`User profile ${selectedPayout.userId} not found.`);
 
         const currentPayoutData = payoutDocSnap.data() as PayoutRequest;
-        const currentUserProfile = userDocSnap.data() as UserProfile;
+        // const currentUserProfile = userDocSnap.data() as UserProfile; // Not directly used currently
 
         const payoutUpdateData: WithFieldValue<Partial<PayoutRequest>> = {
             status: newPayoutStatus,
@@ -354,9 +354,9 @@ function AdminPayoutsPageContent() {
                     where('status', '==', 'confirmed' as CashbackStatus),
                     where('payoutId', '==', null),
                     orderBy('transactionDate', 'asc')
-                ) as FirestoreQueryType<Transaction>;
+                );
                 
-                const confirmedUnpaidSnap = await firestoreTransaction.get<Transaction, DocumentData>(transactionsQuery);
+                const confirmedUnpaidSnap = await firestoreTransaction.get(transactionsQuery);
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Found ${confirmedUnpaidSnap.size} confirmed, unpaid transactions.`);
 
                 let sumOfSelectedTxs = 0;
