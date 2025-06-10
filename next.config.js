@@ -22,12 +22,13 @@ const nextConfig = {
   output: 'standalone', // Recommended for server deployments (like Firebase App Hosting)
   
   devIndicators: {
+    // Ensure development origins are correctly configured for preview environments.
     allowedDevOrigins: [
       "http://localhost:3000", 
-      "http://localhost:6000", // Added this common port
+      "http://localhost:6000",
       "https://*.cloudworkstations.dev", 
       "https://*.googleusercontent.com", 
-      "http://localhost:9002" 
+      "http://localhost:9002"
     ]
   }
 };
