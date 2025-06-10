@@ -1,5 +1,4 @@
 
-
 // src/app/admin/payouts/page.tsx
 "use client";
 
@@ -28,7 +27,8 @@ import {
   increment,
   type WithFieldValue,        
   type Firestore,
-  type Transaction as FirestoreTransactionType, // Renamed to avoid conflict with local Transaction type
+  type Transaction as FirestoreTransactionType,
+  QuerySnapshot, // Import QuerySnapshot
 } from 'firebase/firestore';
 import { db, firebaseInitializationError, auth as firebaseAuthService } from '@/lib/firebase/config';
 import type { PayoutRequest, PayoutStatus, UserProfile, Transaction, CashbackStatus, PayoutMethod, Store } from '@/lib/types';
@@ -347,22 +347,22 @@ function AdminPayoutsPageContent() {
             if (!transactionIdsToFinalize || transactionIdsToFinalize.length === 0) {
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} No pre-linked Tx IDs. Fetching 'confirmed' transactions for user ${selectedPayout.userId} to cover amount ${payoutAmount}.`);
                 
-                const confirmedUnpaidSnap = await firestoreTransaction.get(
-                    query(
-                        collection(firestoreDb, 'transactions') as CollectionReference<DocumentData>, // Explicitly DocumentData for query
-                        where('userId', '==', selectedPayout.userId),
-                        where('status', '==', 'confirmed' as CashbackStatus),
-                        where('payoutId', '==', null), 
-                        orderBy('transactionDate', 'asc')
-                    ) // Query returns Query<DocumentData>
+                const transactionsQuery = query(
+                    collection(firestoreDb, 'transactions') as CollectionReference<DocumentData>, 
+                    where('userId', '==', selectedPayout.userId),
+                    where('status', '==', 'confirmed' as CashbackStatus),
+                    where('payoutId', '==', null), 
+                    orderBy('transactionDate', 'asc')
                 );
+                
+                const confirmedUnpaidSnap = await firestoreTransaction.get(transactionsQuery) as QuerySnapshot<DocumentData>;
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Found ${confirmedUnpaidSnap.size} confirmed, unpaid transactions.`);
                 
                 let sumOfSelectedTxs = 0;
                 const collectedTxIds: string[] = [];
 
-                for (const txDocSnap of confirmedUnpaidSnap.docs) { // txDocSnap is QueryDocumentSnapshot<DocumentData>
-                    const txData = txDocSnap.data() as Transaction; // Cast data to Transaction
+                for (const txDocSnap of confirmedUnpaidSnap.docs) { 
+                    const txData = txDocSnap.data() as Transaction; 
                     const txCashbackAmount = txData.finalCashbackAmount ?? txData.initialCashbackAmount ?? 0;
                     if (txCashbackAmount > 0 && (sumOfSelectedTxs + txCashbackAmount) <= payoutAmount) {
                         sumOfSelectedTxs += txCashbackAmount;
@@ -696,3 +696,5 @@ function AdminPayoutsPageContent() {
 export default function AdminPayoutsPage() {
     return <AdminPayoutsPageContent />;
 }
+
+    
