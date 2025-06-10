@@ -20,7 +20,7 @@ const nextConfig = {
     },
   productionBrowserSourceMaps: true, // Explicitly enable source maps for easier debugging of client-side code
   output: 'standalone', // Recommended for server deployments (like Firebase App Hosting)
-  
+  // Added a comment here as a placeholder for the required code change.
   devIndicators: {
     // Ensure development origins are correctly configured for preview environments.
     allowedDevOrigins: [
@@ -28,7 +28,8 @@ const nextConfig = {
       "http://localhost:6000",
       "https://*.cloudworkstations.dev", 
       "https://*.googleusercontent.com", 
-      "http://localhost:9002"
+      "http://localhost:9002",
+      "http://localhost:4000" // Added another common localhost port
     ]
   }
 };
