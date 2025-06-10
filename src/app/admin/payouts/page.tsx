@@ -168,7 +168,7 @@ function AdminPayoutsPageContent() {
 
     const newUsers: Record<string, Pick<UserProfile, 'displayName' | 'email'>> = {};
     try {
-      for (let i = 0; i < userIdsToFetch.length; i += 30) { 
+      for (let i = 0; i < userIdsToFetch.length; i += 30) {
         const chunk = userIdsToFetch.slice(i, i + 30);
         if (chunk.length === 0) continue;
         const usersCollRef = collection(db, 'users') as CollectionReference<Pick<UserProfile, 'displayName' | 'email'>>;
@@ -233,9 +233,9 @@ function AdminPayoutsPageContent() {
       const querySnapshot = await getDocs(q);
 
       const rawPayoutsData = querySnapshot.docs.map(docSnap => {
-        const { id: _dataId, ...dataWithoutId } = docSnap.data() as WithFieldValue<PayoutRequest>; 
+        const { id: _dataId, ...dataWithoutId } = docSnap.data() as WithFieldValue<PayoutRequest>;
         return {
-            id: docSnap.id, 
+            id: docSnap.id,
             ...dataWithoutId,
             requestedAt: dataWithoutId.requestedAt as Timestamp,
             processedAt: dataWithoutId.processedAt ? dataWithoutId.processedAt as Timestamp : null,
@@ -356,7 +356,7 @@ function AdminPayoutsPageContent() {
                     orderBy('transactionDate', 'asc')
                 ) as FirestoreQueryType<Transaction>;
                 
-                const confirmedUnpaidSnap = await firestoreTransaction.get<Transaction>(transactionsQuery);
+                const confirmedUnpaidSnap = await firestoreTransaction.get<Transaction, DocumentData>(transactionsQuery);
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Found ${confirmedUnpaidSnap.size} confirmed, unpaid transactions.`);
 
                 let sumOfSelectedTxs = 0;
@@ -693,4 +693,5 @@ function AdminPayoutsPageContent() {
 export default function AdminPayoutsPage() {
     return <AdminPayoutsPageContent />;
 }
+
     
