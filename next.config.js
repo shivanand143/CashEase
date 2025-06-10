@@ -1,3 +1,4 @@
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
@@ -19,8 +20,16 @@ const nextConfig = {
     },
   productionBrowserSourceMaps: true, // Explicitly enable source maps for easier debugging of client-side code
   output: 'standalone', // Recommended for server deployments (like Firebase App Hosting)
-  // Add any other stable configurations you need here.
-  // Avoid highly experimental features if you're facing build issues.
+  
+  devIndicators: {
+    allowedDevOrigins: [
+      "http://localhost:3000", 
+      "http://localhost:6000", // Added this common port
+      "https://*.cloudworkstations.dev", 
+      "https://*.googleusercontent.com", 
+      "http://localhost:9002" 
+    ]
+  }
 };
 
 module.exports = nextConfig;

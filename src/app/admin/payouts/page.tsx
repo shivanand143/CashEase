@@ -22,12 +22,12 @@ import {
   runTransaction,
   writeBatch,
   type CollectionReference, 
-  type Query as FirestoreQueryType, 
+  Query as FirestoreQueryType, // Keep alias for Query
   getDoc, 
   increment,
   type WithFieldValue,        
   type Firestore,
-  type Transaction as FirestoreTransactionType,
+  Transaction as FirestoreTransactionType, // Keep alias for Transaction
   QuerySnapshot, // Import QuerySnapshot
 } from 'firebase/firestore';
 import { db, firebaseInitializationError, auth as firebaseAuthService } from '@/lib/firebase/config';
@@ -355,7 +355,7 @@ function AdminPayoutsPageContent() {
                     orderBy('transactionDate', 'asc')
                 );
                 
-                const confirmedUnpaidSnap = await firestoreTransaction.get(transactionsQuery) as QuerySnapshot<DocumentData>;
+                const confirmedUnpaidSnap = await firestoreTransaction.get(transactionsQuery) as unknown as QuerySnapshot<DocumentData>;
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Found ${confirmedUnpaidSnap.size} confirmed, unpaid transactions.`);
                 
                 let sumOfSelectedTxs = 0;
