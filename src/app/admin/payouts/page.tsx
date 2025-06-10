@@ -29,7 +29,7 @@ import {
   type Firestore,
   Transaction as FirestoreTransactionType,
   type QuerySnapshot,
-  documentId, // Added documentId import
+  documentId, 
 } from 'firebase/firestore';
 import { db, firebaseInitializationError, auth as firebaseAuthService } from '@/lib/firebase/config';
 import type { PayoutRequest, PayoutStatus, UserProfile, Transaction, CashbackStatus, PayoutMethod, Store } from '@/lib/types';
@@ -168,7 +168,7 @@ function AdminPayoutsPageContent() {
 
     const newUsers: Record<string, Pick<UserProfile, 'displayName' | 'email'>> = {};
     try {
-      for (let i = 0; i < userIdsToFetch.length; i += 30) { // Firestore 'in' query limit is 30
+      for (let i = 0; i < userIdsToFetch.length; i += 30) { 
         const chunk = userIdsToFetch.slice(i, i + 30);
         if (chunk.length === 0) continue;
         const usersCollRef = collection(db, 'users') as CollectionReference<Pick<UserProfile, 'displayName' | 'email'>>;
@@ -229,11 +229,11 @@ function AdminPayoutsPageContent() {
       }
       constraints.push(limit(PAYOUTS_PER_PAGE));
 
-      const q = query(payoutsCollectionRef, ...constraints) as FirestoreQueryType<PayoutRequest>;
+      const q = query(payoutsCollectionRef, ...constraints) as FirestoreQueryType<PayoutRequest>; // Explicitly type query
       const querySnapshot = await getDocs(q);
 
       const rawPayoutsData = querySnapshot.docs.map(docSnap => {
-        const { id: _dataId, ...dataWithoutId } = docSnap.data() as WithFieldValue<PayoutRequest>;
+        const { id: _dataId, ...dataWithoutId } = docSnap.data() as WithFieldValue<PayoutRequest>; // Use WithFieldValue
         return {
             id: docSnap.id, 
             ...dataWithoutId,
@@ -347,21 +347,22 @@ function AdminPayoutsPageContent() {
             console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Processing 'paid' status for payout ${selectedPayout.id}.`);
             if (!transactionIdsToFinalize || transactionIdsToFinalize.length === 0) {
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} No pre-linked Tx IDs. Fetching 'confirmed' transactions for user ${selectedPayout.userId} to cover amount ${payoutAmount}.`);
+                
                 const transactionsQuery = query(
                     collection(firestoreDb, 'transactions') as CollectionReference<Transaction>,
                     where('userId', '==', selectedPayout.userId),
                     where('status', '==', 'confirmed' as CashbackStatus),
                     where('payoutId', '==', null),
                     orderBy('transactionDate', 'asc')
-                );
+                ) as FirestoreQueryType<Transaction>;
                 
-                const confirmedUnpaidSnap = await firestoreTransaction.get(transactionsQuery) as unknown as QuerySnapshot<Transaction>;
+                const confirmedUnpaidSnap = await firestoreTransaction.get(transactionsQuery as any) as QuerySnapshot<Transaction>;
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Found ${confirmedUnpaidSnap.size} confirmed, unpaid transactions.`);
 
                 let sumOfSelectedTxs = 0;
                 const collectedTxIds: string[] = [];
                 for (const txDocSnap of confirmedUnpaidSnap.docs) {
-                    const txData = txDocSnap.data();
+                    const txData = txDocSnap.data() as Transaction;
                     const txCashbackAmount = txData.finalCashbackAmount ?? txData.initialCashbackAmount ?? 0;
                     if (txCashbackAmount > 0 && (sumOfSelectedTxs + txCashbackAmount) <= payoutAmount) {
                         sumOfSelectedTxs += txCashbackAmount;
