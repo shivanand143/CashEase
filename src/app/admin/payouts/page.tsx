@@ -22,14 +22,14 @@ import {
   runTransaction,
   writeBatch,
   type CollectionReference,
-  Query as FirestoreQueryType,
+  type Query as FirestoreQueryType, // Use aliased import
   getDoc,
   increment,
   type WithFieldValue,
   type Firestore,
-  Transaction as FirestoreTransactionType,
-  type QuerySnapshot,
-  documentId, 
+  type Transaction as FirestoreTransactionType, // Use aliased import
+  type QuerySnapshot, // Import QuerySnapshot for casting if needed
+  documentId, // Import documentId
 } from 'firebase/firestore';
 import { db, firebaseInitializationError, auth as firebaseAuthService } from '@/lib/firebase/config';
 import type { PayoutRequest, PayoutStatus, UserProfile, Transaction, CashbackStatus, PayoutMethod, Store } from '@/lib/types';
@@ -229,11 +229,11 @@ function AdminPayoutsPageContent() {
       }
       constraints.push(limit(PAYOUTS_PER_PAGE));
 
-      const q = query(payoutsCollectionRef, ...constraints) as FirestoreQueryType<PayoutRequest>; // Explicitly type query
+      const q = query(payoutsCollectionRef, ...constraints) as FirestoreQueryType<PayoutRequest>;
       const querySnapshot = await getDocs(q);
 
       const rawPayoutsData = querySnapshot.docs.map(docSnap => {
-        const { id: _dataId, ...dataWithoutId } = docSnap.data() as WithFieldValue<PayoutRequest>; // Use WithFieldValue
+        const { id: _dataId, ...dataWithoutId } = docSnap.data() as WithFieldValue<PayoutRequest>; 
         return {
             id: docSnap.id, 
             ...dataWithoutId,
@@ -356,7 +356,7 @@ function AdminPayoutsPageContent() {
                     orderBy('transactionDate', 'asc')
                 ) as FirestoreQueryType<Transaction>;
                 
-                const confirmedUnpaidSnap = await firestoreTransaction.get(transactionsQuery as any) as QuerySnapshot<Transaction>;
+                const confirmedUnpaidSnap = await firestoreTransaction.get<Transaction>(transactionsQuery);
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Found ${confirmedUnpaidSnap.size} confirmed, unpaid transactions.`);
 
                 let sumOfSelectedTxs = 0;
