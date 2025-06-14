@@ -22,14 +22,14 @@ import {
   runTransaction,
   writeBatch,
   type CollectionReference,
-  type Query as FirestoreQueryType,
+  type Query as FirestoreQueryType, // Aliased to avoid conflict with React.Query
   getDoc,
   increment,
   type WithFieldValue,
   type Firestore,
-  type Transaction as FirestoreTransactionType,
-  type QuerySnapshot,
-  documentId,
+  type Transaction as FirestoreTransactionType, // Aliased
+  type QuerySnapshot, // Explicitly import QuerySnapshot
+  documentId, // Import documentId
 } from 'firebase/firestore';
 import { db, firebaseInitializationError, auth as firebaseAuthService } from '@/lib/firebase/config';
 import type { PayoutRequest, PayoutStatus, UserProfile, Transaction, CashbackStatus, PayoutMethod, Store } from '@/lib/types';
@@ -229,18 +229,18 @@ function AdminPayoutsPageContent() {
       }
       constraints.push(limit(PAYOUTS_PER_PAGE));
 
-      const q = query(payoutsCollectionRef, ...constraints);
+      const q = query(payoutsCollectionRef, ...constraints) as FirestoreQueryType<PayoutRequest>;
       const querySnapshot = await getDocs(q);
 
       const rawPayoutsData = querySnapshot.docs.map(docSnap => {
-        const { id: _dataId, ...dataWithoutId } = docSnap.data() as WithFieldValue<PayoutRequest>;
+        const { id: _dataId, ...dataWithoutId } = docSnap.data(); // Destructure id from data
         return {
-            id: docSnap.id,
+            id: docSnap.id, // Use the actual document ID
             ...dataWithoutId,
-            requestedAt: dataWithoutId.requestedAt as Timestamp,
+            requestedAt: dataWithoutId.requestedAt as Timestamp, // Assume it's always Timestamp
             processedAt: dataWithoutId.processedAt ? dataWithoutId.processedAt as Timestamp : null,
             updatedAt: dataWithoutId.updatedAt ? dataWithoutId.updatedAt as Timestamp : null,
-        } as PayoutRequest;
+        } as PayoutRequest; // Casting to PayoutRequest
       });
       const payoutsWithUserData = await fetchUserDataForPayouts(rawPayoutsData);
 
@@ -330,7 +330,6 @@ function AdminPayoutsPageContent() {
         if (!userDocSnap.exists()) throw new Error(`User profile ${selectedPayout.userId} not found.`);
 
         const currentPayoutData = payoutDocSnap.data() as PayoutRequest;
-        // const currentUserProfile = userDocSnap.data() as UserProfile; // Not directly used currently
 
         const payoutUpdateData: WithFieldValue<Partial<PayoutRequest>> = {
             status: newPayoutStatus,
@@ -349,20 +348,20 @@ function AdminPayoutsPageContent() {
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} No pre-linked Tx IDs. Fetching 'confirmed' transactions for user ${selectedPayout.userId} to cover amount ${payoutAmount}.`);
                 
                 const transactionsQuery = query(
-                    collection(firestoreDb, 'transactions') as CollectionReference<Transaction>,
+                    collection(firestoreDb, 'transactions'),
                     where('userId', '==', selectedPayout.userId),
                     where('status', '==', 'confirmed' as CashbackStatus),
                     where('payoutId', '==', null),
                     orderBy('transactionDate', 'asc')
-                );
+                ) as FirestoreQueryType<Transaction>;
                 
-                const confirmedUnpaidSnap = await firestoreTransaction.get(transactionsQuery);
+                const confirmedUnpaidSnap = await firestoreTransaction.get(transactionsQuery as any) as QuerySnapshot<Transaction>;
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Found ${confirmedUnpaidSnap.size} confirmed, unpaid transactions.`);
 
                 let sumOfSelectedTxs = 0;
                 const collectedTxIds: string[] = [];
                 for (const txDocSnap of confirmedUnpaidSnap.docs) {
-                    const txData = txDocSnap.data() as Transaction;
+                    const txData = txDocSnap.data();
                     const txCashbackAmount = txData.finalCashbackAmount ?? txData.initialCashbackAmount ?? 0;
                     if (txCashbackAmount > 0 && (sumOfSelectedTxs + txCashbackAmount) <= payoutAmount) {
                         sumOfSelectedTxs += txCashbackAmount;
