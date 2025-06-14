@@ -101,7 +101,7 @@ export interface Conversion {
 
 export type CashbackType = 'percentage' | 'fixed';
 export type PayoutMethod = 'paypal' | 'bank_transfer' | 'gift_card';
-export type PayoutStatus = 'pending' | 'approved' | 'processing' | 'paid' | 'rejected' | 'failed';
+export type PayoutStatus = 'pending' | 'approved' | 'processing' | 'paid' | 'rejected' | 'failed' | 'awaiting_payout';
 
 export interface Store {
   id: string;

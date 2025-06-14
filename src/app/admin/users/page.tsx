@@ -146,6 +146,9 @@ export default function AdminUsersPage() {
       const constraints: QueryConstraint[] = [];
 
       if (currentSearchTerm) {
+        // Firestore SDK requires orderBy to be on the same field as the range comparison for where clauses
+        // We can search on 'email' or 'displayName'. For simplicity, let's query by 'email'
+        // and then client-side filter more broadly.
         constraints.push(orderBy('email')); 
         constraints.push(where('email', '>=', currentSearchTerm));
         constraints.push(where('email', '<=', currentSearchTerm + '\uf8ff'));
@@ -163,18 +166,33 @@ export default function AdminUsersPage() {
 
       const usersData = querySnapshot.docs.map(docSnap => {
         const data = docSnap.data();
-        return {
+        // Construct the object to match UserProfile, keeping Timestamps as Timestamps
+        const userProfileItem: UserProfile = {
           uid: docSnap.id,
-          ...data,
-          createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0),
-          updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0),
-          lastPayoutRequestAt: safeToDate(data.lastPayoutRequestAt as Timestamp | undefined),
-        } as UserProfile;
+          email: data.email ?? null,
+          displayName: data.displayName ?? null,
+          photoURL: data.photoURL ?? null,
+          role: data.role ?? 'user',
+          cashbackBalance: data.cashbackBalance ?? 0,
+          pendingCashback: data.pendingCashback ?? 0,
+          lifetimeCashback: data.lifetimeCashback ?? 0,
+          referralCode: data.referralCode ?? null,
+          referralCount: data.referralCount ?? 0,
+          referralBonusEarned: data.referralBonusEarned ?? 0,
+          referredBy: data.referredBy ?? null,
+          isDisabled: data.isDisabled ?? false,
+          createdAt: data.createdAt as Timestamp, // Assume createdAt is always present and a Timestamp
+          updatedAt: data.updatedAt as Timestamp, // Assume updatedAt is always present and a Timestamp
+          lastPayoutRequestAt: data.lastPayoutRequestAt ? (data.lastPayoutRequestAt as Timestamp) : null,
+          payoutDetails: data.payoutDetails ?? null,
+        };
+        return userProfileItem;
       });
 
       if (isMounted) {
         let finalUsers = usersData;
         if (currentSearchTerm) {
+          // Client-side filtering if Firestore query was broad (e.g., if searching multiple fields was needed)
           finalUsers = usersData.filter(user =>
             user.email?.toLowerCase().includes(currentSearchTerm.toLowerCase()) ||
             user.displayName?.toLowerCase().includes(currentSearchTerm.toLowerCase())
@@ -229,7 +247,13 @@ export default function AdminUsersPage() {
     setIsSaving(true);
     try {
       await updateUserProfileData(editingUser.uid, { role: newRole });
-      setUsers(prev => prev.map(u => u.uid === editingUser.uid ? { ...u, role: newRole, updatedAt: new Date() } : u));
+      // Optimistically update local state or refetch user
+      // For simplicity, refetching the specific user or relying on context update via fetchUserProfile (if called by updateUserProfileData)
+      const updatedUser = await fetchUserProfile(editingUser.uid);
+      if (updatedUser) {
+        setUsers(prev => prev.map(u => u.uid === editingUser.uid ? updatedUser : u));
+      }
+
       toast({ title: "User Role Updated", description: `${editingUser.displayName || editingUser.email}'s role set to ${newRole}.` });
       setEditingUser(null);
     } catch (err) {
@@ -247,7 +271,12 @@ export default function AdminUsersPage() {
     try {
       const newDisabledState = !userToUpdate.isDisabled;
       await updateUserProfileData(userToUpdate.uid, { isDisabled: newDisabledState });
-      setUsers(prev => prev.map(u => u.uid === userToUpdate.uid ? { ...u, isDisabled: newDisabledState, updatedAt: new Date() } : u));
+      
+      const updatedUser = await fetchUserProfile(userToUpdate.uid);
+       if (updatedUser) {
+        setUsers(prev => prev.map(u => u.uid === userToUpdate.uid ? updatedUser : u));
+      }
+      
       toast({ title: `User Account ${newDisabledState ? 'Disabled' : 'Enabled'}`, description: `${userToUpdate.displayName || userToUpdate.email}'s account status updated.` });
     } catch (err) {
       console.error("Error toggling user disable status:", err);
@@ -336,7 +365,7 @@ export default function AdminUsersPage() {
                           </Badge>
                         </TableCell>
                         <TableCell>{formatCurrency(userItem.cashbackBalance)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{userItem.createdAt ? format(new Date(userItem.createdAt), 'PP') : 'N/A'}</TableCell>
+                        <TableCell className="whitespace-nowrap">{userItem.createdAt ? format(safeToDate(userItem.createdAt) || new Date(), 'PP') : 'N/A'}</TableCell>
                         <TableCell className="text-center">
                           <Switch
                             checked={!userItem.isDisabled}
@@ -403,3 +432,4 @@ export default function AdminUsersPage() {
     </AdminGuard>
   );
 }
+

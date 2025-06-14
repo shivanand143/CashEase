@@ -82,6 +82,7 @@ import { MoreHorizontal } from "lucide-react";
 import { safeToDate } from '@/lib/utils';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { useDebounce } from '@/hooks/use-debounce';
+import { Timestamp } from "firebase/firestore";
 
 
 const STORES_PER_PAGE = 15;
@@ -138,8 +139,6 @@ function AdminStoresPageContent() {
   const [updatingStoreId, setUpdatingStoreId] = React.useState<string | null>(null);
   const [categoriesList, setCategoriesList] = React.useState<{ value: string; label: string }[]>([]);
   const [loadingCategories, setLoadingCategories] = React.useState(true);
-
-
   const form = useForm<StoreFormValues>({
     resolver: zodResolver(storeSchema),
     defaultValues: {
@@ -286,8 +285,8 @@ function AdminStoresPageContent() {
             isActive: typeof data.isActive === 'boolean' ? data.isActive : true,
             isTodaysDeal: typeof data.isTodaysDeal === 'boolean' ? data.isTodaysDeal : false,
             dataAiHint: data.dataAiHint || null,
-            createdAt: safeToDate(data.createdAt),
-            updatedAt: safeToDate(data.updatedAt),
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt,
           } as Store;
       });
 
@@ -402,7 +401,7 @@ function AdminStoresPageContent() {
           updatedAt: serverTimestamp(),
         });
         if (isMounted) {
-            setStores(prev => prev.map(s => s.id === editingStore.id ? { ...s, ...submissionData, updatedAt: new Date() } as Store : s));
+            setStores(prev => prev.map(s => s.id === editingStore.id ? { ...s, ...submissionData, updatedAt: Timestamp.now() } as Store : s));
             toast({ title: "Store Updated", description: `${data.name} details saved.` });
         }
       } else {
@@ -461,7 +460,7 @@ function AdminStoresPageContent() {
         if (isMounted) {
             setStores(prevStores =>
             prevStores.map(s =>
-                s.id === storeToUpdate.id ? { ...s, [field]: newValue, updatedAt: new Date() } : s
+                s.id === storeToUpdate.id ? { ...s, [field]: newValue, updatedAt: Timestamp.now() } : s
             )
             );
             toast({

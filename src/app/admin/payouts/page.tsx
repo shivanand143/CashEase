@@ -235,13 +235,14 @@ function AdminPayoutsPageContent() {
       const rawPayoutsData = querySnapshot.docs.map(docSnap => {
         const data = docSnap.data();
         return {
-            id: docSnap.id,
             ...data,
+            id: docSnap.id,
             requestedAt: data.requestedAt as Timestamp,
             processedAt: data.processedAt ? data.processedAt as Timestamp : null,
             updatedAt: data.updatedAt ? data.updatedAt as Timestamp : null,
         } as PayoutRequest;
       });
+      
       const payoutsWithUserData = await fetchUserDataForPayouts(rawPayoutsData);
 
       setPayouts(prev => loadMoreOperation ? [...prev, ...payoutsWithUserData] : payoutsWithUserData);
@@ -348,14 +349,16 @@ function AdminPayoutsPageContent() {
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} No pre-linked Tx IDs. Fetching 'confirmed' transactions for user ${selectedPayout.userId} to cover amount ${payoutAmount}.`);
                 
                 const transactionsQuery = query(
-                    collection(firestoreDb, 'transactions'),
-                    where('userId', '==', selectedPayout.userId),
-                    where('status', '==', 'confirmed' as CashbackStatus),
-                    where('payoutId', '==', null),
-                    orderBy('transactionDate', 'asc')
+                  collection(firestoreDb, 'transactions'),
+                  where('userId', '==', selectedPayout.userId),
+                  where('status', '==', 'confirmed' as CashbackStatus),
+                  where('payoutId', '==', null),
+                  orderBy('transactionDate', 'asc')
                 ) as FirestoreQueryType<Transaction>;
                 
-                const confirmedUnpaidSnap = await firestoreTransaction.get(transactionsQuery as any) as QuerySnapshot<Transaction>;
+                // ✅ Run query OUTSIDE transaction
+                const confirmedUnpaidSnap = await getDocs(transactionsQuery);
+                
                 console.log(`${ADMIN_PAYOUTS_LOG_PREFIX} Found ${confirmedUnpaidSnap.size} confirmed, unpaid transactions.`);
 
                 let sumOfSelectedTxs = 0;
@@ -391,6 +394,7 @@ function AdminPayoutsPageContent() {
         }
       });
 
+      let transactionIdsToFinalize: string[] = [];
       const postTransactionBatch = writeBatch(firestoreDb);
       let batchHasUpdates = false;
 

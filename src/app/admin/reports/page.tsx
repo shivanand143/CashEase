@@ -20,16 +20,20 @@ import { Calendar } from "@/components/ui/calendar";
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts'; // Aliased BarChart
 
+
+
 const DateRangePicker = ({ className, onUpdate, initialDateFrom, initialDateTo }: {
     className?: string;
     onUpdate: (range: { from?: Date, to?: Date }) => void;
     initialDateFrom?: Date;
     initialDateTo?: Date;
 }) => {
-  const [date, setDate] = React.useState<{ from?: Date; to?: Date }>({ from: initialDateFrom, to: initialDateTo });
-
+  const [date, setDate] = React.useState<{ from?: Date; to?: Date } | undefined>(
+    initialDateFrom ? { from: initialDateFrom, to: initialDateTo } : undefined
+  );
+  
   React.useEffect(() => {
-    onUpdate(date);
+    onUpdate(date ?? {});
   }, [date, onUpdate]);
 
   return (
@@ -39,12 +43,12 @@ const DateRangePicker = ({ className, onUpdate, initialDateFrom, initialDateTo }
           variant={"outline"}
           className={cn(
             "w-full sm:w-[280px] justify-start text-left font-normal h-10",
-            !date.from && !date.to && "text-muted-foreground",
+            !date?.from && !date?.to && "text-muted-foreground",
             className
           )}
         >
           <CalendarDays className="mr-2 h-4 w-4" />
-          {date.from ? (
+          {date?.from ? (
             date.to ? (
               <>
                 {format(date.from, "LLL dd, y")} - {format(date.to, "LLL dd, y")}
@@ -58,14 +62,16 @@ const DateRangePicker = ({ className, onUpdate, initialDateFrom, initialDateTo }
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
-        <Calendar
-          initialFocus
-          mode="range"
-          defaultMonth={date.from}
-          selected={date}
-          onSelect={setDate}
-          numberOfMonths={2}
-        />
+      <Calendar
+  initialFocus
+  mode="range"
+  defaultMonth={date?.from}
+  selected={date?.from ? (date as { from: Date; to?: Date }) : undefined}
+  onSelect={(range) => setDate(range)} // 
+  numberOfMonths={2}
+/>
+
+
       </PopoverContent>
     </Popover>
   );
@@ -270,7 +276,15 @@ export default function AdminReportsPage() {
     return {
       title: "Store Performance (Confirmed/Paid Transactions)",
       description: "Performance of stores based on confirmed/paid transactions within the period.",
-      data: { details: performanceDetails.map(s => ({...s, totalCashbackGenerated: formatCurrency(s.totalCashbackGenerated), totalSalesValue: formatCurrency(s.totalSalesValue) })) },
+      data: {
+        summary: {}, // ✅ Provide empty or meaningful summary
+        details: performanceDetails.map(s => ({
+          ...s,
+          totalCashbackGenerated: formatCurrency(s.totalCashbackGenerated),
+          totalSalesValue: formatCurrency(s.totalSalesValue)
+        }))
+      }
+      ,
       columns: [
         { key: "name", header: "Store Name" },
         { key: "transactionCount", header: "Transaction Count" },
@@ -431,15 +445,16 @@ export default function AdminReportsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {detailsArray.map((item, index) => (
-                  <TableRow key={index}>
-                    {columns.map(col => (
-                      <TableCell key={col.key}>
-                        {col.render ? col.render(item[col.key], item) : String(item[col.key] ?? 'N/A')}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
+              {detailsArray.map((item: any, index: number) => (
+  <TableRow key={index}>
+    {columns.map(col => (
+      <TableCell key={col.key}>
+        {item[col.key as keyof typeof item]}
+      </TableCell>
+    ))}
+  </TableRow>
+))}
+
               </TableBody>
             </Table>
           </div>

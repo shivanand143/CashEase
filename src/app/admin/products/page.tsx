@@ -81,6 +81,7 @@ import {
 import { MoreHorizontal } from "lucide-react";
 import { formatCurrency, safeToDate } from '@/lib/utils';
 import { useDebounce } from '@/hooks/use-debounce';
+import { Timestamp } from 'firebase/firestore';
 
 const PRODUCTS_PER_PAGE = 15;
 
@@ -217,7 +218,14 @@ export default function AdminProductsListPage() {
     setError(null);
 
     try {
+      if (!db) {
+        setError("Firestore is not initialized.");
+        if (!isLoadMoreOp) setLoading(false); else setLoadingMore(false);
+        return;
+      }
+    
       const productsCollection = collection(db, 'products');
+    
       const constraints: QueryConstraint[] = [];
 
       if (currentSearchTerm) {
@@ -236,27 +244,52 @@ export default function AdminProductsListPage() {
       const productSnap = await getDocs(query(productsCollection, ...constraints));
       
       const fetchedProductsPromises = productSnap.docs.map(async (docSnap) => {
-        const data = docSnap.data();
-        let storeNameResolved = data.storeName || 'N/A'; // Use product.storeName if available
-        let categoryNameResolved = 'N/A';
-
-        if (data.storeId && db && !data.storeName) { // Fetch store name only if not already on product
-            const storeDoc = await getDoc(doc(db, 'stores', data.storeId));
-            if (storeDoc.exists()) storeNameResolved = storeDoc.data()?.name || 'Unknown Store';
-        }
-        if (data.category && db) { 
-            const catDoc = await getDoc(doc(db, 'categories', data.category));
-            if (catDoc.exists()) categoryNameResolved = catDoc.data()?.name || 'Unknown Category';
-        }
-        return {
+        const raw = docSnap.data() as DocumentData;
+      
+        const product: ProductWithStoreCategoryNames = {
           id: docSnap.id,
-          ...data,
-          storeNameResolved,
-          categoryNameResolved,
-          createdAt: safeToDate(data.createdAt),
-          updatedAt: safeToDate(data.updatedAt),
-        } as ProductWithStoreCategoryNames;
+          storeId: raw.storeId,
+          name: raw.name,
+          imageUrl: raw.imageUrl,
+          affiliateLink: raw.affiliateLink,
+          isActive: raw.isActive,
+          isFeatured: raw.isFeatured ?? false,
+          isTodaysPick: raw.isTodaysPick ?? false,
+          description: raw.description ?? '',
+          price: raw.price ?? null,
+          priceDisplay: raw.priceDisplay ?? null,
+          brand: raw.brand ?? '',
+          sku: raw.sku ?? '',
+          category: raw.category ?? null,
+          productSpecificCashbackDisplay: raw.productSpecificCashbackDisplay ?? null,
+          productSpecificCashbackRateValue: raw.productSpecificCashbackRateValue ?? null,
+          productSpecificCashbackType: raw.productSpecificCashbackType ?? null,
+          storeNameResolved: 'N/A',
+          categoryNameResolved: 'N/A',
+          createdAt: raw.createdAt,
+          updatedAt: raw.updatedAt,
+        };
+      
+        // Optionally fetch resolved store/category names
+        if (product.storeId && db && !raw.storeName) {
+          const storeDoc = await getDoc(doc(db, 'stores', product.storeId));
+          if (storeDoc.exists()) {
+            product.storeNameResolved = storeDoc.data()?.name || 'Unknown Store';
+          }
+        } else {
+          product.storeNameResolved = raw.storeName ?? 'N/A';
+        }
+      
+        if (product.category && db) {
+          const catDoc = await getDoc(doc(db, 'categories', product.category));
+          if (catDoc.exists()) {
+            product.categoryNameResolved = catDoc.data()?.name || 'Unknown Category';
+          }
+        }
+      
+        return product;
       });
+      
 
       const productsWithDetails = await Promise.all(fetchedProductsPromises);
 
@@ -346,7 +379,8 @@ export default function AdminProductsListPage() {
           ...submissionData, 
           storeNameResolved: updatedStoreName,
           categoryNameResolved: updatedCategoryName,
-          updatedAt: new Date() 
+          updatedAt: Timestamp.now()
+
       } as ProductWithStoreCategoryNames : p));
       toast({ title: "Product Updated", description: `${data.name} details saved.` });
       
@@ -379,7 +413,7 @@ export default function AdminProductsListPage() {
     const newValue = !product[field];
     try {
       await updateDoc(doc(db, 'products', product.id), { [field]: newValue, updatedAt: serverTimestamp() });
-      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, [field]: newValue, updatedAt: new Date() } : p));
+      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, [field]: newValue, updatedAt: Timestamp.now()} : p));
       toast({ title: `Product ${field} status updated` });
     } catch (err) {
       toast({ variant: "destructive", title: "Update Failed", description: String(err) });

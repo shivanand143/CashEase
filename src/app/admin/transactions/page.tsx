@@ -151,10 +151,23 @@ const getStatusIcon = (status: CashbackStatus) => {
     default: return <Info className="h-3 w-3 text-muted-foreground" />;
   }
 };
+type ParsedTransactionWithUser = ParsedTransaction & {
+  userDisplayName?: string;
+  userEmail?: string;
+  storeName?: string;
+};
+
+type ParsedTransaction = Omit<Transaction, 'transactionDate' | 'confirmationDate' | 'paidDate' | 'createdAt' | 'updatedAt'> & {
+  transactionDate: Date;
+  confirmationDate: Date | null;
+  paidDate: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 export default function AdminTransactionsPage() {
   const { user: adminUser, loading: authLoading } = useAuth();
-  const [transactions, setTransactions] = React.useState<TransactionWithUser[]>([]);
+  const [transactions, setTransactions] = React.useState<ParsedTransactionWithUser[]>([]);
   const [pageLoading, setPageLoading] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null);
   const [lastVisible, setLastVisible] = React.useState<QueryDocumentSnapshot<DocumentData> | null>(null);
@@ -170,7 +183,7 @@ export default function AdminTransactionsPage() {
 
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
-  const [editingTransaction, setEditingTransaction] = React.useState<TransactionWithUser | null>(null);
+  const [editingTransaction, setEditingTransaction] = React.useState<ParsedTransactionWithUser  | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
 
   const [currentEditRejectionReason, setCurrentEditRejectionReason] = React.useState('');
@@ -192,53 +205,75 @@ export default function AdminTransactionsPage() {
     },
   });
 
-  const fetchTransactionDetails = React.useCallback(async (rawTransactions: Transaction[]): Promise<TransactionWithUser[]> => {
-    if (!db || firebaseInitializationError || rawTransactions.length === 0) {
-      return rawTransactions.map(tx => ({ ...tx, userDisplayName: tx.userId, storeName: tx.storeName || tx.storeId }));
-    }
-    const userIdsToFetch = [...new Set(rawTransactions.map(tx => tx.userId).filter(id => id && !userCache[id]))];
-    const storeIdsToFetch = [...new Set(rawTransactions.flatMap(tx => (tx.storeId && !storeCache[tx.storeId] && !tx.storeName) ? [tx.storeId] : []))];
-
-    try {
-      if (userIdsToFetch.length > 0) {
-        const newUsers: Record<string, Pick<UserProfile, 'displayName' | 'email'>> = {};
-        for (let i = 0; i < userIdsToFetch.length; i += 30) {
-          const chunk = userIdsToFetch.slice(i, i + 30);
-          if (chunk.length === 0) continue;
-          const usersQuery = query(collection(db, 'users'), where('__name__', 'in', chunk));
-          const userSnaps = await getDocs(usersQuery);
-          userSnaps.forEach(docSnap => {
-            const data = docSnap.data();
-            newUsers[docSnap.id] = { displayName: data.displayName || null, email: data.email || null };
-          });
-        }
-        setUserCache(prev => ({ ...prev, ...newUsers }));
+  const fetchTransactionDetails = React.useCallback(
+    async (rawTransactions: ParsedTransaction[]): Promise<ParsedTransactionWithUser[]> => {
+      if (!db || firebaseInitializationError || rawTransactions.length === 0) {
+        return rawTransactions.map(tx => ({
+          ...tx,
+          userDisplayName: tx.userId,
+          storeName: tx.storeName || tx.storeId
+        }));
       }
-      if (storeIdsToFetch.length > 0) {
-        const newStores: Record<string, Pick<Store, 'name'>> = {};
-         for (let i = 0; i < storeIdsToFetch.length; i += 30) {
-          const chunk = storeIdsToFetch.slice(i, i + 30);
-          if (chunk.length === 0) continue;
-          const storesQuery = query(collection(db, 'stores'), where('__name__', 'in', chunk));
-          const storeSnaps = await getDocs(storesQuery);
-          storeSnaps.forEach(docSnap => {
-            const data = docSnap.data();
-            newStores[docSnap.id] = { name: data.name || 'Unknown Store' };
-          });
+  
+      const userIdsToFetch = [...new Set(rawTransactions.map(tx => tx.userId).filter(id => id && !userCache[id]))];
+      const storeIdsToFetch = [...new Set(
+        rawTransactions.flatMap(tx =>
+          tx.storeId && !storeCache[tx.storeId] && !tx.storeName ? [tx.storeId] : []
+        )
+      )];
+  
+      try {
+        if (userIdsToFetch.length > 0) {
+          const newUsers: Record<string, Pick<UserProfile, 'displayName' | 'email'>> = {};
+          for (let i = 0; i < userIdsToFetch.length; i += 30) {
+            const chunk = userIdsToFetch.slice(i, i + 30);
+            if (chunk.length === 0) continue;
+            const usersQuery = query(collection(db, 'users'), where('__name__', 'in', chunk));
+            const userSnaps = await getDocs(usersQuery);
+            userSnaps.forEach(docSnap => {
+              const data = docSnap.data();
+              newUsers[docSnap.id] = {
+                displayName: data.displayName || null,
+                email: data.email || null
+              };
+            });
+          }
+          setUserCache(prev => ({ ...prev, ...newUsers }));
         }
-        setStoreCache(prev => ({ ...prev, ...newStores }));
+  
+        if (storeIdsToFetch.length > 0) {
+          const newStores: Record<string, Pick<Store, 'name'>> = {};
+          for (let i = 0; i < storeIdsToFetch.length; i += 30) {
+            const chunk = storeIdsToFetch.slice(i, i + 30);
+            if (chunk.length === 0) continue;
+            const storesQuery = query(collection(db, 'stores'), where('__name__', 'in', chunk));
+            const storeSnaps = await getDocs(storesQuery);
+            storeSnaps.forEach(docSnap => {
+              const data = docSnap.data();
+              newStores[docSnap.id] = { name: data.name || 'Unknown Store' };
+            });
+          }
+          setStoreCache(prev => ({ ...prev, ...newStores }));
+        }
+      } catch (detailError) {
+        console.warn(`${ADMIN_TX_LOG_PREFIX} Detail Fetch Error:`, detailError);
+        toast({
+          variant: "destructive",
+          title: "Detail Fetch Warning",
+          description: "Could not load some user/store names."
+        });
       }
-    } catch (detailError) {
-      console.warn(`${ADMIN_TX_LOG_PREFIX} Detail Fetch Error:`, detailError);
-      toast({ variant: "destructive", title: "Detail Fetch Warning", description: "Could not load some user/store names." });
-    }
-    return rawTransactions.map(tx => ({
-      ...tx,
-      userDisplayName: userCache[tx.userId]?.displayName || tx.userId,
-      userEmail: userCache[tx.userId]?.email,
-      storeName: tx.storeName || storeCache[tx.storeId]?.name || tx.storeId,
-    }));
-  }, [userCache, storeCache, toast]);
+  
+      return rawTransactions.map(tx => ({
+        ...tx,
+        userDisplayName: userCache[tx.userId]?.displayName || tx.userId,
+        userEmail: userCache[tx.userId]?.email ?? undefined,
+        storeName: tx.storeName || storeCache[tx.storeId]?.name || tx.storeId
+      }));
+    },
+    [userCache, storeCache, toast]
+  );
+  
 
 
   const fetchTransactions = React.useCallback(async (
@@ -247,81 +282,88 @@ export default function AdminTransactionsPage() {
   ) => {
     if (!isMountedRef.current) return;
     if (!db || firebaseInitializationError) {
-      if(isMountedRef.current) {
+      if (isMountedRef.current) {
         setPageError(firebaseInitializationError || "DB not ready.");
         setPageLoading(false); setLoadingMore(false); setHasMore(false);
       }
       return;
     }
-
+  
     if (!loadMoreOp) {
       setPageLoading(true); setTransactions([]); setLastVisible(null); setHasMore(true);
     } else {
-      if (!docToStartAfter) { if(isMountedRef.current) setLoadingMore(false); return; }
+      if (!docToStartAfter) { if (isMountedRef.current) setLoadingMore(false); return; }
       setLoadingMore(true);
     }
-    if(!loadMoreOp) setPageError(null);
+  
+    if (!loadMoreOp) setPageError(null);
     setIsSearching(debouncedSearchTerm !== '');
-
+  
     try {
       const transactionsCollectionRef = collection(db, 'transactions');
       let constraints: QueryConstraint[] = [];
-
+  
       if (filterStatus !== 'all') constraints.push(where('status', '==', filterStatus));
       if (debouncedSearchTerm.trim() && filterType !== 'all' && filterType !== 'status') {
-          constraints.push(where(filterType, '==', debouncedSearchTerm.trim()));
+        constraints.push(where(filterType, '==', debouncedSearchTerm.trim()));
       }
       constraints.push(orderBy('transactionDate', 'desc'));
       if (loadMoreOp && docToStartAfter) constraints.push(startAfter(docToStartAfter));
       constraints.push(limit(TRANSACTIONS_PER_PAGE));
-
+  
       const q = query(transactionsCollectionRef, ...constraints);
       const querySnapshot = await getDocs(q);
-
-      const rawTransactionsData = querySnapshot.docs.map(docSnap => ({
-        id: docSnap.id, ...docSnap.data(),
-        transactionDate: safeToDate(docSnap.data().transactionDate as Timestamp | undefined) || new Date(0),
-        confirmationDate: safeToDate(docSnap.data().confirmationDate as Timestamp | undefined),
-        paidDate: safeToDate(docSnap.data().paidDate as Timestamp | undefined),
-        createdAt: safeToDate(docSnap.data().createdAt as Timestamp | undefined) || new Date(0),
-        updatedAt: safeToDate(docSnap.data().updatedAt as Timestamp | undefined) || new Date(0),
-      } as Transaction));
-      
+  
+      const rawTransactionsData: ParsedTransaction[] = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data() as Transaction;
+        return {
+          ...data,
+          id: docSnap.id,
+          transactionDate: safeToDate(data.transactionDate as Timestamp | undefined) || new Date(0),
+          confirmationDate: safeToDate(data.confirmationDate as Timestamp | undefined),
+          paidDate: safeToDate(data.paidDate as Timestamp | undefined),
+          createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0),
+          updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0),
+        };
+      });
+  
       let filteredForGeneralSearch = rawTransactionsData;
       if (debouncedSearchTerm && filterType === 'all') {
-         const lowerSearch = debouncedSearchTerm.toLowerCase();
-         filteredForGeneralSearch = rawTransactionsData.filter(tx =>
-           (tx.userId && tx.userId.toLowerCase().includes(lowerSearch)) ||
-           (tx.storeId && tx.storeId.toLowerCase().includes(lowerSearch)) ||
-           (tx.storeName && tx.storeName.toLowerCase().includes(lowerSearch)) ||
-           (tx.orderId && tx.orderId.toLowerCase().includes(lowerSearch)) ||
-           (tx.clickId && tx.clickId.toLowerCase().includes(lowerSearch)) ||
-           (tx.conversionId && tx.conversionId.toLowerCase().includes(lowerSearch)) ||
-           (tx.productDetails && tx.productDetails.toLowerCase().includes(lowerSearch))
-         );
+        const lowerSearch = debouncedSearchTerm.toLowerCase();
+        filteredForGeneralSearch = rawTransactionsData.filter(tx =>
+          (tx.userId && tx.userId.toLowerCase().includes(lowerSearch)) ||
+          (tx.storeId && tx.storeId.toLowerCase().includes(lowerSearch)) ||
+          (tx.storeName && tx.storeName.toLowerCase().includes(lowerSearch)) ||
+          (tx.orderId && tx.orderId.toLowerCase().includes(lowerSearch)) ||
+          (tx.clickId && tx.clickId.toLowerCase().includes(lowerSearch)) ||
+          (tx.conversionId && tx.conversionId.toLowerCase().includes(lowerSearch)) ||
+          (tx.productDetails && tx.productDetails.toLowerCase().includes(lowerSearch))
+        );
       }
+  
       const transactionsWithDetails = await fetchTransactionDetails(filteredForGeneralSearch);
-      
-      if(isMountedRef.current){
+  
+      if (isMountedRef.current) {
         setTransactions(prev => loadMoreOp ? [...prev, ...transactionsWithDetails] : transactionsWithDetails);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
         setHasMore(transactionsWithDetails.length === TRANSACTIONS_PER_PAGE);
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Failed to fetch transactions";
-      if(isMountedRef.current) { setPageError(errorMsg); toast({ variant: "destructive", title: "Fetch Error", description: errorMsg }); setHasMore(false); }
+      if (isMountedRef.current) {
+        setPageError(errorMsg);
+        toast({ variant: "destructive", title: "Fetch Error", description: errorMsg });
+        setHasMore(false);
+      }
     } finally {
-      if(isMountedRef.current){ setPageLoading(false); setLoadingMore(false); setIsSearching(false); }
+      if (isMountedRef.current) {
+        setPageLoading(false);
+        setLoadingMore(false);
+        setIsSearching(false);
+      }
     }
   }, [debouncedSearchTerm, filterType, filterStatus, toast, fetchTransactionDetails]);
-
-  React.useEffect(() => {
-    isMountedRef.current = true;
-    if (authLoading) { setPageLoading(true); return; }
-    if (!adminUser && !authLoading) { setPageLoading(false); return; } // AdminGuard handles redirect
-    fetchTransactions(false);
-    return () => { isMountedRef.current = false; };
-  }, [authLoading, adminUser, filterStatus, debouncedSearchTerm, fetchTransactions]);
+  
 
 
   const handleSearchSubmit = (e: React.FormEvent) => e.preventDefault();
@@ -336,7 +378,7 @@ export default function AdminTransactionsPage() {
     setIsAddDialogOpen(true);
   };
 
-  const openEditDialog = (txItem: TransactionWithUser) => {
+  const openEditDialog = (txItem: ParsedTransactionWithUser) => {
     setEditingTransaction(txItem);
     // Set initial values for the dialog's local state (not react-hook-form for this dialog)
     setCurrentEditAdminNotes(txItem.adminNotes || '');
@@ -354,18 +396,18 @@ export default function AdminTransactionsPage() {
     
     try {
         await runTransaction(db, async (firestoreTransaction) => {
-            const userDocRef = doc(db, 'users', data.userId);
+            const userDocRef = doc(db!, 'users', data.userId);
             const userSnap = await firestoreTransaction.get(userDocRef);
             if (!userSnap.exists()) throw new Error(`User with ID ${data.userId} not found.`);
 
             let storeNameFromDb = data.storeName;
             if (!storeNameFromDb && data.storeId) {
-                const storeDocRef = doc(db, 'stores', data.storeId);
+                const storeDocRef = doc(db!, 'stores', data.storeId);
                 const storeSnap = await firestoreTransaction.get(storeDocRef);
                 storeNameFromDb = storeSnap.exists() ? storeSnap.data()?.name : 'Unknown Store';
             }
             
-            const newTransactionRef = doc(collection(db, 'transactions'));
+            const newTransactionRef = doc(collection(db!, 'transactions'));
             const transactionDataToSave: Omit<Transaction, 'id'> = {
                 userId: data.userId, storeId: data.storeId, storeName: storeNameFromDb || 'Unknown Store',
                 orderId: data.orderId || null, clickId: data.clickId || null, conversionId: data.conversionId || null,
@@ -862,5 +904,3 @@ export default function AdminTransactionsPage() {
     </AdminGuard>
   );
 }
-
-    
