@@ -22,14 +22,14 @@ import {
   runTransaction,
   writeBatch,
   type CollectionReference,
-  type Query as FirestoreQueryType, // Aliased to avoid conflict with React.Query
+  type Query as FirestoreQueryType,
   getDoc,
   increment,
   type WithFieldValue,
   type Firestore,
-  type Transaction as FirestoreTransactionType, // Aliased
-  type QuerySnapshot, // Explicitly import QuerySnapshot
-  documentId, // Import documentId
+  type Transaction as FirestoreTransactionType,
+  type QuerySnapshot, 
+  documentId 
 } from 'firebase/firestore';
 import { db, firebaseInitializationError, auth as firebaseAuthService } from '@/lib/firebase/config';
 import type { PayoutRequest, PayoutStatus, UserProfile, Transaction, CashbackStatus, PayoutMethod, Store } from '@/lib/types';
@@ -230,17 +230,17 @@ function AdminPayoutsPageContent() {
       constraints.push(limit(PAYOUTS_PER_PAGE));
 
       const q = query(payoutsCollectionRef, ...constraints) as FirestoreQueryType<PayoutRequest>;
-      const querySnapshot = await getDocs(q);
+      const querySnapshot: QuerySnapshot<PayoutRequest> = await getDocs(q);
 
       const rawPayoutsData = querySnapshot.docs.map(docSnap => {
-        const { id: _dataId, ...dataWithoutId } = docSnap.data(); // Destructure id from data
+        const data = docSnap.data();
         return {
-            id: docSnap.id, // Use the actual document ID
-            ...dataWithoutId,
-            requestedAt: dataWithoutId.requestedAt as Timestamp, // Assume it's always Timestamp
-            processedAt: dataWithoutId.processedAt ? dataWithoutId.processedAt as Timestamp : null,
-            updatedAt: dataWithoutId.updatedAt ? dataWithoutId.updatedAt as Timestamp : null,
-        } as PayoutRequest; // Casting to PayoutRequest
+            id: docSnap.id,
+            ...data,
+            requestedAt: data.requestedAt as Timestamp,
+            processedAt: data.processedAt ? data.processedAt as Timestamp : null,
+            updatedAt: data.updatedAt ? data.updatedAt as Timestamp : null,
+        } as PayoutRequest;
       });
       const payoutsWithUserData = await fetchUserDataForPayouts(rawPayoutsData);
 
@@ -657,8 +657,7 @@ function AdminPayoutsPageContent() {
              {(updateStatus === 'failed' || updateStatus === 'rejected') && (
                  <div>
                      <Label htmlFor="failure-reason-dialog" className="text-sm font-medium mb-1 block">
-                        {updateStatus === 'failed' ? 'Failure Reason*' : 'Rejection Reason*'}
-                     </Label>
+                        {updateStatus === 'failed' ? 'Failure Reason*' : 'Rejection Reason*'}</Label>
                      <Textarea
                          id="failure-reason-dialog"
                          value={failureReason}
