@@ -1,6 +1,6 @@
 
 // src/lib/seed.ts
-import { collection, doc, setDoc, getDoc, serverTimestamp, writeBatch, Timestamp, addDoc, increment, runTransaction, query, where, limit, getDocs, WriteBatch } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, serverTimestamp, writeBatch, Timestamp, addDoc, increment, runTransaction, query, where, limit, getDocs, WriteBatch, FieldValue } from 'firebase/firestore';
 import { db, firebaseInitializationError } from './firebase/config';
 import type { Store, Coupon, Category, Banner, UserProfile, Product, Click, Transaction, CashbackStatus, Conversion, CashbackType } from './types';
 import { v4 as uuidv4 } from 'uuid';
@@ -81,8 +81,8 @@ export async function seedDatabase() {
     console.log(`Processing ${collectionName}...`);
     for (const item of data) {
       const docIdFieldValue = (item as any)[idFieldProperty];
-      const docId = (docIdFieldValue !== null && docIdFieldValue !== undefined) 
-        ? String(docIdFieldValue) 
+      const docId = (docIdFieldValue !== null && docIdFieldValue !== undefined)
+        ? String(docIdFieldValue)
         : (generateIdFromField ? String((item as any)[generateIdFromField] ?? '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : null) || uuidv4();
 
       if (!docId) {
@@ -265,7 +265,7 @@ export async function seedDatabase() {
           const transactionData: Omit<Transaction, 'id'> = {
             userId: userData.uid, storeId: conv.storeId!, storeName: conv.storeName, orderId: conv.orderId,
             clickId: conv.clickId, conversionId: conv.id, productDetails: originalClick?.productName || originalClick?.couponId || "Purchase",
-            transactionDate: Timestamp.fromDate(conv.timestamp as Date), // Conversion timestamp is already a Date here due to earlier processing
+            transactionDate: conv.timestamp as Timestamp, // conv.timestamp is already a Timestamp here
             reportedDate: serverTimestamp() as Timestamp,
             saleAmount: conv.saleAmount, cashbackRateApplied: rateApplied, initialCashbackAmount: initialCashback,
             finalSaleAmount: conv.saleAmount, finalCashbackAmount: initialCashback, status: status,
@@ -311,3 +311,5 @@ if (require.main === module) {
     process.exit(1);
   });
 }
+
+    
