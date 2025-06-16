@@ -34,10 +34,10 @@ const productsData: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'storeName'
 ];
 
 const couponsData: Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'store'>[] = [
-  { storeId: 'amazon', code: 'AMZDEAL10', description: 'Extra 10% off select Amazon Fashion. Max discount ₹200.', link: 'https://www.amazon.in/fashion?tag=magicsaver-21&click_id={CLICK_ID}', expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), isFeatured: true, isActive: true },
-  { storeId: 'flipkart', code: null, description: 'Flipkart Electronics Sale - Up to 80% Off.', link: 'https://www.flipkart.com/electronics-sale?affid=magicsaver&click_id={CLICK_ID}', expiryDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), isFeatured: true, isActive: true },
+  { storeId: 'amazon', code: 'AMZDEAL10', description: 'Extra 10% off select Amazon Fashion. Max discount ₹200.', link: 'https://www.amazon.in/fashion?tag=magicsaver-21&click_id={CLICK_ID}', expiryDate: Timestamp.fromDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)), isFeatured: true, isActive: true },
+  { storeId: 'flipkart', code: null, description: 'Flipkart Electronics Sale - Up to 80% Off.', link: 'https://www.flipkart.com/electronics-sale?affid=magicsaver&click_id={CLICK_ID}', expiryDate: Timestamp.fromDate(new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)), isFeatured: true, isActive: true },
   { storeId: 'myntra', code: 'MYNTRA200', description: 'Flat ₹200 off on ₹1999+ for new users.', link: 'https://www.myntra.com/?ref=magicsaver&click_id={CLICK_ID}', expiryDate: null, isFeatured: false, isActive: true },
-  { storeId: 'ajio', code: 'AJIOSALE', description: 'Get 50-70% off on AJIO Fashion Sale.', link: 'https://www.ajio.com/sale?source=magicsaver&click_id={CLICK_ID}', expiryDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000), isFeatured: true, isActive: true },
+  { storeId: 'ajio', code: 'AJIOSALE', description: 'Get 50-70% off on AJIO Fashion Sale.', link: 'https://www.ajio.com/sale?source=magicsaver&click_id={CLICK_ID}', expiryDate: Timestamp.fromDate(new Date(Date.now() + 10 * 24 * 60 * 60 * 1000)), isFeatured: true, isActive: true },
 ];
 
 const bannersData: Omit<Banner, 'id' | 'createdAt' | 'updatedAt'>[] = [
@@ -47,9 +47,9 @@ const bannersData: Omit<Banner, 'id' | 'createdAt' | 'updatedAt'>[] = [
 
 // Example Clicks (will have IDs generated)
 const exampleClicksBase: Omit<Click, 'id' | 'timestamp' | 'userAgent' | 'clickedCashbackDisplay' | 'clickedCashbackRateValue' | 'clickedCashbackType'>[] = [
-  { clickId: 'click_seed_amazon_echo', userId: EXAMPLE_USER_ID_1, storeId: 'amazon', storeName: 'Amazon', affiliateLink: 'https://www.amazon.in/dp/B09B8X2SQL?tag=magicsaver-21&click_id=click_seed_amazon_echo', originalLink: 'https://www.amazon.in/dp/B09B8X2SQL', productId: productsData.find(p=>p.name.includes("Echo Dot"))?.id || 'echo-dot-seed-id', productName: 'Echo Dot (5th Gen, 2023 release)' },
-  { clickId: 'click_seed_myntra_coupon', userId: EXAMPLE_USER_ID_1, storeId: 'myntra', storeName: 'Myntra', affiliateLink: 'https://www.myntra.com/?ref=magicsaver&click_id=click_seed_myntra_coupon', originalLink: 'https://www.myntra.com/', couponId: couponsData.find(c=>c.code==='MYNTRA200')?.id || 'myntra200-seed-id' },
-  { clickId: 'click_seed_flipkart_galaxy', userId: EXAMPLE_USER_ID_2, storeId: 'flipkart', storeName: 'Flipkart', affiliateLink: 'https://www.flipkart.com/samsung-galaxy-f54-5g/p/itm3f62bd8d719c7?pid=MOBGDR4BYTRG5JFA&affid=magicsaver&click_id=click_seed_flipkart_galaxy', originalLink: 'https://www.flipkart.com/samsung-galaxy-f54-5g/p/itm3f62bd8d719c7', productId: productsData.find(p=>p.name.includes("Samsung Galaxy"))?.id || 'galaxy-f54-seed-id', productName: 'Samsung Galaxy F54 5G (256 GB)' },
+  { clickId: 'click_seed_amazon_echo', userId: EXAMPLE_USER_ID_1, storeId: 'amazon', storeName: 'Amazon', affiliateLink: 'https://www.amazon.in/dp/B09B8X2SQL?tag=magicsaver-21&click_id=click_seed_amazon_echo', originalLink: 'https://www.amazon.in/dp/B09B8X2SQL', productId: productsData.find(p=>p.name.includes("Echo Dot"))?.storeId || 'echo-dot-seed-id', productName: 'Echo Dot (5th Gen, 2023 release)' },
+  { clickId: 'click_seed_myntra_coupon', userId: EXAMPLE_USER_ID_1, storeId: 'myntra', storeName: 'Myntra', affiliateLink: 'https://www.myntra.com/?ref=magicsaver&click_id=click_seed_myntra_coupon', originalLink: 'https://www.myntra.com/', couponId: couponsData.find(c=>c.code==='MYNTRA200')?.storeId || 'myntra200-seed-id' },
+  { clickId: 'click_seed_flipkart_galaxy', userId: EXAMPLE_USER_ID_2, storeId: 'flipkart', storeName: 'Flipkart', affiliateLink: 'https://www.flipkart.com/samsung-galaxy-f54-5g/p/itm3f62bd8d719c7?pid=MOBGDR4BYTRG5JFA&affid=magicsaver&click_id=click_seed_flipkart_galaxy', originalLink: 'https://www.flipkart.com/samsung-galaxy-f54-5g/p/itm3f62bd8d719c7', productId: productsData.find(p=>p.name.includes("Samsung Galaxy"))?.storeId || 'galaxy-f54-seed-id', productName: 'Samsung Galaxy F54 5G (256 GB)' },
 ];
 
 // Example Conversions (will have IDs generated)
@@ -71,21 +71,25 @@ export async function seedDatabase() {
   let writeCount = 0;
   const nowServerTimestamp = serverTimestamp();
 
-  const processCollection = async <T extends { id?: string, slug?: string, name?: string, title?: string }>(
+  const processCollection = async <T extends { id?: string, slug?: string | null, name?: string, title?: string }>(
     batch: WriteBatch,
     collectionName: string,
     data: Omit<T, 'id' | 'createdAt' | 'updatedAt'>[],
-    idFieldProperty: keyof T = 'slug' as keyof T, // Default to slug for ID
-    generateIdFromField?: keyof T // e.g., 'name' or 'title' for fallback ID generation
+    idFieldProperty: keyof T = 'slug' as unknown as keyof T, // Added unknown for wider compatibility
+    generateIdFromField?: keyof T
   ) => {
     console.log(`Processing ${collectionName}...`);
     for (const item of data) {
-      const docId = (item as any)[idFieldProperty] || (generateIdFromField ? (item as any)[generateIdFromField]?.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : null) || uuidv4();
+      const docIdFieldValue = (item as any)[idFieldProperty];
+      const docId = (docIdFieldValue !== null && docIdFieldValue !== undefined) 
+        ? String(docIdFieldValue) 
+        : (generateIdFromField ? String((item as any)[generateIdFromField] ?? '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : null) || uuidv4();
+
       if (!docId) {
         console.warn(`  - Skipping item in ${collectionName} due to missing ID property:`, item);
         continue;
       }
-      const itemRef = doc(db, collectionName, docId);
+      const itemRef = doc(db!, collectionName, docId);
       // Assign the determined docId back to the item if it's a product or coupon for linking
       if (collectionName === 'products' || collectionName === 'coupons') {
         (item as any).id = docId;
@@ -229,7 +233,7 @@ export async function seedDatabase() {
         const userConversions = seededConversions.filter(c => c.userId === userData.uid && c.status === 'received');
         for (const conv of userConversions) {
           const txId = `txn_${conv.orderId}_${uuidv4().substring(0,4)}`;
-          const txRef = doc(db, 'transactions', txId);
+          const txRef = doc(db!, 'transactions', txId);
 
           const originalClick = seededClicks.find(c => c.clickId === conv.clickId);
           let initialCashback = 0;
@@ -261,7 +265,8 @@ export async function seedDatabase() {
           const transactionData: Omit<Transaction, 'id'> = {
             userId: userData.uid, storeId: conv.storeId!, storeName: conv.storeName, orderId: conv.orderId,
             clickId: conv.clickId, conversionId: conv.id, productDetails: originalClick?.productName || originalClick?.couponId || "Purchase",
-            transactionDate: conv.timestamp, reportedDate: serverTimestamp() as Timestamp,
+            transactionDate: Timestamp.fromDate(conv.timestamp as Date), // Conversion timestamp is already a Date here due to earlier processing
+            reportedDate: serverTimestamp() as Timestamp,
             saleAmount: conv.saleAmount, cashbackRateApplied: rateApplied, initialCashbackAmount: initialCashback,
             finalSaleAmount: conv.saleAmount, finalCashbackAmount: initialCashback, status: status,
             confirmationDate: status === 'confirmed' ? (serverTimestamp() as Timestamp) : null,
@@ -306,5 +311,3 @@ if (require.main === module) {
     process.exit(1);
   });
 }
-
-    

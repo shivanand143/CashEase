@@ -8,13 +8,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '../ui/button';
+import { User } from 'firebase/auth';
+import { UserProfile } from '@/lib/types';
+
 
 interface AdminGuardProps {
   children: React.ReactNode;
 }
 
 export default function AdminGuard({ children }: AdminGuardProps) {
-  const { user, userProfile, loading, error } = useAuth();
+  const { user, userProfile, loading, authError } = useAuth();
   const router = useRouter();
   const [isLoading, setIsLoading] = React.useState(true); // Local loading state
 
@@ -56,14 +59,14 @@ export default function AdminGuard({ children }: AdminGuardProps) {
   }
 
   // Display error message if auth hook encountered an error
-   if (error) {
+   if (authError) {
      return (
        <div className="container mx-auto p-4 md:p-8">
          <Alert variant="destructive">
            <AlertCircle className="h-4 w-4" />
            <AlertTitle>Authentication Error</AlertTitle>
            <AlertDescription>
-              There was an error checking your credentials: {error}.
+              There was an error checking your credentials: {authError}.
               <Button variant="link" className="ml-2 p-0 h-auto" onClick={() => router.push('/login')}>
                  Go to Login
               </Button>

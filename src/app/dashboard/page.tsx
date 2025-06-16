@@ -150,7 +150,7 @@ export default function DashboardPage() {
           ...doc.data(),
           requestedAt: safeToDate(doc.data().requestedAt as Timestamp | undefined) || new Date(0),
           processedAt: safeToDate(doc.data().processedAt as Timestamp | undefined),
-        } as PayoutRequest));
+        } as unknown as PayoutRequest));
         if (isMounted) {
           setRecentPayouts(fetchedPayouts);
           // console.log("DASHBOARD_PAGE: Recent payouts fetched:", fetchedPayouts.length);
@@ -228,7 +228,10 @@ export default function DashboardPage() {
         <h1 className="text-3xl font-bold">Dashboard</h1>
         <Card className="shadow-sm border">
           <CardHeader>
-            <CardTitle className="text-2xl">Welcome back, {userProfile.displayName || user.email}!</CardTitle>
+          <CardTitle className="text-2xl">
+  Welcome back, {userProfile?.displayName || user?.email || 'User'}!
+</CardTitle>
+
             <CardDescription>Here's a summary of your MagicSaver account.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -293,8 +296,11 @@ export default function DashboardPage() {
                         <div>
                           <span className="font-medium">{formatCurrency(payout.amount)}</span>
                           <span className="text-xs text-muted-foreground ml-2">
-                            ({payout.requestedAt ? format(new Date(payout.requestedAt), 'PP') : 'N/A'})
-                          </span>
+  ({payout.requestedAt instanceof Timestamp
+    ? format(payout.requestedAt.toDate(), 'PP')
+    : 'N/A'})
+</span>
+
                         </div>
                         <Badge variant={getStatusVariant(payout.status)} className="capitalize text-xs">{payout.status}</Badge>
                       </li>

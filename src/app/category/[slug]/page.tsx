@@ -33,6 +33,7 @@ export default function CategoryPage() {
   const [loadingCoupons, setLoadingCoupons] = React.useState(true);
   const [pageError, setPageError] = React.useState<string | null>(null); // Renamed for clarity
 
+
   React.useEffect(() => {
     let isMounted = true;
     if (!slug || typeof slug !== 'string') {
@@ -81,12 +82,18 @@ export default function CategoryPage() {
         }
         const categoryDataRaw = categorySnap.docs[0].data();
         const fetchedCategory = {
-            id: categorySnap.docs[0].id,
-            ...categoryDataRaw,
-            createdAt: safeToDate(categoryDataRaw.createdAt as Timestamp | undefined),
-            updatedAt: safeToDate(categoryDataRaw.updatedAt as Timestamp | undefined),
-         } as Category;
-        if (isMounted) setCategory(fetchedCategory);
+          id: categorySnap.docs[0].id,
+          name: categoryDataRaw.name || '',
+          slug: categoryDataRaw.slug || '',
+          order: categoryDataRaw.order ?? 0,
+          isActive: categoryDataRaw.isActive ?? true,
+          imageUrl: categoryDataRaw.imageUrl || '',
+          description: categoryDataRaw.description || '',
+          dataAiHint: categoryDataRaw.dataAiHint || '',
+          createdAt: categoryDataRaw.createdAt as Timestamp,
+          updatedAt: categoryDataRaw.updatedAt as Timestamp,
+        } satisfies Category;
+        
 
         // Fetch Stores in this Category
         const storesQuery = query(
@@ -98,12 +105,28 @@ export default function CategoryPage() {
           limit(ITEMS_PER_PAGE)
         );
         const storesSnap = await getDocs(storesQuery);
-        const fetchedStores = storesSnap.docs.map(d => ({
-          id: d.id,
-          ...d.data(),
-          createdAt: safeToDate(d.data().createdAt as Timestamp | undefined),
-          updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined),
-        } as Store));
+        const fetchedStores = storesSnap.docs.map((d) => {
+          const data = d.data();
+        
+          return {
+            id: d.id,
+            name: data.name || '',
+            slug: data.slug || '',
+            logoUrl: data.logoUrl || '',
+            affiliateLink: data.affiliateLink || '',
+            cashbackRate: data.cashbackRate || '',
+            cashbackRateValue: data.cashbackRateValue ?? 0,
+            cashbackType: data.cashbackType || '',
+            description: data.description || '',
+            isActive: data.isActive ?? true,
+            isFeatured: data.isFeatured ?? false,               // ✅ Added
+            categories: data.categories ?? [],                  // ✅ Added
+            createdAt: data.createdAt as Timestamp,
+            updatedAt: data.updatedAt as Timestamp,
+          } satisfies Store;
+        });
+        
+        
         if (isMounted) setStores(fetchedStores);
 
         // Fetch Coupons for stores in this category
@@ -130,38 +153,57 @@ export default function CategoryPage() {
               limit(ITEMS_PER_PAGE) // Limit per chunk, might need adjustment for total limit
             );
             const couponsSnap = await getDocs(couponsQuery);
-            const chunkCoupons = couponsSnap.docs.map(d => ({
-              id: d.id,
-              ...d.data(),
-              expiryDate: safeToDate(d.data().expiryDate as Timestamp | undefined),
-              createdAt: safeToDate(d.data().createdAt as Timestamp | undefined),
-              updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined),
-            } as Coupon));
+            const chunkCoupons = couponsSnap.docs.map((d) => {
+              const data = d.data();
+            
+              return {
+                id: d.id,
+                storeId: data.storeId || '',
+                code: data.code || '',
+                description: data.description || '',
+                link: data.link || '',
+                isActive: data.isActive ?? true,
+                isFeatured: data.isFeatured ?? false,
+                expiryDate: data.expiryDate as Timestamp,
+                createdAt: data.createdAt as Timestamp,
+                updatedAt: data.updatedAt as Timestamp,
+              } satisfies Coupon;
+            });
+            
             allFetchedCouponsRaw.push(...chunkCoupons);
           }
           
 
           const storeCache = new Map<string, Store>(fetchedStores.map(s => [s.id, s]));
-          const enrichedCoupons = await Promise.all(
-            allFetchedCouponsRaw.map(async (coupon) => {
-              if (coupon.storeId && storeCache.has(coupon.storeId)) {
-                return { ...coupon, store: storeCache.get(coupon.storeId)! };
-              }
-              if (coupon.storeId && db) { // Fallback if store not in initial fetch (e.g. more coupons than stores)
-                const storeDoc = await getDoc(doc(db, 'stores', coupon.storeId));
-                if (storeDoc.exists()) {
-                    const storeDataRaw = storeDoc.data();
-                    return { ...coupon, store: {
-                        id: storeDoc.id, ...storeDataRaw,
-                        createdAt: safeToDate(storeDataRaw.createdAt as Timestamp | undefined),
-                        updatedAt: safeToDate(storeDataRaw.updatedAt as Timestamp | undefined),
-                    } as Store };
+          const enrichedCoupons: CouponWithStore[] = (
+            await Promise.all(
+              allFetchedCouponsRaw.map(async (coupon) => {
+                let storeName = 'Unknown Store';
+                let storeLogoUrl: string | undefined = undefined;
+          
+                if (coupon.storeId && storeCache.has(coupon.storeId)) {
+                  const cachedStore = storeCache.get(coupon.storeId)!;
+                  storeName = cachedStore.name || 'Unknown Store';
+                  storeLogoUrl = cachedStore.logoUrl || undefined;
+                } else if (coupon.storeId && db) {
+                  const storeDoc = await getDoc(doc(db, 'stores', coupon.storeId));
+                  if (storeDoc.exists()) {
+                    const storeData = storeDoc.data();
+                    storeName = storeData.name || 'Unknown Store';
+                    storeLogoUrl = storeData.logoUrl || undefined;
+                  }
                 }
-              }
-              return coupon;
-            })
+          
+                return {
+                  ...coupon,
+                  storeName,
+                  storeLogoUrl,
+                } satisfies CouponWithStore;
+              })
+            )
           );
-          if (isMounted) setCoupons(enrichedCoupons.slice(0, ITEMS_PER_PAGE)); // Ensure total limit
+          
+          if (isMounted) setCoupons(enrichedCoupons.slice(0, ITEMS_PER_PAGE));// Ensure total limit
         } else {
           if (isMounted) setCoupons([]);
         }

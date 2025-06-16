@@ -50,12 +50,22 @@ export default function CategoriesPage() {
           limit(CATEGORIES_PER_PAGE * 2) // Fetch a bit more to see if there's more for pagination later if needed
         );
         const querySnapshot = await getDocs(q);
-        const fetchedCategories = querySnapshot.docs.map(docSnap => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-          createdAt: safeToDate(docSnap.data().createdAt as Timestamp | undefined),
-          updatedAt: safeToDate(docSnap.data().updatedAt as Timestamp | undefined),
-        } as Category));
+        const fetchedCategories = querySnapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            name: data.name || '',
+            slug: data.slug || '',
+            order: data.order ?? 0,
+            isActive: data.isActive ?? true,
+            imageUrl: data.imageUrl || '',
+            description: data.description || '',
+            dataAiHint: data.dataAiHint || '',
+            createdAt: data.createdAt as Timestamp,
+            updatedAt: data.updatedAt as Timestamp,
+          } satisfies Category;
+        });
+        
         if (isMounted) setCategories(fetchedCategories);
       } catch (err) {
         console.error("Error fetching categories:", err);

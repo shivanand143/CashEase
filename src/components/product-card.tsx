@@ -15,6 +15,7 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import * as React from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { usePathname } from 'next/navigation';
 
 interface ProductCardProps {
   product: Product | null | undefined;
@@ -26,6 +27,7 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
   const router = useRouter();
   const { toast } = useToast();
   const [isProcessingClick, setIsProcessingClick] = React.useState(false);
+  const pathname = usePathname();
 
   if (!product) {
     return (
@@ -131,7 +133,7 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
     if (!user) {
       console.log("ProductCard: User not logged in. Storing redirect and navigating to login.");
       sessionStorage.setItem('loginRedirectUrl', finalAffiliateLinkWithClickId);
-      sessionStorage.setItem('loginRedirectSource', router.asPath); // Store current page as source
+      sessionStorage.setItem('loginRedirectSource', pathname); // Store current page as source
       router.push(`/login?message=Login to track cashback & shop this product!`);
       setIsProcessingClick(false);
       return;

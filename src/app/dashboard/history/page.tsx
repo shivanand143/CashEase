@@ -150,7 +150,7 @@ export default function CashbackHistoryPage() {
           paidDate: safeToDate(data.paidDate as Timestamp | undefined),
           createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0),
           updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0),
-        } as Transaction;
+        } as unknown as Transaction;
       });
 
       if (isMountedRef.current) {
@@ -177,7 +177,7 @@ export default function CashbackHistoryPage() {
     setPageError(null);
 
     try {
-      const transactionsCollection = collection(db, 'transactions');
+      const transactionsCollection = collection(db!, 'transactions');
       const qConstraints = [
         where('userId', '==', user.uid),
         orderBy('transactionDate', 'desc'),
@@ -197,7 +197,7 @@ export default function CashbackHistoryPage() {
           paidDate: safeToDate(data.paidDate as Timestamp | undefined),
           createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0),
           updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0),
-        } as Transaction;
+        } as unknown as Transaction;
       });
       
       if (isMountedRef.current) {
@@ -314,7 +314,11 @@ export default function CashbackHistoryPage() {
                             {transaction.status.replace('_', ' ')}
                           </Badge>
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">{transaction.transactionDate ? format(new Date(transaction.transactionDate), 'PP') : 'N/A'}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+  {transaction.transactionDate instanceof Timestamp
+    ? format(transaction.transactionDate.toDate(), 'PP')
+    : 'N/A'}
+</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                            <Tooltip>
                               <TooltipTrigger asChild>

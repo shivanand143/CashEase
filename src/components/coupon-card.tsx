@@ -23,6 +23,7 @@ import { trackClickClientSide, TrackClickClientSideData } from '@/lib/actions/tr
 import { v4 as uuidv4 } from 'uuid';
 import { safeToDate } from '@/lib/utils';
 import * as React from 'react';
+import { usePathname } from 'next/navigation';
 
 interface CouponCardProps {
   coupon: Coupon & { store?: Store };
@@ -50,6 +51,7 @@ export default function CouponCard({ coupon }: CouponCardProps) {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [isProcessingClick, setIsProcessingClick] = React.useState(false);
+  const pathname = usePathname();
 
   const handleInteraction = async (isCode: boolean) => {
     setIsProcessingClick(true);
@@ -76,7 +78,7 @@ export default function CouponCard({ coupon }: CouponCardProps) {
     if (!user) {
         console.log("CouponCard: User not logged in. Storing redirect and navigating to login.");
         sessionStorage.setItem('loginRedirectUrl', finalAffiliateLinkWithClickId);
-        sessionStorage.setItem('loginRedirectSource', router.asPath);
+        sessionStorage.setItem('loginRedirectSource', pathname);
         router.push(`/login?message=Login to use this ${isCode ? 'code' : 'deal'} & track cashback.`);
         setIsProcessingClick(false);
         return;

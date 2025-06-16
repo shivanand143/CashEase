@@ -30,6 +30,7 @@ type SidebarContextType = {
   toggleSidebar: () => void
 }
 
+
 const SidebarContext = React.createContext<SidebarContextType | null>(null)
 
 export function useSidebar() {
@@ -289,52 +290,84 @@ const sidebarMenuButtonVariants = cva(
   }
 );
 
-export interface SidebarMenuButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    React.AnchorHTMLAttributes<HTMLAnchorElement>, // Add anchor attributes
-    VariantProps<typeof sidebarMenuButtonVariants> {
+type CommonProps = VariantProps<typeof sidebarMenuButtonVariants> & {
   asChild?: boolean;
   isActive?: boolean;
   tooltip?: string;
-  href?: string; // Add href prop
-}
+};
+
+type ButtonLikeProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  href?: undefined; // no href on button
+};
+
+type AnchorLikeProps = React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+  href: string; // required for anchor
+};
+
+export type SidebarMenuButtonProps = CommonProps & (ButtonLikeProps | AnchorLikeProps);
+
 
 export const SidebarMenuButton = React.forwardRef<
-    HTMLButtonElement | HTMLAnchorElement,
-    SidebarMenuButtonProps
->(
-    ({ asChild = false, isActive, tooltip, className, children, variant, size, href, ...props }, ref) => {
-        const { state: sidebarState, isMobile } = useSidebar();
-        const isCollapsed = sidebarState === 'collapsed' && !isMobile;
+  HTMLButtonElement | HTMLAnchorElement,
+  SidebarMenuButtonProps
+>((props, ref) => {
+  const {
+    asChild = false,
+    isActive,
+    tooltip,
+    className,
+    children,
+    variant,
+    size,
+    href,
+    ...rest
+  } = props;
 
-        const Comp = href ? NextLink : (asChild ? Slot : "button");
-        
-        const buttonProps = {
-            ref: ref as any, // Type assertion might be needed depending on Comp
-            className: cn(sidebarMenuButtonVariants({ variant, size, isActive, isCollapsed }), className),
-            "data-active": isActive,
-            ...props,
-        };
+  const { state: sidebarState, isMobile } = useSidebar();
+  const isCollapsed = sidebarState === "collapsed" && !isMobile;
 
-        const buttonContent = (
-            <Comp {...buttonProps} {...(Comp === NextLink && href ? { href } : {})}>
-              {children}
-            </Comp>
-        );
+  const baseClass = cn(
+    sidebarMenuButtonVariants({ variant, size, isActive, isCollapsed }),
+    className
+  );
 
-        if (isCollapsed && tooltip) {
-            return (
-                <Tooltip>
-                    <TooltipTrigger asChild>{buttonContent}</TooltipTrigger>
-                    <TooltipContent side="right" align="center">
-                       {tooltip}
-                    </TooltipContent>
-                </Tooltip>
-            );
-        }
-        return buttonContent;
-    }
-);
+  const commonProps = {
+    className: baseClass,
+    "data-active": isActive,
+  };
+
+  const content = href ? (
+    <NextLink
+      {...(rest as React.AnchorHTMLAttributes<HTMLAnchorElement>)}
+      href={href}
+      ref={ref as React.Ref<HTMLAnchorElement>}
+      {...commonProps}
+    >
+      {children}
+    </NextLink>
+  ) : (
+    <button
+      {...(rest as React.ButtonHTMLAttributes<HTMLButtonElement>)}
+      ref={ref as React.Ref<HTMLButtonElement>}
+      {...commonProps}
+    >
+      {children}
+    </button>
+  );
+
+  return isCollapsed && tooltip ? (
+    <Tooltip>
+      <TooltipTrigger asChild>{content}</TooltipTrigger>
+      <TooltipContent side="right" align="center">
+        {tooltip}
+      </TooltipContent>
+    </Tooltip>
+  ) : (
+    content
+  );
+});
+
+
 SidebarMenuButton.displayName = "SidebarMenuButton";
 
 export const SidebarToggleButton = React.forwardRef<

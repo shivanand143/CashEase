@@ -119,7 +119,7 @@ export default function StoresPage() {
         ...docSnap.data(),
         createdAt: safeToDate(docSnap.data().createdAt as Timestamp | undefined),
         updatedAt: safeToDate(docSnap.data().updatedAt as Timestamp | undefined),
-      } as Store));
+      } as unknown as Store));
 
       if (isLoadMoreOperation) {
         setStores(prev => [...prev, ...storesData]);

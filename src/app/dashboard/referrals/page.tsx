@@ -183,17 +183,17 @@ export default function ReferralsPage() {
                 >
                     <Copy className="h-4 w-4" />
                 </Button>
-                {navigator.share && (
-                    <Button
-                    variant="default"
-                    size="icon"
-                    onClick={handleShare}
-                    disabled={!referralLink || authLoading}
-                    aria-label="Share referral link"
-                    >
-                    <Share2 className="h-4 w-4" />
-                    </Button>
-                )}
+                {'share' in navigator && typeof navigator.share === 'function' && (
+  <Button
+    variant="default"
+    size="icon"
+    onClick={() => navigator.share({ title: 'Check this out', url: window.location.href })}
+
+  >
+    <Share2 className="h-4 w-4" />
+  </Button>
+)}
+
                 </div>
             </div>
 

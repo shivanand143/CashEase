@@ -37,6 +37,9 @@ import { format } from 'date-fns';
 import { AlertCircle, Loader2, MousePointerClick, ExternalLink } from 'lucide-react';
 import ProtectedRoute from '@/components/guards/protected-route';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  QueryConstraint
+} from 'firebase/firestore';
 
 const CLICKS_PER_PAGE = 20;
 
@@ -84,6 +87,7 @@ export default function ClickHistoryPage() {
   const [loadingMore, setLoadingMore] = React.useState(false);
   const isMountedRef = React.useRef(true);
 
+
   const fetchInitialClicks = React.useCallback(async () => {
     if (!user || !isMountedRef.current) {
       if (isMountedRef.current) setPageLoading(false);
@@ -107,22 +111,40 @@ export default function ClickHistoryPage() {
 
     try {
       const clicksCollection = collection(db, 'clicks');
-      const qConstraints = [
-        where('userId', '==', user.uid),
-        orderBy('timestamp', 'desc'),
-        limit(CLICKS_PER_PAGE)
-      ];
+     const qConstraints: QueryConstraint[] = [
+  where('userId', '==', user.uid),
+  orderBy('timestamp', 'desc'),
+  ...(lastVisible ? [startAfter(lastVisible)] : []),
+  limit(CLICKS_PER_PAGE)
+];
+
+      
       const q = query(clicksCollection, ...qConstraints);
       const querySnapshot = await getDocs(q);
-
-      const clicksData = querySnapshot.docs.map(docSnap => {
+      const clicksData: Click[] = querySnapshot.docs.map((docSnap) => {
         const data = docSnap.data();
+      
         return {
           id: docSnap.id,
-          ...data,
-          timestamp: safeToDate(data.timestamp as Timestamp | undefined) || new Date(0),
-        } as Click;
+          clickId: data.clickId || '',
+          userId: data.userId ?? null,
+          storeId: data.storeId || '',
+          storeName: data.storeName ?? null,
+          couponId: data.couponId ?? null,
+          productId: data.productId ?? null,
+          productName: data.productName ?? null,
+          affiliateLink: data.affiliateLink || '',
+          originalLink: data.originalLink ?? null,
+          timestamp: data.timestamp as Timestamp,
+          userAgent: data.userAgent ?? null,
+          clickedCashbackDisplay: data.clickedCashbackDisplay ?? null,
+          clickedCashbackRateValue: data.clickedCashbackRateValue ?? null,
+          clickedCashbackType: data.clickedCashbackType ?? null,
+          conversionId: data.conversionId ?? null,
+          hasConversion: data.hasConversion ?? false,
+        } satisfies Click;
       });
+      
 
       if(isMountedRef.current) {
         setClicks(clicksData);
@@ -148,7 +170,7 @@ export default function ClickHistoryPage() {
     setPageError(null);
 
     try {
-      const clicksCollection = collection(db, 'clicks');
+      const clicksCollection = collection(db!, 'clicks');
       const qConstraints = [
         where('userId', '==', user.uid),
         orderBy('timestamp', 'desc'),
@@ -157,14 +179,30 @@ export default function ClickHistoryPage() {
       ];
       const q = query(clicksCollection, ...qConstraints);
       const querySnapshot = await getDocs(q);
-      const clicksData = querySnapshot.docs.map(docSnap => {
+      const clicksData: Click[] = querySnapshot.docs.map((docSnap) => {
         const data = docSnap.data();
+      
         return {
           id: docSnap.id,
-          ...data,
-          timestamp: safeToDate(data.timestamp as Timestamp | undefined) || new Date(0),
-        } as Click;
+          clickId: data.clickId || '',
+          userId: data.userId ?? null,
+          storeId: data.storeId || '',
+          storeName: data.storeName ?? null,
+          couponId: data.couponId ?? null,
+          productId: data.productId ?? null,
+          productName: data.productName ?? null,
+          affiliateLink: data.affiliateLink || '',
+          originalLink: data.originalLink ?? null,
+          timestamp: data.timestamp as Timestamp,
+          userAgent: data.userAgent ?? null,
+          clickedCashbackDisplay: data.clickedCashbackDisplay ?? null,
+          clickedCashbackRateValue: data.clickedCashbackRateValue ?? null,
+          clickedCashbackType: data.clickedCashbackType ?? null,
+          conversionId: data.conversionId ?? null,
+          hasConversion: data.hasConversion ?? false,
+        } satisfies Click;
       });
+      
       if(isMountedRef.current) {
         setClicks(prev => [...prev, ...clicksData]);
         setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
@@ -271,7 +309,11 @@ export default function ClickHistoryPage() {
                             click.couponId ? `Coupon: ${click.couponId}` : 
                             'Store Visit'}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">{click.timestamp ? format(new Date(click.timestamp), 'PPp') : 'N/A'}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+  {click.timestamp instanceof Timestamp
+    ? format(click.timestamp.toDate(), 'PPp')
+    : 'N/A'}
+</TableCell>
                         <TableCell className="text-xs">
                              <Tooltip>
                                 <TooltipTrigger asChild>

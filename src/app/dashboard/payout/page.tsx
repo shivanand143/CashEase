@@ -87,6 +87,8 @@ export default function PayoutPage() {
   const [pageLoading, setLoadingPage] = React.useState(true);
   const [canRequest, setCanRequest] = React.useState(false);
 
+  
+
   // Dynamic schema based on availableBalance
   const payoutSchemaWithBalanceValidation = payoutFormSchema.refine(
     (data) => data.requestedAmount <= availableBalance,
@@ -136,7 +138,7 @@ export default function PayoutPage() {
           setValue('payoutMethod', profile.payoutDetails.method);
           setValue('payoutDetail', profile.payoutDetails.detail);
         } else {
-          setValue('payoutMethod', undefined);
+          setValue('payoutMethod', 'bank_transfer');
           setValue('payoutDetail', '');
         }
       } else {
@@ -234,7 +236,7 @@ export default function PayoutPage() {
 
       console.log(`${PAYOUT_PAGE_LOG_PREFIX} Proceeding with Firestore transaction for actual payout amount: ₹${actualPayoutAmount.toFixed(2)}`);
       await runTransaction(db, async (transaction) => {
-        const userDocRef = doc(db, 'users', user.uid);
+        const userDocRef = doc(db!, 'users', user.uid);
         const userDocSnap = await transaction.get(userDocRef);
         console.log(`${PAYOUT_PAGE_LOG_PREFIX} User document snapshot fetched inside transaction.`);
 
@@ -251,7 +253,7 @@ export default function PayoutPage() {
           throw new Error(`Your available balance (now ₹${currentFreshBalance.toFixed(2)}) is less than the amount being processed for payout (₹${actualPayoutAmount.toFixed(2)}). Please refresh and try again.`);
         }
         
-        const payoutRequestRef = doc(collection(db, 'payoutRequests'));
+        const payoutRequestRef = doc(collection(db!, 'payoutRequests'));
         const payoutRequestData: Omit<PayoutRequest, 'id'> = {
           userId: user.uid,
           amount: actualPayoutAmount,
@@ -270,7 +272,7 @@ export default function PayoutPage() {
         console.log(`${PAYOUT_PAGE_LOG_PREFIX} Payout request document prepared: ${payoutRequestRef.id}`);
 
         for (const txId of transactionIdsToIncludeInPayout) {
-          const txRef = doc(db, 'transactions', txId);
+          const txRef = doc(db!, 'transactions', txId);
           transaction.update(txRef, {
             status: 'awaiting_payout' as CashbackStatus,
             payoutId: payoutRequestRef.id,

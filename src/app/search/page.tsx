@@ -127,10 +127,10 @@ export default function SearchPage() {
         const storeQuery = query(storesCollection, ...storeNameConstraints);
         const storeSnap = await getDocs(storeQuery);
         let fetchedStores = storeSnap.docs.map(d => ({
-            id: d.id, ...d.data(),
-            createdAt: safeToDate(d.data().createdAt as Timestamp | undefined),
-            updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined),
-        } as Store));
+          id: d.id, ...d.data(),
+          createdAt: safeToDate(d.data().createdAt as Timestamp | undefined),
+          updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined),
+        } as unknown as Store));
 
         // Client-side filter for better "contains" behavior (case-insensitive)
         fetchedStores = fetchedStores.filter(s => s.name.toLowerCase().includes(lowerTerm));
@@ -148,11 +148,11 @@ export default function SearchPage() {
         const couponQuery = query(couponsCollection, ...couponDescConstraints);
         const couponSnap = await getDocs(couponQuery);
         let fetchedCouponsRaw = couponSnap.docs.map(d => ({
-            id: d.id, ...d.data(),
-            expiryDate: safeToDate(d.data().expiryDate as Timestamp | undefined),
-            createdAt: safeToDate(d.data().createdAt as Timestamp | undefined),
-            updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined),
-        } as Coupon));
+          id: d.id, ...d.data(),
+          expiryDate: safeToDate(d.data().expiryDate as Timestamp | undefined),
+          createdAt: safeToDate(d.data().createdAt as Timestamp | undefined),
+          updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined),
+        } as unknown as Coupon));
 
         fetchedCouponsRaw = fetchedCouponsRaw.filter(c => c.description.toLowerCase().includes(lowerTerm));
 
@@ -171,10 +171,10 @@ export default function SearchPage() {
                  if (storeDocSnap.exists()) {
                    const rawStoreData = storeDocSnap.data();
                    storeData = {
-                       id: storeDocSnap.id, ...rawStoreData,
-                        createdAt: safeToDate(rawStoreData.createdAt as Timestamp | undefined),
-                        updatedAt: safeToDate(rawStoreData.updatedAt as Timestamp | undefined),
-                   } as Store;
+                     id: storeDocSnap.id, ...rawStoreData,
+                     createdAt: safeToDate(rawStoreData.createdAt as Timestamp | undefined),
+                     updatedAt: safeToDate(rawStoreData.updatedAt as Timestamp | undefined),
+                   } as unknown as Store;
                    storeCache.set(coupon.storeId, storeData);
                  }
                } catch (storeErr) {

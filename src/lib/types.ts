@@ -238,4 +238,13 @@ export type WithOptionalFieldValue<T> = {
   [P in keyof T]: T[P] | FieldValue | undefined;
 };
 
-    
+export type CouponWithStore = Coupon & {
+  storeName: string;
+  storeLogoUrl?: string | undefined;
+};
+
+export interface UserProfileClient extends Omit<UserProfile, 'createdAt' | 'updatedAt' | 'lastPayoutRequestAt'> {
+  createdAt: Date;
+  updatedAt: Date;
+  lastPayoutRequestAt?: Date | null;
+}

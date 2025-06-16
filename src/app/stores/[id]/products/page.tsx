@@ -65,7 +65,7 @@ export default function StoreProductsPage() {
             ...storeData,
             createdAt: safeToDate(storeData.createdAt as Timestamp | undefined),
             updatedAt: safeToDate(storeData.updatedAt as Timestamp | undefined),
-          } as Store);
+          } as unknown as Store);
         }
       } else {
         throw new Error("Store not found or is not active.");
@@ -133,7 +133,7 @@ export default function StoreProductsPage() {
         ...d.data(),
         createdAt: safeToDate(d.data().createdAt as Timestamp | undefined),
         updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined),
-      } as Product));
+      } as unknown as Product));
 
       if (isMounted) {
         setProducts(prev => loadMoreOperation ? [...prev, ...fetchedProducts] : fetchedProducts);

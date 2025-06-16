@@ -89,10 +89,11 @@ async function fetchItemsWithStoreData<T extends Product | Coupon>(
       ...data,
       createdAt: safeToDate(data.createdAt as Timestamp | undefined),
       updatedAt: safeToDate(data.updatedAt as Timestamp | undefined),
-    } as T;
+    } as unknown as T;
 
     if (itemType === 'coupons') {
-      (itemBase as Coupon).expiryDate = safeToDate(data.expiryDate as Timestamp | undefined);
+      (itemBase as Coupon).expiryDate = data.expiryDate ?? null;
+
     }
 
     let storeData: Store | undefined = undefined;
@@ -100,7 +101,7 @@ async function fetchItemsWithStoreData<T extends Product | Coupon>(
 
     if (storeId) {
       try {
-        const storeDocRef = doc(db, 'stores', storeId);
+        const storeDocRef = doc(db!, 'stores', storeId);
         const storeDocSnap = await getDoc(storeDocRef);
         if (storeDocSnap.exists()) {
           const rawStoreData = storeDocSnap.data();
@@ -109,7 +110,7 @@ async function fetchItemsWithStoreData<T extends Product | Coupon>(
             ...rawStoreData,
             createdAt: safeToDate(rawStoreData.createdAt as Timestamp | undefined),
             updatedAt: safeToDate(rawStoreData.updatedAt as Timestamp | undefined),
-          } as Store;
+          } as unknown as Store;
         } else {
             console.warn(`HOMEPAGE_FETCH_HELPER: Store ${storeId} not found for item ${docSnap.id} (${itemType}).`);
         }
@@ -179,7 +180,7 @@ export default function HomePage() {
           console.log("HOMEPAGE: Fetching banners...");
           const bannersQuery = query(collection(db!, 'banners'), where('isActive', '==', true), orderBy('order', 'asc'));
           const bannerSnap = await getDocs(bannersQuery);
-          if (isEffectMounted) setBanners(bannerSnap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: safeToDate(d.data().createdAt as Timestamp | undefined), updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined) } as Banner)));
+          if (isEffectMounted) setBanners(bannerSnap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: safeToDate(d.data().createdAt as Timestamp | undefined), updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined) } as unknown as Banner)));
           console.log(`HOMEPAGE: Fetched ${bannerSnap.size} banners.`);
         })().catch(err => { if(isEffectMounted) { console.error("HOMEPAGE_ERROR: banners", err); currentErrors.push("banners"); }}),
 
@@ -187,7 +188,7 @@ export default function HomePage() {
           console.log("HOMEPAGE: Fetching categories...");
           const categoriesQuery = query(collection(db!, 'categories'), where('isActive', '==', true), orderBy('order', 'asc'), orderBy('name', 'asc'), limit(ITEMS_PER_SECTION_STORES_CATEGORIES));
           const categorySnap = await getDocs(categoriesQuery);
-          if (isEffectMounted) setCategories(categorySnap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: safeToDate(d.data().createdAt as Timestamp | undefined), updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined) } as Category)));
+          if (isEffectMounted) setCategories(categorySnap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: safeToDate(d.data().createdAt as Timestamp | undefined), updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined) } as unknown as Category)));
           console.log(`HOMEPAGE: Fetched ${categorySnap.size} categories.`);
         })().catch(err => { if(isEffectMounted) { console.error("HOMEPAGE_ERROR: categories", err); currentErrors.push("categories"); }}),
 
@@ -195,7 +196,7 @@ export default function HomePage() {
           console.log("HOMEPAGE: Fetching featured stores...");
           const storesQuery = query(collection(db!, 'stores'), where('isActive', '==', true), where('isFeatured', '==', true), orderBy('name', 'asc'), limit(ITEMS_PER_SECTION_STORES_CATEGORIES));
           const storeSnap = await getDocs(storesQuery);
-          if (isEffectMounted) setFeaturedStores(storeSnap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: safeToDate(d.data().createdAt as Timestamp | undefined), updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined) } as Store)));
+          if (isEffectMounted) setFeaturedStores(storeSnap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: safeToDate(d.data().createdAt as Timestamp | undefined), updatedAt: safeToDate(d.data().updatedAt as Timestamp | undefined) } as unknown as Store)));
           console.log(`HOMEPAGE: Fetched ${storeSnap.size} featured stores.`);
         })().catch(err => { if(isEffectMounted) { console.error("HOMEPAGE_ERROR: featured stores", err); currentErrors.push("featured stores"); }}),
 
@@ -206,7 +207,9 @@ export default function HomePage() {
             where('isFeatured', '==', true),
             orderBy('createdAt', 'desc'),
           ];
-          const fetchedCoupons = await fetchItemsWithStoreData<'coupons', Coupon>('coupons', couponConstraints, ITEMS_PER_SECTION_PRODUCTS_COUPONS);
+          const fetchedCoupons = await fetchItemsWithStoreData<Coupon>('coupons', couponConstraints, ITEMS_PER_SECTION_PRODUCTS_COUPONS);
+
+
           if (isEffectMounted) setTopCoupons(fetchedCoupons);
           console.log(`HOMEPAGE: Fetched ${fetchedCoupons.length} top coupons.`);
         })().catch(err => { if(isEffectMounted) { console.error("HOMEPAGE_ERROR: top coupons", err); currentErrors.push("top coupons"); }}),
@@ -218,7 +221,8 @@ export default function HomePage() {
             where('isTodaysPick', '==', true),
             orderBy('updatedAt', 'desc')
           ];
-          const fetchedProducts = await fetchItemsWithStoreData<'products', Product>('products', productConstraints, ITEMS_PER_SECTION_PRODUCTS_COUPONS);
+          const fetchedProducts = await fetchItemsWithStoreData<Product>('products', productConstraints, ITEMS_PER_SECTION_PRODUCTS_COUPONS);
+
           if (isEffectMounted) setTodaysPicksProducts(fetchedProducts);
           console.log(`HOMEPAGE: Fetched ${fetchedProducts.length} today's picks products.`);
         })().catch(err => { if(isEffectMounted) { console.error("HOMEPAGE_ERROR: today's picks products", err); currentErrors.push("today's picks products"); }})

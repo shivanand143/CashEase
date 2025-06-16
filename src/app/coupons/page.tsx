@@ -126,13 +126,26 @@ export default function CouponsPage() {
       const q = query(couponsCollection, ...constraints);
       const querySnapshot = await getDocs(q);
 
-      const rawCoupons = querySnapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-        expiryDate: safeToDate(docSnap.data().expiryDate as Timestamp | undefined),
-        createdAt: safeToDate(docSnap.data().createdAt as Timestamp | undefined),
-        updatedAt: safeToDate(docSnap.data().updatedAt as Timestamp | undefined),
-      } as Coupon));
+      const rawCoupons: Coupon[] = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          storeId: data.storeId,
+          code: data.code,
+          description: data.description,
+          link: data.link,
+          title: data.title,
+          cashback: data.cashback,
+          isFeatured: data.isFeatured,
+          isActive: data.isActive,
+          expiryDate: data.expiryDate ?? null,
+          createdAt: data.createdAt ?? null,
+          updatedAt: data.updatedAt ?? null,
+        };
+      });
+      
+      
+      
 
       const storeCache = new Map<string, Store>();
       const enrichedCoupons: CouponWithStoreData[] = [];
@@ -152,7 +165,7 @@ export default function CouponsPage() {
                   id: storeDocSnap.id, ...rawStore,
                   createdAt: safeToDate(rawStore.createdAt as Timestamp | undefined),
                   updatedAt: safeToDate(rawStore.updatedAt as Timestamp | undefined),
-                } as Store;
+                } as unknown as Store;
                 storeCache.set(coupon.storeId, storeData);
               }
             } catch (storeFetchError) {

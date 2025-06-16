@@ -146,7 +146,7 @@ export default function PayoutHistoryPage() {
           ...data,
           requestedAt: safeToDate(data.requestedAt as Timestamp | undefined) || new Date(0),
           processedAt: safeToDate(data.processedAt as Timestamp | undefined),
-        } as PayoutRequest;
+        } as unknown as PayoutRequest;
       });
 
       if (isMountedRef.current) {
@@ -173,7 +173,7 @@ export default function PayoutHistoryPage() {
     setPageError(null);
 
     try {
-      const payoutsCollection = collection(db, 'payoutRequests');
+      const payoutsCollection = collection(db!, 'payoutRequests');
       const qConstraints = [
         where('userId', '==', user.uid),
         orderBy('requestedAt', 'desc'),
@@ -189,7 +189,7 @@ export default function PayoutHistoryPage() {
           ...data,
           requestedAt: safeToDate(data.requestedAt as Timestamp | undefined) || new Date(0),
           processedAt: safeToDate(data.processedAt as Timestamp | undefined),
-        } as PayoutRequest;
+        } as unknown as PayoutRequest;
       });
        if (isMountedRef.current) {
         setPayouts(prev => [...prev, ...newPayoutsData]);
@@ -314,7 +314,11 @@ export default function PayoutHistoryPage() {
                   <TableBody>
                     {payouts.map((payout) => (
                       <TableRow key={payout.id}>
-                        <TableCell className="whitespace-nowrap">{payout.requestedAt ? format(new Date(payout.requestedAt), 'PPp') : 'N/A'}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+  {payout.requestedAt instanceof Timestamp
+    ? format(payout.requestedAt.toDate(), 'PPp')
+    : 'N/A'}
+</TableCell>
                         <TableCell className="font-semibold text-right">{formatCurrency(payout.amount)}</TableCell>
                         <TableCell>
                           <Badge variant={getStatusVariant(payout.status)} className="capitalize flex items-center gap-1 text-xs whitespace-nowrap">
@@ -336,8 +340,10 @@ export default function PayoutHistoryPage() {
                             </Tooltip>
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
-                          {payout.processedAt ? format(new Date(payout.processedAt), 'PPp') : '-'}
-                        </TableCell>
+  {payout.processedAt instanceof Timestamp
+    ? format(payout.processedAt.toDate(), 'PPp')
+    : '-'}
+</TableCell>
                         <TableCell className="text-xs text-muted-foreground truncate max-w-[200px]">
                            <Tooltip>
                               <TooltipTrigger asChild>

@@ -38,12 +38,14 @@ import {
     FirestoreError
 } from 'firebase/firestore';
 import { auth as firebaseAuthService, db, firebaseInitializationError } from '@/lib/firebase/config';
-import type { UserProfile, PayoutDetails, PayoutMethod } from '@/lib/types';
+import type { UserProfile, PayoutDetails, PayoutMethod, UserProfileClient } from '@/lib/types';
 import { useToast } from "@/hooks/use-toast";
 import { v4 as uuidv4 } from 'uuid';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FirebaseError } from 'firebase/app';
 import { safeToDate } from '@/lib/utils';
+
+
 
 const AUTH_HOOK_LOG_PREFIX = "AUTH_HOOK:";
 
@@ -104,9 +106,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           referralBonusEarned: profileData.referralBonusEarned ?? 0,
           referredBy: profileData.referredBy ?? null,
           isDisabled: profileData.isDisabled ?? false,
-          createdAt: safeToDate(profileData.createdAt as Timestamp | undefined) || new Date(0),
-          updatedAt: safeToDate(profileData.updatedAt as Timestamp | undefined) || new Date(0),
-          lastPayoutRequestAt: safeToDate(profileData.lastPayoutRequestAt as Timestamp | undefined),
+          createdAt: profileData.createdAt as Timestamp,
+          updatedAt: profileData.updatedAt as Timestamp,
+          lastPayoutRequestAt: profileData.lastPayoutRequestAt as Timestamp,
           payoutDetails: profileData.payoutDetails ?? null,
         };
         console.log(`${AUTH_HOOK_LOG_PREFIX} fetchUserProfile: Profile fetched successfully for ${uid}. Name: "${profile.displayName}"`);
@@ -213,11 +215,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 // Merge existing data with updates for immediate use, then convert timestamps
                 const updatedRawProfile = { ...existingData, ...updatePayload, uid: authUser.uid };
                 profileToSet = {
-                    ...updatedRawProfile,
-                    createdAt: safeToDate(updatedRawProfile.createdAt as Timestamp | Date) || new Date(),
-                    updatedAt: new Date(), // Tentative, serverTimestamp will overwrite
-                    lastPayoutRequestAt: safeToDate(updatedRawProfile.lastPayoutRequestAt as Timestamp | Date),
-                } as UserProfile;
+                  ...updatedRawProfile,
+                  createdAt: safeToDate(updatedRawProfile.createdAt as Timestamp | Date) || new Date(),
+                  updatedAt: new Date(), // Tentative, serverTimestamp will overwrite
+                  lastPayoutRequestAt: safeToDate(updatedRawProfile.lastPayoutRequestAt as Timestamp | Date),
+                } as unknown as UserProfile;
 
             } else {
                 isNewUserCreation = true;
@@ -243,7 +245,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             if (isNewUserCreation && referrerIdToUse) {
                 console.log(`${AUTH_HOOK_LOG_PREFIX} [Op:${operationId}] [Transaction] New user ${authUser.uid} was referred by ${referrerIdToUse}. Attempting to update referrer.`);
-                const referrerDocRef = doc(db, 'users', referrerIdToUse);
+                const referrerDocRef = doc(db!, 'users', referrerIdToUse);
                 const referrerSnap = await transaction.get(referrerDocRef); // Read referrer within the same transaction
                 if (referrerSnap.exists()) {
                     const referralBonusAmount = parseFloat(process.env.NEXT_PUBLIC_REFERRAL_BONUS_AMOUNT || "50");
@@ -262,11 +264,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (profileData) {
              // Convert Firestore Timestamps to JS Dates for client-side state if they are Timestamps
-            const finalProfile = { ...profileData };
-            if (finalProfile.createdAt instanceof Timestamp) finalProfile.createdAt = finalProfile.createdAt.toDate();
-            if (finalProfile.updatedAt instanceof Timestamp) finalProfile.updatedAt = finalProfile.updatedAt.toDate();
-            if (finalProfile.lastPayoutRequestAt instanceof Timestamp) finalProfile.lastPayoutRequestAt = finalProfile.lastPayoutRequestAt.toDate();
-            else finalProfile.lastPayoutRequestAt = null;
+             const finalProfile = { ...profileData };
+
+             const clientProfile: UserProfileClient = {
+               ...finalProfile,
+               createdAt: finalProfile.createdAt instanceof Timestamp ? finalProfile.createdAt.toDate() : new Date(0),
+               updatedAt: finalProfile.updatedAt instanceof Timestamp ? finalProfile.updatedAt.toDate() : new Date(0),
+               lastPayoutRequestAt: finalProfile.lastPayoutRequestAt instanceof Timestamp
+                 ? finalProfile.lastPayoutRequestAt.toDate()
+                 : null,
+             };
+             
 
             console.log(`${AUTH_HOOK_LOG_PREFIX} [Op:${operationId}] Profile transaction successful for ${authUser.uid}. Name: "${finalProfile.displayName}", Role: "${finalProfile.role}"`);
             if (finalReferralCodeToUse && typeof window !== 'undefined') {

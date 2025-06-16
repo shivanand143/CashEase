@@ -16,7 +16,7 @@ import CouponCard from '@/components/coupon-card';
 import { AlertCircle, ArrowLeft, ExternalLinkIcon, Info, BadgePercent, ScrollText, Star, Clock, CheckSquare, ChevronRight, ShoppingBag } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { trackClickClientSide } from '@/lib/actions/tracking'; // Corrected import
-import type { TrackClickData } from '@/lib/actions/tracking';
+import type { TrackClickClientSideData } from '@/lib/actions/tracking';
 import { v4 as uuidv4 } from 'uuid';
 import { cn, safeToDate, formatCurrency } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -78,11 +78,11 @@ export default function StoreDetailPage() {
         }
         const storeDataRaw = storeSnap.data();
         const fetchedStore = {
-             id: storeSnap.id,
-             ...storeDataRaw,
-             createdAt: safeToDate(storeDataRaw.createdAt as Timestamp | undefined),
-             updatedAt: safeToDate(storeDataRaw.updatedAt as Timestamp | undefined),
-        } as Store;
+          id: storeSnap.id,
+          ...storeDataRaw,
+          createdAt: safeToDate(storeDataRaw.createdAt as Timestamp | undefined),
+          updatedAt: safeToDate(storeDataRaw.updatedAt as Timestamp | undefined),
+        } as unknown as Store;
         if (isMounted) setStore(fetchedStore);
 
         const couponsCollection = collection(db, 'coupons');
@@ -95,13 +95,13 @@ export default function StoreDetailPage() {
         );
         const couponSnap = await getDocs(q);
         const couponsData = couponSnap.docs.map(docSnap => ({
-            id: docSnap.id,
-            store: fetchedStore, // Embed full store data for CouponCard
-            ...docSnap.data(),
-            expiryDate: safeToDate(docSnap.data().expiryDate as Timestamp | undefined),
-            createdAt: safeToDate(docSnap.data().createdAt as Timestamp | undefined),
-            updatedAt: safeToDate(docSnap.data().updatedAt as Timestamp | undefined),
-        } as Coupon));
+          id: docSnap.id,
+          store: fetchedStore, // Embed full store data for CouponCard
+          ...docSnap.data(),
+          expiryDate: safeToDate(docSnap.data().expiryDate as Timestamp | undefined),
+          createdAt: safeToDate(docSnap.data().createdAt as Timestamp | undefined),
+          updatedAt: safeToDate(docSnap.data().updatedAt as Timestamp | undefined),
+        } as unknown as Coupon));
         if (isMounted) setCoupons(couponsData);
 
       } catch (err) {
@@ -136,7 +136,7 @@ export default function StoreDetailPage() {
 
      if (user) {
        try {
-         const clickData: Omit<TrackClickData, 'timestamp' | 'userAgent'> = {
+         const clickData: Omit<TrackClickClientSideData, 'timestamp' | 'userAgent'> = {
            userId: user.uid,
            storeId: store.id,
            storeName: store.name,
