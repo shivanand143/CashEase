@@ -763,7 +763,7 @@ export default function AdminTransactionsPage() {
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0">
-                        <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus disabled={isSaving}/>
+                        <Calendar mode="single" selected={field.value} onSelect={field.onChange}  disabled={isSaving}/>
                       </PopoverContent>
                     </Popover>
                   )} />

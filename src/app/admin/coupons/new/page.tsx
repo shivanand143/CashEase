@@ -235,7 +235,7 @@ export default function AddCouponPage() {
                                 mode="single" 
                                 selected={dateForCalendar} 
                                 onSelect={(date) => field.onChange(date || null)} 
-                                initialFocus 
+                                
                                 disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
                             />
                           </PopoverContent>

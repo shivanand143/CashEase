@@ -594,7 +594,6 @@ function AdminCouponsPageContent() {
                                     mode="single" 
                                     selected={dateForCalendar} 
                                     onSelect={(date) => field.onChange(date || null)} // form state gets Date | null
-                                    initialFocus 
                                     disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))}
                                 /> 
                             </PopoverContent> 

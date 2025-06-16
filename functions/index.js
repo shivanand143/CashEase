@@ -1,17 +1,17 @@
-
-const functions = require("firebase-functions");
-const admin = require("firebase-admin");
-const logger = require("firebase-functions/logger");
+const functions = require('firebase-functions');
+const admin = require('firebase-admin');
+const logger = require('firebase-functions/logger');
 
 // Initialize Firebase Admin SDK
 try {
   admin.initializeApp();
 } catch (e) {
   logger.warn(
-    "Firebase Admin SDK already initialized or initialization failed:",
-    e,
+      'Firebase Admin SDK already initialized or initialization failed:',
+      e,
   );
 }
+
 const db = admin.firestore();
 
 /**
@@ -25,151 +25,171 @@ const db = admin.firestore();
  * - status (string, optional): Transaction status from the advertiser.
  * - commission (number, optional): Commission amount.
  */
-exports.handlePostback = functions.https.onRequest(async (request, response) => {
-  logger.info("Postback received. Query:", request.query, "Body:", request.body);
-
-  const clickId = request.query.sub_id || request.body.sub_id;
-  const orderId = request.query.transaction_id || request.body.transaction_id;
-  const saleAmountStr = request.query.amount || request.body.amount;
-  const currency = request.query.currency || request.body.currency || "INR";
-  const advertiserStatus =
-    request.query.status || request.body.status;
-  const commissionAmountStr =
-    request.query.commission || request.body.commission;
-
-  if (!clickId || !orderId || !saleAmountStr) {
-    logger.error(
-      "Missing required parameters: sub_id, transaction_id, or amount.",
-      {clickId, orderId, saleAmountStr},
-    );
-    response
-      .status(400)
-      .send("Error: Missing required params (sub_id, transaction_id, amount).");
-    return;
-  }
-
-  const saleAmount = parseFloat(saleAmountStr);
-  if (isNaN(saleAmount)) {
-    logger.error("Invalid sale amount:", saleAmountStr);
-    response.status(400).send("Error: Invalid sale amount.");
-    return;
-  }
-
-  let commissionAmount = null;
-  if (commissionAmountStr) {
-    commissionAmount = parseFloat(commissionAmountStr);
-    if (isNaN(commissionAmount)) {
-      logger.warn("Invalid commission amount provided:", commissionAmountStr);
-      commissionAmount = null; // Reset if invalid
-    }
-  }
-
-  try {
-    const clicksRef = db.collection("clicks");
-    const clickQuery = clicksRef.where("clickId", "==", clickId).limit(1);
-    const clickQuerySnapshot = await clickQuery.get();
-
-    if (clickQuerySnapshot.empty) {
-      logger.warn("No matching click found for clickId (sub_id):", clickId);
-      // Log as unmatched conversion for review
-      const unmatchedConversionData = {
-        clickId: clickId,
-        originalClickFirebaseId: null,
-        userId: null,
-        storeId: null,
-        storeName: null,
-        orderId: orderId,
-        saleAmount: saleAmount,
-        currency: currency,
-        commissionAmount: commissionAmount || null,
-        status: "unmatched_click", // Custom status for unmatched
-        advertiserStatus: advertiserStatus || null,
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        postbackData: request.query || request.body, // Store raw postback
-      };
-      const unmatchedConvRef =
-        await db.collection("conversions").add(unmatchedConversionData);
+exports.handlePostback = functions.https.onRequest(
+    async (request, response) => {
       logger.info(
-        "Logged conversion as 'unmatched_click'. Conv ID:",
-        unmatchedConvRef.id,
+          'Postback received. Query:',
+          request.query,
+          'Body:',
+          request.body,
       );
-      response
-        .status(200)
-        .send("Postback received (unmatched click, logged for review).");
-      return;
-    }
 
-    const clickDoc = clickQuerySnapshot.docs[0];
-    const clickData = clickDoc.data();
+      const clickId = request.query.sub_id || request.body.sub_id;
+      const orderId = request.query.transaction_id || request.body.transaction_id;
+      const saleAmountStr = request.query.amount || request.body.amount;
+      const currency =
+      request.query.currency || request.body.currency || 'INR';
+      const advertiserStatus =
+      request.query.status || request.body.status;
+      const commissionAmountStr =
+      request.query.commission || request.body.commission;
 
-    // Check for existing conversion by orderId and storeId to prevent duplicates
-    const conversionsRef = db.collection("conversions");
-    const existingConversionQuery = conversionsRef
-      .where("orderId", "==", orderId)
-      .where("storeId", "==", clickData.storeId)
-      .limit(1);
-    const existingConversionSnapshot = await existingConversionQuery.get();
-
-    if (!existingConversionSnapshot.empty) {
-      const existingConvId = existingConversionSnapshot.docs[0].id;
-      const existingConvData = existingConversionSnapshot.docs[0].data();
-      logger.warn(
-        `Duplicate conversion for orderId: ${orderId}, storeId: ` +
-        `${clickData.storeId}. Existing Conv ID: ${existingConvId}. ` +
-        `Postback clickId: ${clickId}. Existing clickId in conversion: ` +
-        `${existingConvData.clickId}`,
-      );
-      response
-        .status(200)
-        .send(
-          `Postback received (conversion for order ${orderId} ` +
-            `already exists: ${existingConvId}).`,
+      if (!clickId || !orderId || !saleAmountStr) {
+        logger.error(
+            'Missing required parameters: sub_id, transaction_id, or amount.',
+            {clickId, orderId, saleAmountStr},
         );
-      return;
-    }
+        response
+            .status(400)
+            .send('Error: Missing required params (sub_id, transaction_id, amount).');
+        return;
+      }
 
-    // Create conversion document
-    const conversionData = {
-      clickId: clickData.clickId, // UUID from original click
-      originalClickFirebaseId: clickDoc.id, // Firestore document ID of click
-      userId: clickData.userId,
-      storeId: clickData.storeId,
-      storeName: clickData.storeName || null,
-      orderId: orderId,
-      saleAmount: saleAmount,
-      currency: currency,
-      commissionAmount: commissionAmount || null,
-      status: "received", // Initial status
-      advertiserStatus: advertiserStatus || null, // Status from advertiser
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      postbackData: request.query || request.body,
-      processingError: null, // For any errors during later processing
-    };
+      const saleAmount = parseFloat(saleAmountStr);
+      if (isNaN(saleAmount)) {
+        logger.error('Invalid sale amount:', saleAmountStr);
+        response.status(400).send('Error: Invalid sale amount.');
+        return;
+      }
 
-    const conversionRef = await db.collection("conversions").add(conversionData);
-    logger.info(
-      "Conversion document created. Conversion ID:",
-      conversionRef.id,
-    );
+      let commissionAmount = null;
+      if (commissionAmountStr) {
+        commissionAmount = parseFloat(commissionAmountStr);
+        if (isNaN(commissionAmount)) {
+          logger.warn(
+              'Invalid commission amount provided:',
+              commissionAmountStr,
+          );
+          commissionAmount = null; // Reset if invalid
+        }
+      }
 
-    // Update original click document
-    await clickDoc.ref.update({
-      hasConversion: true,
-      conversionId: conversionRef.id,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    logger.info(
-      "Click document updated. Click Firestore ID:",
-      clickDoc.id,
-    );
+      try {
+        const clicksRef = db.collection('clicks');
+        const clickQuery = clicksRef.where('clickId', '==', clickId).limit(1);
+        const clickQuerySnapshot = await clickQuery.get();
 
-    response.status(200).send("Postback processed successfully.");
-  } catch (error) {
-    logger.error(
-      "Error processing postback:",
-      error,
-      {clickId, orderId, saleAmount},
-    );
-    response.status(500).send("Error processing postback.");
-  }
-});
+        if (clickQuerySnapshot.empty) {
+          logger.warn(
+              'No matching click found for clickId (sub_id):',
+              clickId,
+          );
+
+          const unmatchedConversionData = {
+            clickId: clickId,
+            originalClickFirebaseId: null,
+            userId: null,
+            storeId: null,
+            storeName: null,
+            orderId: orderId,
+            saleAmount: saleAmount,
+            currency: currency,
+            commissionAmount: commissionAmount || null,
+            status: 'unmatched_click',
+            advertiserStatus: advertiserStatus || null,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            postbackData: request.query || request.body,
+          };
+
+          const unmatchedConvRef = await db
+              .collection('conversions')
+              .add(unmatchedConversionData);
+
+          logger.info(
+              'Logged conversion as \'unmatched_click\'. Conv ID:',
+              unmatchedConvRef.id,
+          );
+
+          response
+              .status(200)
+              .send('Postback received (unmatched click, logged for review).');
+          return;
+        }
+
+        const clickDoc = clickQuerySnapshot.docs[0];
+        const clickData = clickDoc.data();
+
+        const conversionsRef = db.collection('conversions');
+        const existingConversionQuery = conversionsRef
+            .where('orderId', '==', orderId)
+            .where('storeId', '==', clickData.storeId)
+            .limit(1);
+
+        const existingConversionSnapshot = await existingConversionQuery.get();
+
+        if (!existingConversionSnapshot.empty) {
+          const existingConvId = existingConversionSnapshot.docs[0].id;
+          const existingConvData = existingConversionSnapshot.docs[0].data();
+
+          logger.warn(
+              `Duplicate conversion for orderId: ${orderId}, storeId: ` +
+            `${clickData.storeId}. Existing Conv ID: ${existingConvId}. ` +
+            `Postback clickId: ${clickId}. Existing clickId in conversion: ` +
+            `${existingConvData.clickId}`,
+          );
+
+          response.status(200).send(
+              `Postback received (conversion for order ${orderId} already exists: ` +
+            `${existingConvId}).`,
+          );
+          return;
+        }
+
+        const conversionData = {
+          clickId: clickData.clickId,
+          originalClickFirebaseId: clickDoc.id,
+          userId: clickData.userId,
+          storeId: clickData.storeId,
+          storeName: clickData.storeName || null,
+          orderId: orderId,
+          saleAmount: saleAmount,
+          currency: currency,
+          commissionAmount: commissionAmount || null,
+          status: 'received',
+          advertiserStatus: advertiserStatus || null,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          postbackData: request.query || request.body,
+          processingError: null,
+        };
+
+        const conversionRef = await db
+            .collection('conversions')
+            .add(conversionData);
+
+        logger.info(
+            'Conversion document created. Conversion ID:',
+            conversionRef.id,
+        );
+
+        await clickDoc.ref.update({
+          hasConversion: true,
+          conversionId: conversionRef.id,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        logger.info(
+            'Click document updated. Click Firestore ID:',
+            clickDoc.id,
+        );
+
+        response.status(200).send('Postback processed successfully.');
+      } catch (error) {
+        logger.error(
+            'Error processing postback:',
+            error,
+            {clickId, orderId, saleAmount},
+        );
+        response.status(500).send('Error processing postback.');
+      }
+    },
+);
