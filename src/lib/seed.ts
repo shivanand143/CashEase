@@ -71,11 +71,11 @@ export async function seedDatabase() {
   let writeCount = 0;
   const nowServerTimestamp = serverTimestamp();
 
-  const processCollection = async <T extends { id?: string, slug?: string | null, name?: string, title?: string }>(
+  const processCollection = async <T extends { id?: string, slug?: string | null, name?: string, title?: string | null }>(
     batch: WriteBatch,
     collectionName: string,
     data: Omit<T, 'id' | 'createdAt' | 'updatedAt'>[],
-    idFieldProperty: keyof T = 'slug' as unknown as keyof T, // Added unknown for wider compatibility
+    idFieldProperty: keyof T = 'slug' as unknown as keyof T,
     generateIdFromField?: keyof T
   ) => {
     console.log(`Processing ${collectionName}...`);
