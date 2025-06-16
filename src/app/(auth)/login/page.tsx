@@ -1,46 +1,41 @@
 
-"use client";
+"use client"; // Keep this for the page file itself
 
-import * as React from 'react';
+import * as React from 'react'; // Import React for Suspense
+// Original imports for LoginPage's logic:
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation'; // This will be in LoginCore
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
-
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { auth as firebaseAuthService } from '@/lib/firebase/config'; // Use firebaseAuthService alias
+import { auth as firebaseAuthService } from '@/lib/firebase/config';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, LogIn } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { ChromeIcon } from '@/components/icons/chrome-icon';
+import { Skeleton } from '@/components/ui/skeleton'; // For fallback
 
+// Define the schema and type inside this file as they are used by LoginCore
 const loginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters' }),
 });
-
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-export default function LoginPage() {
+// This component will contain the original LoginPage logic and useSearchParams
+function LoginCore() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams(); // Hook is used here
   const { toast } = useToast();
-  const { user, signInWithGoogle, loading: authLoadingHook } = useAuth(); // Renamed authLoading to authLoadingHook
+  const { user, signInWithGoogle, loading: authLoadingHook } = useAuth();
   const [loadingEmail, setLoadingEmail] = useState(false);
   const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,22 +55,23 @@ export default function LoginPage() {
       setRedirectMessage(decodeURIComponent(message));
     }
     if (user && !authLoadingHook) {
-        console.log("LOGIN PAGE: User already logged in, redirecting...");
-        const redirectUrl = sessionStorage.getItem('loginRedirectUrl') || '/dashboard';
+        console.log("LOGIN CORE: User already logged in, redirecting...");
+        const redirectUrl = typeof window !== 'undefined' ? sessionStorage.getItem('loginRedirectUrl') || '/dashboard' : '/dashboard';
         if (redirectUrl.startsWith('/')) {
           router.push(redirectUrl);
-          sessionStorage.removeItem('loginRedirectUrl');
-          sessionStorage.removeItem('loginRedirectSource');
+          if (typeof window !== 'undefined') {
+            sessionStorage.removeItem('loginRedirectUrl');
+            sessionStorage.removeItem('loginRedirectSource');
+          }
         } else {
           router.push('/dashboard'); // Fallback
         }
     }
   }, [searchParams, user, authLoadingHook, router]);
 
-
   const onSubmit = async (data: LoginFormValues) => {
-    console.log("LOGIN PAGE: Email/password login attempt for:", data.email);
-    if (!firebaseAuthService) { // Check aliased import
+    console.log("LOGIN CORE: Email/password login attempt for:", data.email);
+    if (!firebaseAuthService) {
         setError("Authentication service is not available.");
         toast({ variant: "destructive", title: 'Error', description: "Authentication service failed." });
         return;
@@ -83,17 +79,15 @@ export default function LoginPage() {
     setLoadingEmail(true);
     setError(null);
     try {
-      await signInWithEmailAndPassword(firebaseAuthService, data.email, data.password); // Use aliased import
-      console.log("LOGIN PAGE: Email/password login successful for:", data.email);
+      await signInWithEmailAndPassword(firebaseAuthService, data.email, data.password);
+      console.log("LOGIN CORE: Email/password login successful for:", data.email);
       toast({
         title: 'Login Successful',
         description: 'Welcome back! Redirecting...',
       });
-      // Redirection is handled by useAuth's onAuthStateChanged or getRedirectResult now.
-      // For email/pass, onAuthStateChanged will pick it up.
       if (typeof window !== 'undefined') sessionStorage.setItem('loginRedirectSource', 'loginPage');
     } catch (err: unknown) {
-       console.error("LOGIN PAGE: Email/password login failed:", err);
+       console.error("LOGIN CORE: Email/password login failed:", err);
        let errorMessage = "An unexpected error occurred. Please try again.";
        if (err instanceof FirebaseError) {
          switch (err.code) {
@@ -131,31 +125,19 @@ export default function LoginPage() {
     }
   };
 
-   const handleGoogleSignIn = async () => {
-      console.log("LOGIN PAGE: Google Sign-In initiated.");
-      setLoadingGoogle(true); // Set loading state for Google button
+  const handleGoogleSignIn = async () => {
+      console.log("LOGIN CORE: Google Sign-In initiated.");
+      setLoadingGoogle(true);
       setError(null);
       try {
           if (typeof window !== 'undefined') sessionStorage.setItem('loginRedirectSource', 'loginPage');
           await signInWithGoogle();
-          // Redirection is handled by useAuth hook (getRedirectResult & onAuthStateChanged)
-          console.log("LOGIN PAGE: Google Sign-In process started via useAuth. Awaiting redirect.");
+          console.log("LOGIN CORE: Google Sign-In process started via useAuth. Awaiting redirect.");
       } catch (err: any) {
-          // Errors during *initiation* of signInWithGoogle (e.g., popup blocked before redirect)
-          // are typically handled within useAuth itself.
-          // If an error still bubbles up here, it's likely an unexpected scenario.
-          console.error("LOGIN PAGE: Google Sign-In initiation failed (error from login page):", err);
-          // Toast for this specific error if not handled by useAuth
-          // setError(err.message || "Failed to start Google Sign-In.");
-          // toast({ variant: "destructive", title: "Google Sign-In Error", description: err.message || "Could not start Google Sign-In."});
-      } finally {
-          // For signInWithRedirect, loading state might need to persist until redirect happens
-          // or be managed by the global authLoadingHook from useAuth.
-          // setLoadingGoogle(false); // Potentially remove if redirect makes this state irrelevant.
+          console.error("LOGIN CORE: Google Sign-In initiation failed (error from login core):", err);
       }
-   };
+  };
 
-  // isLoading now combines local email/Google loading AND global auth loading from the hook
   const isLoading = loadingEmail || loadingGoogle || authLoadingHook;
 
   return (
@@ -198,7 +180,6 @@ export default function LoginPage() {
             <div className="space-y-2">
                <div className="flex items-center justify-between">
                  <Label htmlFor="password">Password</Label>
-                 {/* Optional: Add Forgot Password link here */}
                </div>
               <Input
                 id="password"
@@ -243,3 +224,48 @@ export default function LoginPage() {
     </div>
   );
 }
+
+// Fallback UI for Suspense
+function LoginSkeleton() {
+  return (
+    <div className="flex justify-center items-center min-h-[calc(100vh-12rem)] px-4 py-8">
+      <Card className="w-full max-w-md shadow-lg border border-border rounded-lg">
+        <CardHeader className="space-y-1 text-center p-6">
+          <Skeleton className="h-8 w-3/5 mx-auto" />
+          <Skeleton className="h-4 w-4/5 mx-auto" />
+        </CardHeader>
+        <CardContent className="space-y-4 p-6">
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-1/4" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-1/4" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+          <Skeleton className="h-10 w-full" />
+          <div className="relative my-6">
+            <Skeleton className="h-px w-full" />
+            <Skeleton className="h-4 w-1/3 mx-auto absolute inset-x-0 -top-2 bg-background px-2" />
+          </div>
+          <Skeleton className="h-10 w-full" />
+        </CardContent>
+        <CardFooter className="flex flex-col space-y-2 text-center text-sm p-6 pt-4">
+          <Skeleton className="h-4 w-3/4 mx-auto" />
+        </CardFooter>
+      </Card>
+    </div>
+  );
+}
+
+
+// The actual default export for the page route
+export default function LoginPageContainer() {
+  return (
+    <React.Suspense fallback={<LoginSkeleton />}>
+      <LoginCore />
+    </React.Suspense>
+  );
+}
+      
+    
