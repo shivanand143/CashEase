@@ -1,6 +1,7 @@
 {
   "projects": {
-    "--add": "ai-resume-be9c1"
+    "--add": "ai-resume-be9c1",
+    "default": "cashease-ki3p4"
   },
   "targets": {},
   "etags": {}

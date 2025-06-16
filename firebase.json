@@ -1,11 +1,11 @@
-
 {
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
   "hosting": {
-    "source": ".", "ignore": [
+    "source": ".",
+    "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**",
@@ -46,7 +46,10 @@
         "firebase-debug.*.log",
         "*.local"
       ],
-      "runtime": "nodejs20"
+      "runtime": "nodejs20",
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run lint"
+      ]
     }
   ]
 }
