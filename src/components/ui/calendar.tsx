@@ -27,11 +27,11 @@ function Calendar({
         nav: "space-x-1 flex items-center",
         nav_button_previous: cn(
           buttonVariants({ variant: "outline" }),
-          "absolute left-1 h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
+          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
         ),
         nav_button_next: cn(
           buttonVariants({ variant: "outline" }),
-          "absolute right-1 h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
+          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
         ),
         table: "w-full border-collapse space-y-1",
         head_row: "flex",
@@ -56,8 +56,11 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        IconLeft: () => <ChevronLeft className="h-4 w-4" />,
-        IconRight: () => <ChevronRight className="h-4 w-4" />,
+        Chevron: ({ orientation }) => {
+          if (orientation === 'left') return <ChevronLeft className="h-4 w-4" />;
+          if (orientation === 'right') return <ChevronRight className="h-4 w-4" />;
+          return null;
+        },
       }}
       {...props}
     />

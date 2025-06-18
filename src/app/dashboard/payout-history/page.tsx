@@ -144,8 +144,8 @@ export default function PayoutHistoryPage() {
         return {
           id: docSnap.id,
           ...data,
-          requestedAt: safeToDate(data.requestedAt as Timestamp | undefined) || new Date(0),
-          processedAt: safeToDate(data.processedAt as Timestamp | undefined),
+          requestedAt: data.requestedAt, // Keep as Timestamp
+          processedAt: data.processedAt, // Keep as Timestamp or null
         } as unknown as PayoutRequest;
       });
 
@@ -187,8 +187,8 @@ export default function PayoutHistoryPage() {
         return {
           id: docSnap.id,
           ...data,
-          requestedAt: safeToDate(data.requestedAt as Timestamp | undefined) || new Date(0),
-          processedAt: safeToDate(data.processedAt as Timestamp | undefined),
+          requestedAt: data.requestedAt,
+          processedAt: data.processedAt,
         } as unknown as PayoutRequest;
       });
        if (isMountedRef.current) {
@@ -312,54 +312,58 @@ export default function PayoutHistoryPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {payouts.map((payout) => (
-                      <TableRow key={payout.id}>
-                        <TableCell className="whitespace-nowrap">
-  {payout.requestedAt instanceof Timestamp
-    ? format(payout.requestedAt.toDate(), 'PPp')
-    : 'N/A'}
-</TableCell>
-                        <TableCell className="font-semibold text-right">{formatCurrency(payout.amount)}</TableCell>
-                        <TableCell>
-                          <Badge variant={getStatusVariant(payout.status)} className="capitalize flex items-center gap-1 text-xs whitespace-nowrap">
-                            {getStatusIcon(payout.status)}
-                            {payout.status.replace('_', ' ')}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="capitalize">{payout.paymentMethod.replace('_', ' ')}</TableCell>
-                        <TableCell className="text-xs truncate max-w-[180px]">
-                           <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="cursor-default">
-                                  {maskPaymentDetail(payout.paymentMethod, payout.paymentDetails.detail)}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p className="max-w-xs break-words">{payout.paymentDetails.detail}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-  {payout.processedAt instanceof Timestamp
-    ? format(payout.processedAt.toDate(), 'PPp')
-    : '-'}
-</TableCell>
-                        <TableCell className="text-xs text-muted-foreground truncate max-w-[200px]">
-                           <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="cursor-default">
-                                    {(payout.failureReason || payout.adminNotes || '-')}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                 <p className="max-w-xs break-words">
-                                    {payout.failureReason ? `Reason: ${payout.failureReason}` : payout.adminNotes || 'No notes'}
-                                 </p>
-                              </TooltipContent>
-                            </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {payouts.map((payout) => {
+                       const requestedDate = safeToDate(payout.requestedAt);
+                       const processedDate = safeToDate(payout.processedAt);
+                       return (
+                         <TableRow key={payout.id}>
+                           <TableCell className="whitespace-nowrap">
+                             {requestedDate ? format(requestedDate, 'PPp') : 'N/A'}
+                           </TableCell>
+                           <TableCell className="font-semibold text-right">{formatCurrency(payout.amount)}</TableCell>
+                           <TableCell>
+                             <Badge variant={getStatusVariant(payout.status)} className="capitalize flex items-center gap-1 text-xs whitespace-nowrap">
+                               {getStatusIcon(payout.status)}
+                               {payout.status.replace('_', ' ')}
+                             </Badge>
+                           </TableCell>
+                           <TableCell className="capitalize">{payout.paymentMethod.replace('_', ' ')}</TableCell>
+                           <TableCell className="text-xs truncate max-w-[180px]">
+                              <TooltipProvider>
+                               <Tooltip>
+                                 <TooltipTrigger asChild>
+                                   <span className="cursor-default">
+                                     {maskPaymentDetail(payout.paymentMethod, payout.paymentDetails.detail)}
+                                   </span>
+                                 </TooltipTrigger>
+                                 <TooltipContent>
+                                   <p className="max-w-xs break-words">{payout.paymentDetails.detail}</p>
+                                 </TooltipContent>
+                               </Tooltip>
+                              </TooltipProvider>
+                           </TableCell>
+                           <TableCell className="whitespace-nowrap">
+                             {processedDate ? format(processedDate, 'PPp') : '-'}
+                           </TableCell>
+                           <TableCell className="text-xs text-muted-foreground truncate max-w-[200px]">
+                              <TooltipProvider>
+                               <Tooltip>
+                                 <TooltipTrigger asChild>
+                                   <span className="cursor-default">
+                                       {(payout.failureReason || payout.adminNotes || '-')}
+                                   </span>
+                                 </TooltipTrigger>
+                                 <TooltipContent>
+                                    <p className="max-w-xs break-words">
+                                       {payout.failureReason ? `Reason: ${payout.failureReason}` : payout.adminNotes || 'No notes'}
+                                    </p>
+                                 </TooltipContent>
+                               </Tooltip>
+                              </TooltipProvider>
+                           </TableCell>
+                         </TableRow>
+                       );
+                    })}
                   </TableBody>
                 </Table>
               </div>

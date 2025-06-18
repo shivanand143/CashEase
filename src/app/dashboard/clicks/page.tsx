@@ -299,38 +299,41 @@ export default function ClickHistoryPage() {
                     </TableRow>
                     </TableHeader>
                     <TableBody>
-                    {clicks.map((click) => (
-                        <TableRow key={click.id}>
-                        <TableCell className="font-medium truncate max-w-[150px]" title={click.storeName || click.storeId || 'N/A'}>
-                            {click.storeName || click.storeId || 'N/A'}
-                        </TableCell>
-                        <TableCell className="truncate max-w-[200px]" title={click.productId ? `Product: ${click.productName || click.productId}` : click.couponId ? `Coupon ID: ${click.couponId}` : 'Store Visit'}>
-                            {click.productId ? `Product: ${click.productName || click.productId}` :
-                            click.couponId ? `Coupon: ${click.couponId}` : 
-                            'Store Visit'}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-  {click.timestamp instanceof Timestamp
-    ? format(click.timestamp.toDate(), 'PPp')
-    : 'N/A'}
-</TableCell>
-                        <TableCell className="text-xs">
-                             <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <a href={click.affiliateLink || '#'} target="_blank" rel="noopener noreferrer" className="truncate block max-w-[200px] hover:text-primary">
-                                        {click.affiliateLink || 'N/A'} <ExternalLink className="h-3 w-3 ml-1 inline-block align-middle opacity-70"/>
-                                    </a>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                    <p className="max-w-md break-all">{click.affiliateLink || 'No link available'}</p>
-                                </TooltipContent>
-                            </Tooltip>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs text-right truncate max-w-[120px]" title={click.clickId || undefined}>
-                            {click.clickId}
-                        </TableCell>
-                        </TableRow>
-                    ))}
+                    {clicks.map((click) => {
+                        const clickTimestamp = safeToDate(click.timestamp);
+                        return (
+                          <TableRow key={click.id}>
+                          <TableCell className="font-medium truncate max-w-[150px]" title={click.storeName || click.storeId || 'N/A'}>
+                              {click.storeName || click.storeId || 'N/A'}
+                          </TableCell>
+                          <TableCell className="truncate max-w-[200px]" title={click.productId ? `Product: ${click.productName || click.productId}` : click.couponId ? `Coupon ID: ${click.couponId}` : 'Store Visit'}>
+                              {click.productId ? `Product: ${click.productName || click.productId}` :
+                              click.couponId ? `Coupon: ${click.couponId}` : 
+                              'Store Visit'}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            {clickTimestamp ? format(clickTimestamp, 'PPp') : 'N/A'}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                               <TooltipProvider>
+                                 <Tooltip>
+                                   <TooltipTrigger asChild>
+                                       <a href={click.affiliateLink || '#'} target="_blank" rel="noopener noreferrer" className="truncate block max-w-[200px] hover:text-primary">
+                                           {click.affiliateLink || 'N/A'} <ExternalLink className="h-3 w-3 ml-1 inline-block align-middle opacity-70"/>
+                                       </a>
+                                   </TooltipTrigger>
+                                   <TooltipContent>
+                                       <p className="max-w-md break-all">{click.affiliateLink || 'No link available'}</p>
+                                   </TooltipContent>
+                                 </Tooltip>
+                               </TooltipProvider>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-right truncate max-w-[120px]" title={click.clickId || undefined}>
+                              {click.clickId}
+                          </TableCell>
+                          </TableRow>
+                        );
+                    })}
                     </TableBody>
                 </Table>
                 </div>

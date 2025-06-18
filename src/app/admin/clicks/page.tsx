@@ -1,3 +1,4 @@
+
 // src/app/admin/clicks/page.tsx
 "use client";
 
@@ -40,7 +41,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import AdminGuard from '@/components/guards/admin-guard';
 import { format } from 'date-fns';
 import { useDebounce } from '@/hooks/use-debounce';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, safeToDate } from '@/lib/utils';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 const ITEMS_PER_PAGE = 15;
@@ -381,8 +382,8 @@ export default function AdminClicksPage() {
                   <TableBody>
                     {combinedData.map(({ click, user, conversion, store: storeFromDetails }) => {
                        const displayStoreName = click.storeName || storeFromDetails?.name || click.storeId || 'N/A';
-                       const clickTimestampObject = click.timestamp; // This is Timestamp | FieldValue
-                       const conversionTimestampObject = conversion?.timestamp; // This is Timestamp | FieldValue
+                       const clickTimestamp = safeToDate(click.timestamp);
+                       const conversionTimestamp = conversion?.timestamp ? safeToDate(conversion.timestamp) : null;
 
                        return (
                         <TableRow key={click.id}>
@@ -420,7 +421,7 @@ export default function AdminClicksPage() {
                               {displayStoreName}
                             </TableCell>
                             <TableCell className="whitespace-nowrap">
-                              {clickTimestampObject && clickTimestampObject instanceof Timestamp ? format(clickTimestampObject.toDate(), 'PPp') : 'N/A'}
+                              {clickTimestamp ? format(clickTimestamp, 'PPp') : 'N/A'}
                             </TableCell>
                             <TableCell>
                               {conversion ? (
@@ -437,7 +438,7 @@ export default function AdminClicksPage() {
                                     <div className="font-mono text-xs truncate max-w-[120px]" title={`Order ID: ${conversion.orderId}`}>OID: {conversion.orderId}</div>
                                     <div className="text-xs" title={`Sale: ${formatCurrency(conversion.saleAmount)}`}>Sale: {formatCurrency(conversion.saleAmount)}</div>
                                     <div className="text-[10px] text-muted-foreground mt-0.5">
-                                        {conversionTimestampObject && conversionTimestampObject instanceof Timestamp ? format(conversionTimestampObject.toDate(), 'Pp') : 'N/A'}
+                                        {conversionTimestamp ? format(conversionTimestamp, 'Pp') : 'N/A'}
                                     </div>
                                   </div>
                               ) : (

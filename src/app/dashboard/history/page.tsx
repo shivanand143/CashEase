@@ -145,11 +145,11 @@ export default function CashbackHistoryPage() {
         return {
           id: docSnap.id,
           ...data,
-          transactionDate: safeToDate(data.transactionDate as Timestamp | undefined) || new Date(0),
-          confirmationDate: safeToDate(data.confirmationDate as Timestamp | undefined),
-          paidDate: safeToDate(data.paidDate as Timestamp | undefined),
-          createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0),
-          updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0),
+          transactionDate: data.transactionDate, // Keep as Timestamp
+          confirmationDate: data.confirmationDate, // Keep as Timestamp or null
+          paidDate: data.paidDate, // Keep as Timestamp or null
+          createdAt: data.createdAt, // Keep as Timestamp
+          updatedAt: data.updatedAt, // Keep as Timestamp
         } as unknown as Transaction;
       });
 
@@ -192,11 +192,11 @@ export default function CashbackHistoryPage() {
         return {
           id: docSnap.id,
           ...data,
-          transactionDate: safeToDate(data.transactionDate as Timestamp | undefined) || new Date(0),
-          confirmationDate: safeToDate(data.confirmationDate as Timestamp | undefined),
-          paidDate: safeToDate(data.paidDate as Timestamp | undefined),
-          createdAt: safeToDate(data.createdAt as Timestamp | undefined) || new Date(0),
-          updatedAt: safeToDate(data.updatedAt as Timestamp | undefined) || new Date(0),
+          transactionDate: data.transactionDate,
+          confirmationDate: data.confirmationDate,
+          paidDate: data.paidDate,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
         } as unknown as Transaction;
       });
       
@@ -298,43 +298,44 @@ export default function CashbackHistoryPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {transactions.map((transaction) => (
-                      <TableRow key={transaction.id}>
-                        <TableCell className="font-medium truncate max-w-[150px]" title={transaction.storeName || transaction.storeId}>
-                            {transaction.storeName || transaction.storeId}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs truncate max-w-[120px]" title={transaction.orderId || 'N/A'}>
-                            {transaction.orderId || 'N/A'}
-                        </TableCell>
-                        <TableCell className="text-right">{formatCurrency(transaction.finalSaleAmount ?? transaction.saleAmount)}</TableCell>
-                        <TableCell className="font-semibold text-primary text-right">{formatCurrency(transaction.finalCashbackAmount ?? transaction.initialCashbackAmount ?? 0)}</TableCell>
-                        <TableCell>
-                          <Badge variant={getStatusVariant(transaction.status)} className="capitalize flex items-center gap-1 text-xs whitespace-nowrap">
-                            {getStatusIcon(transaction.status)}
-                            {transaction.status.replace('_', ' ')}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-  {transaction.transactionDate instanceof Timestamp
-    ? format(transaction.transactionDate.toDate(), 'PP')
-    : 'N/A'}
-</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                           <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="truncate block max-w-[200px]">
-                                  {transaction.rejectionReason || transaction.notesToUser || '-'}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p className="max-w-xs break-words">
-                                    {transaction.rejectionReason ? `Reason: ${transaction.rejectionReason}` : transaction.notesToUser || 'No notes'}
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {transactions.map((transaction) => {
+                       const transactionDate = safeToDate(transaction.transactionDate);
+                       return (
+                         <TableRow key={transaction.id}>
+                           <TableCell className="font-medium truncate max-w-[150px]" title={transaction.storeName || transaction.storeId}>
+                               {transaction.storeName || transaction.storeId}
+                           </TableCell>
+                           <TableCell className="font-mono text-xs truncate max-w-[120px]" title={transaction.orderId || 'N/A'}>
+                               {transaction.orderId || 'N/A'}
+                           </TableCell>
+                           <TableCell className="text-right">{formatCurrency(transaction.finalSaleAmount ?? transaction.saleAmount)}</TableCell>
+                           <TableCell className="font-semibold text-primary text-right">{formatCurrency(transaction.finalCashbackAmount ?? transaction.initialCashbackAmount ?? 0)}</TableCell>
+                           <TableCell>
+                             <Badge variant={getStatusVariant(transaction.status)} className="capitalize flex items-center gap-1 text-xs whitespace-nowrap">
+                               {getStatusIcon(transaction.status)}
+                               {transaction.status.replace('_', ' ')}
+                             </Badge>
+                           </TableCell>
+                           <TableCell className="whitespace-nowrap">
+                             {transactionDate ? format(transactionDate, 'PP') : 'N/A'}
+                           </TableCell>
+                           <TableCell className="text-xs text-muted-foreground">
+                              <Tooltip>
+                                 <TooltipTrigger asChild>
+                                   <span className="truncate block max-w-[200px]">
+                                     {transaction.rejectionReason || transaction.notesToUser || '-'}
+                                   </span>
+                                 </TooltipTrigger>
+                                 <TooltipContent>
+                                   <p className="max-w-xs break-words">
+                                       {transaction.rejectionReason ? `Reason: ${transaction.rejectionReason}` : transaction.notesToUser || 'No notes'}
+                                   </p>
+                                 </TooltipContent>
+                               </Tooltip>
+                           </TableCell>
+                         </TableRow>
+                       );
+                    })}
                   </TableBody>
                 </Table>
               </div>

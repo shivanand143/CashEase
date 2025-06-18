@@ -354,34 +354,37 @@ export default function AdminUsersPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {users.map((userItem) => (
-                      <TableRow key={userItem.uid} className={userItem.isDisabled ? 'opacity-50 bg-muted/30' : ''}>
-                        <TableCell className="font-medium truncate" title={userItem.displayName || undefined}>{userItem.displayName || 'N/A'}</TableCell>
-                        <TableCell className="truncate" title={userItem.email || undefined}>{userItem.email}</TableCell>
-                        <TableCell>
-                          <Badge variant={userItem.role === 'admin' ? 'destructive' : 'secondary'} className="capitalize whitespace-nowrap">
-                            {userItem.role === 'admin' ? <ShieldCheck className="mr-1 h-3 w-3"/> : <UserIcon className="mr-1 h-3 w-3"/>}
-                            {userItem.role}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{formatCurrency(userItem.cashbackBalance)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{userItem.createdAt ? format(safeToDate(userItem.createdAt) || new Date(), 'PP') : 'N/A'}</TableCell>
-                        <TableCell className="text-center">
-                          <Switch
-                            checked={!userItem.isDisabled}
-                            onCheckedChange={() => handleToggleDisable(userItem)}
-                            disabled={updatingUserId === userItem.uid}
-                            aria-label={userItem.isDisabled ? 'Enable user account' : 'Disable user account'}
-                          />
-                          {updatingUserId === userItem.uid && <Loader2 className="h-4 w-4 animate-spin ml-2 inline-block" />}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm" onClick={() => openEditDialog(userItem)} disabled={isSaving}>
-                            <Edit2 className="mr-1 h-4 w-4" /> Edit Role
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {users.map((userItem) => {
+                       const joinedDate = safeToDate(userItem.createdAt);
+                       return (
+                         <TableRow key={userItem.uid} className={userItem.isDisabled ? 'opacity-50 bg-muted/30' : ''}>
+                           <TableCell className="font-medium truncate" title={userItem.displayName || undefined}>{userItem.displayName || 'N/A'}</TableCell>
+                           <TableCell className="truncate" title={userItem.email || undefined}>{userItem.email}</TableCell>
+                           <TableCell>
+                             <Badge variant={userItem.role === 'admin' ? 'destructive' : 'secondary'} className="capitalize whitespace-nowrap">
+                               {userItem.role === 'admin' ? <ShieldCheck className="mr-1 h-3 w-3"/> : <UserIcon className="mr-1 h-3 w-3"/>}
+                               {userItem.role}
+                             </Badge>
+                           </TableCell>
+                           <TableCell>{formatCurrency(userItem.cashbackBalance)}</TableCell>
+                           <TableCell className="whitespace-nowrap">{joinedDate ? format(joinedDate, 'PP') : 'N/A'}</TableCell>
+                           <TableCell className="text-center">
+                             <Switch
+                               checked={!userItem.isDisabled}
+                               onCheckedChange={() => handleToggleDisable(userItem)}
+                               disabled={updatingUserId === userItem.uid}
+                               aria-label={userItem.isDisabled ? 'Enable user account' : 'Disable user account'}
+                             />
+                             {updatingUserId === userItem.uid && <Loader2 className="h-4 w-4 animate-spin ml-2 inline-block" />}
+                           </TableCell>
+                           <TableCell className="text-right">
+                             <Button variant="ghost" size="sm" onClick={() => openEditDialog(userItem)} disabled={isSaving}>
+                               <Edit2 className="mr-1 h-4 w-4" /> Edit Role
+                             </Button>
+                           </TableCell>
+                         </TableRow>
+                       );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -432,4 +435,3 @@ export default function AdminUsersPage() {
     </AdminGuard>
   );
 }
-
