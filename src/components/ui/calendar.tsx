@@ -56,12 +56,16 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        Chevron: ({ name }: { name: "chevron-left" | "chevron-right" }) => {
-          if (name === "chevron-left") {
-            return <ChevronLeft className="h-4 w-4" />;
+        Chevron: (chevronProps) => { // Accept the props object passed by DayPicker
+          // chevronProps will contain { className, size, disabled, orientation }
+          const { orientation, className: chevronClassName, ...restChevronProps } = chevronProps;
+          if (orientation === "left") {
+            return <ChevronLeft className={cn("h-4 w-4", chevronClassName)} {...restChevronProps} />;
           }
-          // Since `name` must be one of the two, this else covers "chevron-right".
-          return <ChevronRight className="h-4 w-4" />;
+          // For month navigation, if not 'left', it's 'right'.
+          // Other orientations ('up', 'down') might be used by year navigation if enabled.
+          // This simplification assumes standard month navigation.
+          return <ChevronRight className={cn("h-4 w-4", chevronClassName)} {...restChevronProps} />;
         },
         ...props.components, // Merge with any other custom components passed in CalendarProps
       }}
