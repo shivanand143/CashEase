@@ -56,11 +56,14 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        Chevron: ({ orientation }) => {
-          if (orientation === 'left') return <ChevronLeft className="h-4 w-4" />;
-          if (orientation === 'right') return <ChevronRight className="h-4 w-4" />;
-          return null;
+        Chevron: ({ name }: { name: "chevron-left" | "chevron-right" }) => {
+          if (name === "chevron-left") {
+            return <ChevronLeft className="h-4 w-4" />;
+          }
+          // Since `name` must be one of the two, this else covers "chevron-right".
+          return <ChevronRight className="h-4 w-4" />;
         },
+        ...props.components, // Merge with any other custom components passed in CalendarProps
       }}
       {...props}
     />
@@ -70,4 +73,3 @@ function Calendar({
 Calendar.displayName = "Calendar"
 
 export { Calendar }
-
