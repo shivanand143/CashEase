@@ -213,22 +213,20 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
             {priceDisplay}
           </p>
 
-          {cashbackDisplayString && (
-            <p className="text-[10px] text-green-600 font-semibold mb-0.5 flex items-center">
-              {cashbackTypeForIconToUse === 'fixed' ? <IndianRupee className="w-2.5 h-2.5 mr-0.5 flex-shrink-0"/> : cashbackTypeForIconToUse === 'percentage' ? <Percent className="w-2.5 h-2.5 mr-0.5 flex-shrink-0"/> : null}
-              {cashbackDisplayString}
-            </p>
-          )}
+          <div className="min-h-[30px] space-y-0.5 mb-1.5">
+            {cashbackDisplayString && (
+              <p className="text-[10px] text-green-600 font-semibold flex items-center">
+                {cashbackTypeForIconToUse === 'fixed' ? <IndianRupee className="w-2.5 h-2.5 mr-0.5 flex-shrink-0"/> : cashbackTypeForIconToUse === 'percentage' ? <Percent className="w-2.5 h-2.5 mr-0.5 flex-shrink-0"/> : null}
+                {cashbackDisplayString}
+              </p>
+            )}
 
-          {priceAfterCashback !== null && priceAfterCashback >= 0 && product.price && product.price > priceAfterCashback ? (
-            <p className="text-[10px] font-bold text-primary mb-1.5">
-              Effective Price: {formatCurrency(priceAfterCashback)}
-            </p>
-          ) : cashbackDisplayString ? (
-             <div className="mb-1.5 h-[15px]"></div>
-          ) : (
-            <div className="mb-1.5 h-[30px]"></div>
-          )}
+            {(priceAfterCashback !== null && priceAfterCashback >= 0 && product.price && product.price > priceAfterCashback) && (
+              <p className="text-[10px] font-bold text-primary">
+                Effective Price: {formatCurrency(priceAfterCashback)}
+              </p>
+            )}
+          </div>
 
           <Button
             size="sm"
