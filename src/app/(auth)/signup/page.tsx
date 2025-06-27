@@ -29,6 +29,7 @@ import { AlertCircle, UserPlus } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { ChromeIcon } from '@/components/icons/chrome-icon';
 
+export const dynamic = 'force-dynamic';
 const signupSchema = z.object({
   displayName: z.string().min(2, { message: 'Name must be at least 2 characters' }).max(50, { message: 'Name cannot exceed 50 characters' }),
   email: z.string().email({ message: 'Invalid email address' }),

@@ -109,14 +109,14 @@ const couponSchema = z.object({
 function CouponsTableSkeleton() {
    return (
     <Card>
-      <CardHeader> <Skeleton className="h-6 w-1/4 mb-2"/> <Skeleton className="h-4 w-1/2"/> </CardHeader>
+      <CardHeader><Skeleton className="h-6 w-1/4 mb-2" /><Skeleton className="h-4 w-1/2" /></CardHeader>
       <CardContent>
         <div className="overflow-x-auto w-full">
           <Table>
             <TableHeader>
-              <TableRow> {Array.from({ length: 7 }).map((_, index) => ( <TableHead key={index} className="min-w-[120px]"><Skeleton className="h-5 w-full" /></TableHead> ))} </TableRow>
+              <TableRow>{Array.from({ length: 7 }).map((_, index) => (<TableHead key={index} className="min-w-[120px]"><Skeleton className="h-5 w-full" /></TableHead>))}</TableRow>
             </TableHeader>
-            <TableBody> {Array.from({ length: 10 }).map((_, rowIndex) => ( <TableRow key={rowIndex}> {Array.from({ length: 7 }).map((_, colIndex) => ( <TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell> ))} </TableRow> ))} </TableBody>
+            <TableBody>{Array.from({ length: 10 }).map((_, rowIndex) => (<TableRow key={rowIndex}>{Array.from({ length: 7 }).map((_, colIndex) => (<TableCell key={colIndex}><Skeleton className="h-5 w-full" /></TableCell>))}</TableRow>))}</TableBody>
           </Table>
         </div>
       </CardContent>
@@ -660,3 +660,5 @@ export default function AdminCouponsPage() {
       </AdminGuard>
     );
 }
+
+    

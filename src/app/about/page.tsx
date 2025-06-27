@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, Target, Gift, IndianRupee, ArrowRight, ShoppingBag } from 'lucide-react'; // Added ShoppingBag
 
+export const dynamic = 'force-dynamic';
 export default function AboutPage() {
   const teamMembers = [
     { name: 'Alice Wonderland', role: 'Founder & CEO', imageUrl: 'https://placehold.co/150x150.png?text=Alice', dataAiHint: "person team member" },

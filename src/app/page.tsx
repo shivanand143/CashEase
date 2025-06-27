@@ -23,6 +23,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { useHasMounted } from '@/hooks/use-has-mounted'; // Import useHasMounted
 
+export const dynamic = 'force-dynamic';
 const ITEMS_PER_SECTION_STORES_CATEGORIES = 6;
 const ITEMS_PER_SECTION_PRODUCTS_COUPONS = 4; // Keep this for products/coupons
 

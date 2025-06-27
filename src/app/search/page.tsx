@@ -24,6 +24,7 @@ import { AlertCircle, Search as SearchIconLucide, ShoppingBag, Tag } from 'lucid
 import { safeToDate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
+export const dynamic = 'force-dynamic';
 const SEARCH_LIMIT = 12;
 
 interface CouponWithStore extends Coupon {

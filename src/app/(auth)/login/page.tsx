@@ -23,7 +23,10 @@ import { useAuth } from '@/hooks/use-auth';
 import { ChromeIcon } from '@/components/icons/chrome-icon';
 import { Skeleton } from '@/components/ui/skeleton'; // For fallback
 
+
 // Define the schema and type inside this file as they are used by LoginCore
+export const dynamic = 'force-dynamic';
+
 const loginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters' }),

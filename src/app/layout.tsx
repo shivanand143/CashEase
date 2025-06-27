@@ -1,4 +1,3 @@
-
 import type { Metadata } from 'next';
 import { Inter as FontSans } from 'next/font/google';
 import './globals.css';
@@ -33,22 +32,26 @@ export default function RootLayout({
           fontSans.variable
         )}
       >
-        <AuthProvider>
-          <TooltipProvider delayDuration={0}>
-            <div className="relative flex min-h-screen flex-col bg-background">
-              <Header />
-              <main className="flex-1 container mx-auto px-4 py-8 md:py-12 pb-20 md:pb-12">
-                {/* The Suspense fallback here is for Next.js's own route transitions and dynamic imports,
-                    Individual pages marked as "use client" will handle their own initial loading UI. */}
-                <React.Suspense fallback={<div className="flex justify-center items-center min-h-[calc(100vh-10rem)] w-full"><p>Loading page...</p></div>}>
-                  {children}
-                </React.Suspense>
-              </main>
-              <Footer />
-            </div>
-            <Toaster />
-          </TooltipProvider>
-        </AuthProvider>
+        <React.Suspense fallback={null}>
+          <AuthProvider>
+            <TooltipProvider delayDuration={0}>
+              <div className="relative flex min-h-screen flex-col bg-background">
+                <Header />
+                <main className="flex-1 container mx-auto px-4 py-8 md:py-12 pb-20 md:pb-12">
+                  <React.Suspense fallback={
+                    <div className="flex justify-center items-center min-h-[calc(100vh-10rem)] w-full">
+                      <p>Loading page...</p>
+                    </div>
+                  }>
+                    {children}
+                  </React.Suspense>
+                </main>
+                <Footer />
+              </div>
+              <Toaster />
+            </TooltipProvider>
+          </AuthProvider>
+        </React.Suspense>
       </body>
     </html>
   );

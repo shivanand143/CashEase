@@ -28,6 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useDebounce } from '@/hooks/use-debounce';
 import { safeToDate } from '@/lib/utils';
 
+export const dynamic = 'force-dynamic';
 const STORES_PER_PAGE = 24;
 
 function StoresPageSkeleton() {

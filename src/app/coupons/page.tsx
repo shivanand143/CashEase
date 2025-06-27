@@ -30,6 +30,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useDebounce } from '@/hooks/use-debounce';
 import { safeToDate } from '@/lib/utils';
 
+export const dynamic = 'force-dynamic';
 const COUPONS_PER_PAGE = 12;
 
 interface CouponWithStoreData extends Coupon {

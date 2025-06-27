@@ -10,6 +10,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, BookOpen, ArrowRight } from 'lucide-react';
 import { useSearchParams } from 'next/navigation'; // Import useSearchParams
 
+export const dynamic = 'force-dynamic';
 // Placeholder data - replace with actual data fetching from Firestore or CMS
 const placeholderPosts = [
   { id: '1', title: 'Top 5 Fashion Deals This Week', excerpt: 'Grab the latest trends at unbeatable prices with cashback...', imageUrl: 'https://picsum.photos/seed/fashionblog/400/250', date: '2024-05-28', slug: 'top-5-fashion-deals' },

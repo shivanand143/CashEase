@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { HelpCircle, ChevronRight } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
 const faqData = [
   {
     question: "What is MagicSaver and how does it work?",

@@ -14,6 +14,7 @@ import { AlertCircle, List } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { safeToDate } from '@/lib/utils';
 
+export const dynamic = 'force-dynamic';
 const CATEGORIES_PER_PAGE = 18; // Adjust as needed
 
 export default function CategoriesPage() {

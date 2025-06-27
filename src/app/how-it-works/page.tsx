@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ShoppingBag, MousePointerClick, Percent, Gift, IndianRupee, ArrowRight, CheckCircle, Search, Users, Award } from 'lucide-react';
 
+
+export const dynamic = 'force-dynamic';
 export default function HowItWorksPage() {
   const steps = [
     {
