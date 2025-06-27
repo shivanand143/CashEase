@@ -83,14 +83,13 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
   // 4. LAST RESORT: Else, fall back to the store-level cashback display STRING
   else if (storeContext?.cashbackRate) {
     cashbackDisplayString = storeContext.cashbackRate;
-    cashbackTypeForIconToUse = storeContext.cashbackType;
-    // Heuristic for store cashback type if not explicitly defined
-    if (!cashbackTypeForIconToUse) {
-      if (cashbackDisplayString.toLowerCase().includes("₹") || cashbackDisplayString.toLowerCase().includes("flat")) {
-        cashbackTypeForIconToUse = 'fixed';
-      } else if (cashbackDisplayString.includes("%")) {
+    // DERIVE icon from text to avoid mismatch.
+    if (cashbackDisplayString.includes('%')) {
         cashbackTypeForIconToUse = 'percentage';
-      }
+    } else if (cashbackDisplayString.toLowerCase().includes('₹') || cashbackDisplayString.toLowerCase().includes('flat')) {
+        cashbackTypeForIconToUse = 'fixed';
+    } else {
+        cashbackTypeForIconToUse = null; // No specific icon if unknown format
     }
   }
 
