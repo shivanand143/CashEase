@@ -51,74 +51,58 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
   const affiliateLinkToUse = product.affiliateLink || storeContext?.affiliateLink || '#';
   const priceDisplay = product.priceDisplay || (product.price !== null && product.price !== undefined ? formatCurrency(product.price) : 'N/A');
 
-  let cashbackDisplayString: string | null = null;
-  let cashbackTypeForIconToUse: CashbackType | undefined | null = undefined;
-  let calculatedCashbackValue: number | null = null;
-  let priceAfterCashback: number | null = null;
+  // --- Refactored Cashback Logic ---
 
-  // Logic to determine the cashback string to display, with fixed priority
-  // 1. Prioritize product-specific cashback if "Cashback Display Text" is explicitly set
+  // 1. Determine which cashback values to use, prioritizing product over store.
+  const cashbackDisplayToUse = product.productSpecificCashbackDisplay || storeContext?.cashbackRate || null;
+  const cashbackValueToUse = product.productSpecificCashbackRateValue ?? storeContext?.cashbackRateValue ?? null;
+  let cashbackTypeToUse = product.productSpecificCashbackType || storeContext?.cashbackType || null;
+
+  let finalDisplayString = null;
+
+  // 2. Build the final display string based on the determined values.
+  // Highest priority: product-specific display text.
   if (product.productSpecificCashbackDisplay && product.productSpecificCashbackDisplay.trim() !== "") {
-    cashbackDisplayString = product.productSpecificCashbackDisplay;
-    cashbackTypeForIconToUse = product.productSpecificCashbackType;
+    finalDisplayString = product.productSpecificCashbackDisplay;
   }
-  // 2. Else, if numerical product-specific cashback is set, construct a display string
-  else if (product.productSpecificCashbackRateValue != null && product.productSpecificCashbackRateValue >= 0 && product.productSpecificCashbackType) {
-    cashbackTypeForIconToUse = product.productSpecificCashbackType;
+  // Next priority: product-specific numerical values.
+  else if (product.productSpecificCashbackRateValue != null && product.productSpecificCashbackType) {
     if (product.productSpecificCashbackType === 'fixed') {
-      cashbackDisplayString = `${formatCurrency(product.productSpecificCashbackRateValue)} Cashback`;
-    } else if (product.productSpecificCashbackType === 'percentage') {
-      cashbackDisplayString = `${product.productSpecificCashbackRateValue}% Cashback`;
+      finalDisplayString = `${formatCurrency(product.productSpecificCashbackRateValue)} Cashback`;
+    } else { // 'percentage'
+      finalDisplayString = `${product.productSpecificCashbackRateValue}% Cashback`;
     }
   }
-  // 3. Else, if numerical STORE cashback is set, construct a display string from it
-  else if (storeContext?.cashbackRateValue != null && storeContext.cashbackRateValue >= 0 && storeContext.cashbackType) {
-    cashbackTypeForIconToUse = storeContext.cashbackType;
-    if (storeContext.cashbackType === 'fixed') {
-      cashbackDisplayString = `${formatCurrency(storeContext.cashbackRateValue)} Cashback`;
-    } else if (storeContext.cashbackType === 'percentage') {
-      cashbackDisplayString = `${storeContext.cashbackRateValue}% Cashback`;
-    }
-  }
-  // 4. LAST RESORT: Else, fall back to the store-level cashback display STRING
+  // Fallback: store's display text.
   else if (storeContext?.cashbackRate) {
-    cashbackDisplayString = storeContext.cashbackRate;
-    // DERIVE icon from text to avoid mismatch.
-    if (cashbackDisplayString.includes('%')) {
-        cashbackTypeForIconToUse = 'percentage';
-    } else if (cashbackDisplayString.toLowerCase().includes('₹') || cashbackDisplayString.toLowerCase().includes('flat')) {
-        cashbackTypeForIconToUse = 'fixed';
-    } else {
-        cashbackTypeForIconToUse = null; // No specific icon if unknown format
-    }
+    finalDisplayString = storeContext.cashbackRate;
   }
 
-
-  // Calculate effective price after cashback
-  if (product.price !== null && product.price !== undefined && product.price > 0) {
-    let rateValueForCalc: number | null = null;
-    let typeForCalc: CashbackType | null = null;
-
-    if (product.productSpecificCashbackRateValue != null && product.productSpecificCashbackRateValue >= 0 && product.productSpecificCashbackType) {
-      rateValueForCalc = product.productSpecificCashbackRateValue;
-      typeForCalc = product.productSpecificCashbackType;
-    } else if (storeContext?.cashbackRateValue !== undefined && storeContext.cashbackRateValue >= 0 && storeContext.cashbackType) {
-      rateValueForCalc = storeContext.cashbackRateValue;
-      typeForCalc = storeContext.cashbackType;
-    }
-
-    if (rateValueForCalc !== null && typeForCalc !== null) {
-      if (typeForCalc === 'fixed') {
-        calculatedCashbackValue = rateValueForCalc;
-      } else if (typeForCalc === 'percentage') {
-        calculatedCashbackValue = (product.price * rateValueForCalc) / 100;
+  // 3. Ensure the icon type is consistent, inferring from text if necessary.
+  if (finalDisplayString && !cashbackTypeToUse) {
+      if (finalDisplayString.includes('%')) {
+          cashbackTypeToUse = 'percentage';
+      } else if (finalDisplayString.toLowerCase().includes('₹') || finalDisplayString.toLowerCase().includes('flat')) {
+          cashbackTypeToUse = 'fixed';
       }
-    }
   }
 
-  if (product.price !== null && product.price !== undefined && calculatedCashbackValue !== null && calculatedCashbackValue > 0) {
-    priceAfterCashback = product.price - calculatedCashbackValue;
+  // 4. Calculate effective price after cashback using the determined numerical values.
+  let priceAfterCashback: number | null = null;
+  if (product.price != null && product.price > 0 && cashbackValueToUse != null && cashbackTypeToUse) {
+    let calculatedCashback = 0;
+    if (cashbackTypeToUse === 'fixed') {
+      calculatedCashback = cashbackValueToUse;
+    } else if (cashbackTypeToUse === 'percentage') {
+      calculatedCashback = (product.price * cashbackValueToUse) / 100;
+    }
+    
+    if (calculatedCashback > 0) {
+      priceAfterCashback = product.price - calculatedCashback;
+    }
   }
+  // --- End of Refactored Logic ---
+
 
   const handleShopNow = async () => {
     setIsProcessingClick(true);
@@ -158,9 +142,9 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
       clickId: clickId,
       affiliateLink: finalAffiliateLinkWithClickId,
       originalLink: affiliateLinkToUse,
-      clickedCashbackDisplay: cashbackDisplayString, // Log what was displayed
-      clickedCashbackRateValue: product.productSpecificCashbackRateValue ?? storeContext?.cashbackRateValue ?? null,
-      clickedCashbackType: product.productSpecificCashbackType ?? storeContext?.cashbackType ?? null,
+      clickedCashbackDisplay: finalDisplayString, // Log the final displayed string
+      clickedCashbackRateValue: cashbackValueToUse,
+      clickedCashbackType: cashbackTypeToUse,
     };
 
     console.log("ProductCard: Tracking click with data (client-side):", clickData);
@@ -224,13 +208,13 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
           </p>
 
           <div className="min-h-[30px] space-y-0.5 mb-1.5">
-            {cashbackDisplayString && (
+            {finalDisplayString && (
               <p className="text-[10px] text-green-600 font-semibold flex items-center">
-                {cashbackTypeForIconToUse === 'fixed' ? <IndianRupee className="w-2.5 h-2.5 mr-0.5 flex-shrink-0"/> : cashbackTypeForIconToUse === 'percentage' ? <Percent className="w-2.5 h-2.5 mr-0.5 flex-shrink-0"/> : null}
-                {cashbackDisplayString}
+                {cashbackTypeToUse === 'fixed' ? <IndianRupee className="w-2.5 h-2.5 mr-0.5 flex-shrink-0"/> : cashbackTypeToUse === 'percentage' ? <Percent className="w-2.5 h-2.5 mr-0.5 flex-shrink-0"/> : null}
+                {finalDisplayString}
               </p>
             )}
-
+            
             {(priceAfterCashback !== null && priceAfterCashback >= 0 && product.price && product.price > priceAfterCashback) && (
               <p className="text-[10px] font-bold text-primary">
                 Effective Price: {formatCurrency(priceAfterCashback)}
