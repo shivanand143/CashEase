@@ -56,10 +56,11 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
   let calculatedCashbackValue: number | null = null;
   let priceAfterCashback: number | null = null;
 
+  // Logic to determine the cashback string to display, with fixed priority
   // 1. Prioritize product-specific cashback if "Cashback Display Text" is explicitly set
   if (product.productSpecificCashbackDisplay && product.productSpecificCashbackDisplay.trim() !== "") {
     cashbackDisplayString = product.productSpecificCashbackDisplay;
-    cashbackTypeForIconToUse = product.productSpecificCashbackType; // Use product's type
+    cashbackTypeForIconToUse = product.productSpecificCashbackType;
   }
   // 2. Else, if numerical product-specific cashback is set, construct a display string
   else if (product.productSpecificCashbackRateValue != null && product.productSpecificCashbackRateValue >= 0 && product.productSpecificCashbackType) {
@@ -70,7 +71,16 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
       cashbackDisplayString = `${product.productSpecificCashbackRateValue}% Cashback`;
     }
   }
-  // 3. Else, fall back to store-level cashback display string
+  // 3. Else, if numerical STORE cashback is set, construct a display string from it
+  else if (storeContext?.cashbackRateValue != null && storeContext.cashbackRateValue >= 0 && storeContext.cashbackType) {
+    cashbackTypeForIconToUse = storeContext.cashbackType;
+    if (storeContext.cashbackType === 'fixed') {
+      cashbackDisplayString = `${formatCurrency(storeContext.cashbackRateValue)} Cashback`;
+    } else if (storeContext.cashbackType === 'percentage') {
+      cashbackDisplayString = `${storeContext.cashbackRateValue}% Cashback`;
+    }
+  }
+  // 4. LAST RESORT: Else, fall back to the store-level cashback display STRING
   else if (storeContext?.cashbackRate) {
     cashbackDisplayString = storeContext.cashbackRate;
     cashbackTypeForIconToUse = storeContext.cashbackType;
@@ -83,6 +93,7 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
       }
     }
   }
+
 
   // Calculate effective price after cashback
   if (product.price !== null && product.price !== undefined && product.price > 0) {
