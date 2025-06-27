@@ -436,7 +436,7 @@ function AdminCouponsPageContent() {
         <div className="flex justify-between items-center">
             <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2"><BadgePercent className="w-6 h-6 sm:w-7 sm:h-7" /> Manage Coupons & Offers</h1>
             <Button onClick={openAddDialog}>
-            <PlusCircle className="mr-2 h-4 w-4" /> Add New Coupon/Offer
+    Add New Coupon/Offer
             </Button>
         </div>
 
@@ -491,7 +491,15 @@ function AdminCouponsPageContent() {
                             <TableCell className="max-w-xs truncate text-sm" title={coupon.description}>{coupon.description}</TableCell>
                             <TableCell className="text-xs">
                                 {coupon.code && <Badge variant="outline" className="font-mono text-xs">{coupon.code}</Badge>}
-                                {coupon.link && ( <Button variant="link" size="sm" asChild className="p-0 h-auto ml-1 text-xs"> <a href={coupon.link} target="_blank" rel="noopener noreferrer"> View Link <ExternalLink className="h-3 w-3 ml-1" /> </a> </Button> )}
+                                {coupon.link && ( <Button variant="link" size="sm" asChild className="p-0 h-auto ml-1 text-xs">
+  <a href={coupon.link} target="_blank" rel="noopener noreferrer">
+    <span className="inline-flex items-center gap-1">
+      View Link
+      <ExternalLink className="h-3 w-3 ml-1" />
+    </span>
+  </a>
+</Button>
+ )}
                                 {!coupon.code && !coupon.link && <span className="text-xs text-muted-foreground">-</span>}
                             </TableCell>
                             <TableCell className="text-xs whitespace-nowrap">
