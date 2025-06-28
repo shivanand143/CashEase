@@ -51,40 +51,45 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
   const affiliateLinkToUse = product.affiliateLink || storeContext?.affiliateLink || '#';
   const priceDisplay = product.priceDisplay || (product.price !== null && product.price !== undefined ? formatCurrency(product.price) : 'N/A');
 
-  // --- New Refactored Cashback Logic ---
+  // --- START: Refactored Cashback Logic ---
 
-  // 1. Determine the primary display text. Highest priority is the product's own display text.
-  const cashbackDisplayText = product.productSpecificCashbackDisplay || storeContext?.cashbackRate || null;
+  // 1. Determine the primary display text. This can be product-specific or fall back to the store's rate.
+  const primaryDisplayText = product.productSpecificCashbackDisplay || storeContext?.cashbackRate || null;
 
-  // 2. Determine the numerical values to use for calculation, prioritizing product-specific values.
-  const rateValueForCalc = product.productSpecificCashbackRateValue ?? storeContext?.cashbackRateValue ?? null;
-  const rateTypeForCalc = product.productSpecificCashbackType ?? storeContext?.cashbackType ?? null;
-
-  // 3. Determine the icon to display based on the most specific type available or inferred from text.
-  let cashbackIconType = product.productSpecificCashbackType || storeContext?.cashbackType;
-  if (!cashbackIconType && cashbackDisplayText) {
-      if (cashbackDisplayText.includes('%')) {
-          cashbackIconType = 'percentage';
-      } else if (cashbackDisplayText.toLowerCase().includes('₹') || cashbackDisplayText.toLowerCase().includes('flat')) {
-          cashbackIconType = 'fixed';
+  // 2. Determine if there's a *specific numerical rate* on the product to show as a separate piece of info.
+  let secondaryNumericalInfo: { text: string; icon: React.ReactNode } | null = null;
+  if (product.productSpecificCashbackRateValue !== null && product.productSpecificCashbackRateValue !== undefined) {
+      if (product.productSpecificCashbackType === 'fixed') {
+          secondaryNumericalInfo = {
+              text: `Fixed: ${formatCurrency(product.productSpecificCashbackRateValue)}`,
+              icon: <IndianRupee className="w-2.5 h-2.5 mr-0.5 flex-shrink-0"/>
+          };
+      } else if (product.productSpecificCashbackType === 'percentage') {
+          secondaryNumericalInfo = {
+              text: `Bonus: ${product.productSpecificCashbackRateValue}% Cashback`,
+              icon: <Percent className="w-2.5 h-2.5 mr-0.5 flex-shrink-0"/>
+          };
       }
   }
 
-  // 4. Calculate effective price if possible.
+  // 3. Calculate the effective price based on the most relevant numerical rate available.
+  const valueForCalc = product.productSpecificCashbackRateValue ?? storeContext?.cashbackRateValue ?? null;
+  const typeForCalc = product.productSpecificCashbackType ?? storeContext?.cashbackType ?? null;
+
   let priceAfterCashback: number | null = null;
-  if (product.price != null && product.price > 0 && rateValueForCalc != null && rateTypeForCalc) {
+  if (product.price != null && product.price > 0 && valueForCalc != null && typeForCalc) {
     let calculatedCashback = 0;
-    if (rateTypeForCalc === 'fixed') {
-      calculatedCashback = rateValueForCalc;
-    } else if (rateTypeForCalc === 'percentage') {
-      calculatedCashback = (product.price * rateValueForCalc) / 100;
+    if (typeForCalc === 'fixed') {
+      calculatedCashback = valueForCalc;
+    } else if (typeForCalc === 'percentage') {
+      calculatedCashback = (product.price * valueForCalc) / 100;
     }
-    
     if (calculatedCashback > 0) {
       priceAfterCashback = product.price - calculatedCashback;
     }
   }
-  // --- End of New Logic ---
+  // --- END: Refactored Cashback Logic ---
+
 
   const handleShopNow = async () => {
     setIsProcessingClick(true);
@@ -124,9 +129,9 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
       clickId: clickId,
       affiliateLink: finalAffiliateLinkWithClickId,
       originalLink: affiliateLinkToUse,
-      clickedCashbackDisplay: cashbackDisplayText, // Log the final displayed string
-      clickedCashbackRateValue: rateValueForCalc,
-      clickedCashbackType: rateTypeForCalc,
+      clickedCashbackDisplay: primaryDisplayText,
+      clickedCashbackRateValue: valueForCalc,
+      clickedCashbackType: typeForCalc,
     };
 
     console.log("ProductCard: Tracking click with data (client-side):", clickData);
@@ -189,22 +194,30 @@ export default function ProductCard({ product, storeContext }: ProductCardProps)
             {priceDisplay}
           </p>
 
-          <div className="min-h-[30px] space-y-0.5 mb-1.5">
-            {/* RENDER THE DISPLAY TEXT */}
-            {cashbackDisplayText && (
+          <div className="min-h-[45px] space-y-0.5 mb-1.5">
+            {/* Display the primary text, e.g., "Up to 5%" */}
+            {primaryDisplayText && (
               <p className="text-[10px] text-green-600 font-semibold flex items-center">
-                {cashbackIconType === 'fixed' ? <IndianRupee className="w-2.5 h-2.5 mr-0.5 flex-shrink-0"/> : cashbackIconType === 'percentage' ? <Percent className="w-2.5 h-2.5 mr-0.5 flex-shrink-0"/> : null}
-                {cashbackDisplayText}
+                {primaryDisplayText}
               </p>
             )}
-            
-            {/* RENDER THE EFFECTIVE PRICE */}
+
+            {/* Display the secondary, numerical info, e.g., "Fixed: ₹599" */}
+            {secondaryNumericalInfo && (
+              <p className="text-[10px] text-blue-600 font-semibold flex items-center">
+                {secondaryNumericalInfo.icon}
+                {secondaryNumericalInfo.text}
+              </p>
+            )}
+
+            {/* Display the final calculated price */}
             {(priceAfterCashback !== null && priceAfterCashback >= 0 && product.price && product.price > priceAfterCashback) && (
               <p className="text-[10px] font-bold text-primary">
                 Effective Price: {formatCurrency(priceAfterCashback)}
               </p>
             )}
           </div>
+
 
           <Button
             size="sm"
