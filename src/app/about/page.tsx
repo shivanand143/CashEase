@@ -4,15 +4,16 @@ import * as React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Target, Gift, IndianRupee, ArrowRight, ShoppingBag } from 'lucide-react'; // Added ShoppingBag
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Users, Target, Gift, IndianRupee, ArrowRight, ShoppingBag } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 export default function AboutPage() {
   const teamMembers = [
-    { name: 'Alice Wonderland', role: 'Founder & CEO', imageUrl: 'https://placehold.co/150x150.png?text=Alice', dataAiHint: "person team member" },
-    { name: 'Bob The Builder', role: 'Head of Technology', imageUrl: 'https://placehold.co/150x150.png?text=Bob', dataAiHint: "person team member" },
-    { name: 'Charlie Brown', role: 'Marketing Lead', imageUrl: 'https://placehold.co/150x150.png?text=Charlie', dataAiHint: "person team member" },
+    { name: 'Vinod Hosamani', role: 'Lead Developer', imageUrl: 'https://placehold.co/150x150.png', dataAiHint: "person team member" },
+    { name: 'G Ajay Kumar', role: 'Frontend Developer', imageUrl: 'https://placehold.co/150x150.png', dataAiHint: "person team member" },
+    { name: 'Sahil S Nangnure', role: 'Backend Developer', imageUrl: 'https://placehold.co/150x150.png', dataAiHint: "person team member" },
+    { name: 'Shivanand', role: 'UI/UX Designer', imageUrl: 'https://placehold.co/150x150.png', dataAiHint: "person team member" },
   ];
 
   const whyChooseUsItems = [
@@ -55,6 +56,27 @@ export default function AboutPage() {
             className="rounded-lg shadow-xl border"
             data-ai-hint="teamwork mission target"
           />
+        </div>
+      </section>
+
+      {/* Meet the Team Section */}
+      <section className="container py-12">
+        <h2 className="text-2xl md:text-3xl font-semibold text-center mb-10 md:mb-12">Meet Our Team</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+          {teamMembers.map((member) => (
+            <Card key={member.name} className="text-center p-6 border-0 shadow-lg hover:shadow-xl transition-shadow">
+              <Image
+                src={member.imageUrl}
+                alt={member.name}
+                width={120}
+                height={120}
+                className="rounded-full mx-auto mb-4 border-4 border-primary/20"
+                data-ai-hint={member.dataAiHint}
+              />
+              <CardTitle className="text-lg font-bold">{member.name}</CardTitle>
+              <CardDescription>{member.role}</CardDescription>
+            </Card>
+          ))}
         </div>
       </section>
 
