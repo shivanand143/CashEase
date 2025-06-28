@@ -392,5 +392,3 @@ function StoreDetailSkeleton() {
     </div>
   );
 }
-
-    
