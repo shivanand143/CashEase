@@ -192,8 +192,8 @@ export default function AdminTransactionsPage() {
   const [currentEditAdminNotes, setCurrentEditAdminNotes] = React.useState<string>('');
   const [currentEditNotesToUser, setCurrentEditNotesToUser] = React.useState<string>('');
 
-  const [userCache, setUserCache] = React.useState<Record<string, Pick<UserProfile, 'displayName' | 'email'>>>({});
-  const [storeCache, setStoreCache] = React.useState<Record<string, Pick<Store, 'name'>>>({});
+  const userCache = React.useRef<Record<string, Pick<UserProfile, 'displayName' | 'email'>>>({});
+  const storeCache = React.useRef<Record<string, Pick<Store, 'name'>>>({});
   const isMountedRef = React.useRef(true);
 
   const addForm = useForm<AppTransactionFormValues>({
@@ -215,10 +215,10 @@ export default function AdminTransactionsPage() {
         }));
       }
   
-      const userIdsToFetch = [...new Set(rawTransactions.map(tx => tx.userId).filter(id => id && !userCache[id]))];
+      const userIdsToFetch = [...new Set(rawTransactions.map(tx => tx.userId).filter(id => id && !userCache.current[id]))];
       const storeIdsToFetch = [...new Set(
         rawTransactions.flatMap(tx =>
-          tx.storeId && !storeCache[tx.storeId] && !tx.storeName ? [tx.storeId] : []
+          tx.storeId && !storeCache.current[tx.storeId] && !tx.storeName ? [tx.storeId] : []
         )
       )];
   
@@ -238,7 +238,7 @@ export default function AdminTransactionsPage() {
               };
             });
           }
-          setUserCache(prev => ({ ...prev, ...newUsers }));
+          userCache.current = { ...userCache.current, ...newUsers };
         }
   
         if (storeIdsToFetch.length > 0) {
@@ -253,7 +253,7 @@ export default function AdminTransactionsPage() {
               newStores[docSnap.id] = { name: data.name || 'Unknown Store' };
             });
           }
-          setStoreCache(prev => ({ ...prev, ...newStores }));
+          storeCache.current = { ...storeCache.current, ...newStores };
         }
       } catch (detailError) {
         console.warn(`${ADMIN_TX_LOG_PREFIX} Detail Fetch Error:`, detailError);
@@ -266,12 +266,12 @@ export default function AdminTransactionsPage() {
   
       return rawTransactions.map(tx => ({
         ...tx,
-        userDisplayName: userCache[tx.userId]?.displayName || tx.userId,
-        userEmail: userCache[tx.userId]?.email ?? undefined,
-        storeName: tx.storeName || storeCache[tx.storeId]?.name || tx.storeId
+        userDisplayName: userCache.current[tx.userId]?.displayName || tx.userId,
+        userEmail: userCache.current[tx.userId]?.email ?? undefined,
+        storeName: tx.storeName || storeCache.current[tx.storeId]?.name || tx.storeId
       }));
     },
-    [userCache, storeCache, toast]
+    [toast]
   );
   
 
@@ -357,7 +357,7 @@ export default function AdminTransactionsPage() {
       }
     } finally {
       if (isMountedRef.current) {
-        setPageLoading(false);
+        if (!loadMoreOp) setPageLoading(false);
         setLoadingMore(false);
         setIsSearching(false);
       }
@@ -527,6 +527,25 @@ export default function AdminTransactionsPage() {
     }
   };
   
+  React.useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
+
+  React.useEffect(() => {
+    if (authLoading) {
+      setPageLoading(true);
+      return;
+    }
+    if (!adminUser && !authLoading) {
+      setPageLoading(false);
+      return;
+    }
+    if(adminUser) {
+      fetchTransactions(false, null);
+    }
+  }, [adminUser, authLoading, filterStatus, debouncedSearchTerm, fetchTransactions]);
+
   if (authLoading || (pageLoading && transactions.length === 0 && !pageError)) {
     return <AdminGuard><TransactionsTableSkeleton /></AdminGuard>;
   }
@@ -904,3 +923,5 @@ export default function AdminTransactionsPage() {
     </AdminGuard>
   );
 }
+
+    
